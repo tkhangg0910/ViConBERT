@@ -1,11 +1,5 @@
-model:
+common:
   models: ["vinai/phobert-base", "vinai/phobert-large"]
   embedding_size: 256
-
-data:
   max_length: 128                   
-  batch_size: 32                    
-
-paths:
-  wordnet_dir: "embeddings/stage_1_ckpts"
-  output_dir: "output"   
+  batch_size: 32
