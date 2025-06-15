@@ -1,5 +1,13 @@
-common:
-  models: ["vinai/phobert-base", "vinai/phobert-large"]
-  embedding_size: 256
-  max_length: 128                   
-  batch_size: 32
+project:
+  name: "vietnamese_wordnet_embedding"
+  language: "vi"
+  seed: 42
+  
+hardware:
+  device: "cuda"  
+  fp16: True  
+  gradient_accumulation: 2
+
+monitoring:
+  wandb_project: "vn_wordnet"
+  log_interval: 100

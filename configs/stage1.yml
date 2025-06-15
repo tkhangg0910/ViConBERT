@@ -1,0 +1,25 @@
+stage_name: "contrastive_pretraining"
+base_model: "vinai/phobert-base"
+base_model_cache_dir: "embeddings/base_models"
+output_dir: "./checkpoints/stage1"
+
+data:
+  train_path: "./data/stage1/train.json"
+  valid_path: "./data/stage1/valid.json"
+  max_samples: 100000 
+  num_workers: 4
+
+model:
+  span_method: "span"  
+  projection_dim: 256
+  temperature: 0.1
+  dropout: 0.1
+
+training:
+  batch_size: 128
+  epochs: 20
+  learning_rate: 2e-5
+  warmup_steps: 1000
+  max_seq_length: 128
+  save_steps: 1000
+
