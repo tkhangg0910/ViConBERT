@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from transformers import AutoModel, AutoTokenizer
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union, Dict
 import logging
 
 class SpanExtractor:
@@ -124,36 +125,119 @@ class FusionBlock(nn.Module):
         
         return x
 
+class AttentivePooling(nn.Module):
+    def __init__(self, hidden_size, attn_hidden=128):
+        """
+        Attentive Pooling Layer
+        Args:
+            hidden_size: size of embedding (d)
+            attn_hidden: hidden size of attention (tùy chọn)
+        """
+        super().__init__()
+        self.W = nn.Linear(hidden_size, attn_hidden)
+        self.u = nn.Linear(attn_hidden, 1, bias=False)
+        
+    def forward(self, embeddings, mask=None):
+        """
+        Args:
+            embeddings: Tensor shape [batch_size, seq_len, hidden_size]
+            mask: Tensor shape [batch_size, seq_len] (1 = valid token, 0 = pad)
+        Returns:
+            pooled: Tensor shape [batch_size, hidden_size]
+        """
+        # Tính attention scores
+        e = torch.tanh(self.W(embeddings))  # [batch, seq_len, attn_hidden]
+        scores = self.u(e).squeeze(-1)      # [batch, seq_len]
+        
+        # Xử lý mask
+        if mask is not None:
+            scores = scores.masked_fill(~mask, float('-inf'))
+        
+        # Tính trọng số attention
+        alpha = F.softmax(scores, dim=-1)   # [batch, seq_len]
+        
+        # Tổng hợp có trọng số
+        pooled = torch.sum(embeddings * alpha.unsqueeze(-1), dim=1)  # [batch, hidden_size]
+        return pooled
+    
+class LayerwiseCLSPooling(nn.Module):
+    def __init__(self, hidden_size, layer_attn_hidden=128):
+        """
+        Layerwise CLS Pooling
+        Args:
+            hidden_size: embedding size (d)
+            layer_attn_hidden:  attention's hidden size
+        """
+        super().__init__()
+        self.U = nn.Linear(hidden_size, layer_attn_hidden)
+        self.v = nn.Linear(layer_attn_hidden, 1, bias=False)
+        
+    def forward(self, all_layer_cls_embeddings):
+        """
+        Args:
+            all_layer_cls_embeddings: 
+                List of tensors [CLS] from each layer, 
+                each tensor shape [batch_size, hidden_size]
+                or tensor [batch_size, num_layers, hidden_size]
+        Returns:
+            pooled: Tensor shape [batch_size, hidden_size]
+        """
+        if isinstance(all_layer_cls_embeddings, list):
+            all_layer_cls = torch.stack(all_layer_cls_embeddings, dim=1)  # [batch, L, d]
+        else:
+            all_layer_cls = all_layer_cls_embeddings
+        
+        # Tính attention scores cho các layer
+        e = torch.tanh(self.U(all_layer_cls))  # [batch, L, layer_attn_hidden]
+        scores = self.v(e).squeeze(-1)         # [batch, L]
+        
+        # Tính trọng số layer attention
+        beta = F.softmax(scores, dim=-1)       # [batch, L]
+        
+        # Tổng hợp có trọng số
+        pooled = torch.sum(all_layer_cls * beta.unsqueeze(-1), dim=1)  # [batch, d]
+        return pooled
+
 class SynoViSenseEmbedding(nn.Module):
     """
-    Enhanced Vietnamese Contextual Embedding Model with Flexible Span Representation
-    Optimized for training/inference performance with precomputed span indices
+    Enhanced Vietnamese Contextual Embedding Model
+    with multiple span representation options
     """
     
     def __init__(self, 
-                 model_name: str, 
-                 fb_hdim: int = 512, 
-                 span_method: str = "span",
+                 model_name: str = "vinai/phobert-base",
+                 fusion_hidden_dim: int = 512,
+                 span_method: str = "attentive",
+                 cls_method: str = "layerwise",
                  dropout: float = 0.1,
-                 freeze_base: bool = False):
+                 freeze_base: bool = False,
+                 layerwise_attn_dim: int = 128):
         """
         Args:
-            model_name: PhoBERT model name (e.g., "vinai/phobert-base")
-            fb_hdim: Fusion block hidden dimension
-            span_method: Span representation method ("span", "mean")
-            dropout: Dropout rate for fusion block
-            freeze_base: Whether to freeze base model parameters
+            model_name: Pre-trained model name
+            fusion_hidden_dim: Fusion block hidden dimension
+            span_method: Span representation method 
+                         ("diff_sum", "mean", "attentive")
+            cls_method: cls representation method 
+                         ("layerwise", "last")
+            dropout: Dropout rate
+            freeze_base: Freeze base model parameters
+            layerwise_attn_dim: Attention dim for layerwise pooling
         """
         super().__init__()
         self.span_method = span_method
+        self.cls_method = cls_method
         self.logger = logging.getLogger(__name__)
         
-        # Initialize base model and tokenizer
-        self.base_model = AutoModel.from_pretrained(model_name)
+        # Initialize base model
+        self.base_model = AutoModel.from_pretrained(
+            model_name,
+            output_hidden_states=(cls_method == "layerwise")
+        )
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.hidden_size = self.base_model.config.hidden_size
         
-        # Freeze base model if specified
+        # Freeze base model if requested
         if freeze_base:
             for param in self.base_model.parameters():
                 param.requires_grad = False
@@ -161,21 +245,29 @@ class SynoViSenseEmbedding(nn.Module):
         # Span processing components
         self.extractor = SpanExtractor(self.tokenizer)
         
-        # Adjust input dim based on span method
-        if span_method == "span":
-            input_dim = 4 * self.hidden_size  # CLS + start + end + diff
-        elif span_method in ["mean"]:
-            input_dim = 2 * self.hidden_size  # CLS + pooled span
-        else:
-            raise ValueError(f"Unsupported span_method: {span_method}")
+        # Initialize pooling modules
+        if span_method == "attentive":
+            self.attentive_pool = AttentivePooling(self.hidden_size)
         
-        # Enhanced fusion block
+        elif cls_method == "layerwise":
+            self.layerwise_pool = LayerwiseCLSPooling(self.hidden_size, layerwise_attn_dim)
+        
+        # Determine fusion input dimension
+        if span_method == "diff_sum":
+            input_dim = 4 * self.hidden_size  # CLS + (start, end, diff)
+        else:
+            input_dim = 2 * self.hidden_size  # CLS + span representation
+        
+        # Fusion block
         self.fusion = FusionBlock(
             input_dim=input_dim,
-            hidden_dim=fb_hdim,
+            hidden_dim=fusion_hidden_dim,
             output_dim=self.hidden_size,
             dropout=dropout
         )
+        
+        # Layer normalization for span representations
+        self.span_norm = nn.LayerNorm(self.hidden_size)
         
     def forward(self, 
                 input_ids: torch.Tensor, 
@@ -184,180 +276,161 @@ class SynoViSenseEmbedding(nn.Module):
                 texts: Optional[List[str]] = None,
                 span_indices: Optional[List[Optional[Tuple[int, int]]]] = None) -> torch.Tensor:
         """
-        Forward pass to generate contextual embeddings
-        
-        Args:
-            input_ids: Token IDs from tokenizer [batch_size, seq_len]
-            attention_mask: Attention mask for padding [batch_size, seq_len]
-            target_phrases: List of target phrases (for inference)
-            texts: Original input texts (for inference)
-            span_indices: Precomputed span indices (for training)
-            
-        Returns:
-            Contextual embeddings [batch_size, hidden_size]
+        Forward pass with flexible span representation
         """
-        # Base model forward pass
+        # Base model forward
         outputs = self.base_model(
             input_ids=input_ids,
             attention_mask=attention_mask,
-            return_dict=True
+            output_hidden_states=(self.cls_method == "layerwise")
         )
-        hidden_states = outputs.last_hidden_state
         
-        # Compute span indices if not provided (inference mode)
+        last_hidden_state = outputs.last_hidden_state
+        
+        # Get CLS representation
+        if self.cls_method == "layerwise":
+            all_hidden_states = outputs.hidden_states
+            cls_embed = self.layerwise_pool(
+                [hidden[:, 0] for hidden in all_hidden_states[1:]]
+                )
+        else:
+            cls_embed = last_hidden_state[:, 0, :]
+        
+        
+        # Compute span indices if needed
         if span_indices is None:
             if target_phrases is None or texts is None:
-                raise ValueError("Must provide either span_indices or (target_phrases, texts)")
+                raise ValueError("Must provide span indices or (texts, target_phrases)")
             span_indices = self._compute_span_indices(texts, target_phrases)
         
-        # Get CLS embedding (global context)
-        cls_embed = hidden_states[:, 0, :]  # [batch_size, hidden_size]
+        # Get span representation
+        span_rep = self._get_span_representation(
+            last_hidden_state, 
+            span_indices,
+        )
         
-        # Get span representation (local context)
-        span_rep = self._get_span_representation(hidden_states, span_indices)
-        
-        # Combine global and local features
+        # Combine and fuse representations
         combined = torch.cat([cls_embed, span_rep], dim=-1)
-        
-        # Fuse features through neural block
         return self.fusion(combined)
     
     def _get_span_representation(self, 
                                hidden_states: torch.Tensor, 
-                               span_indices: List[Optional[Tuple[int, int]]]) -> torch.Tensor:
+                               span_indices: List[Optional[Tuple[int, int]]]
+                               ) -> torch.Tensor:
         """
-        Generate span representations for a batch (vectorized)
-        
-        Args:
-            hidden_states: Hidden states [batch_size, seq_len, hidden_size]
-            span_indices: List of (start_idx, end_idx) tuples
-            
-        Returns:
-            Span representations [batch_size, span_dim]
+        Flexible span representation with multiple methods
         """
-        batch_size, seq_len, hidden_size = hidden_states.shape
-        device = hidden_states.device
-        
-        if self.span_method == "span":
-            return self._get_span_based_embedding(hidden_states, span_indices)
+        if self.span_method == "diff_sum":
+            return self._get_diff_sum_based_embedding(hidden_states, span_indices)
         elif self.span_method == "mean":
             return self._get_mean_pooled_embedding(hidden_states, span_indices)
+        elif self.span_method == "attentive":
+            return self._get_attentive_pooled_embedding(hidden_states, span_indices)
         else:
-            # Fallback to CLS for all samples
-            return hidden_states[:, 0, :]
+            raise ValueError(f"Unsupported span method: {self.span_method}")
     
-    def _get_span_based_embedding(self, hidden_states: torch.Tensor, 
-                                      span_indices: List[Optional[Tuple[int, int]]]) -> torch.Tensor:
-        """span representation: [start, end, end-start]"""
-        batch_size, seq_len, hidden_size = hidden_states.shape
+    def _get_diff_sum_based_embedding(self, 
+                                hidden_states: torch.Tensor, 
+                                span_indices: List[Optional[Tuple[int, int]]]) -> torch.Tensor:
+        """Start/end/difference representation"""
+        batch_size, seq_len, hidden_size = hidden_states.size()
         device = hidden_states.device
         
-        # Prepare batch indices
-        batch_idx = torch.arange(batch_size, device=device)
-        start_indices = torch.zeros(batch_size, dtype=torch.long, device=device)  # Default to CLS
-        end_indices = torch.zeros(batch_size, dtype=torch.long, device=device)    # Default to CLS
-        valid_spans = torch.zeros(batch_size, dtype=torch.bool, device=device)
+        # Initialize with CLS as fallback
+        start_embeds = hidden_states[:, 0, :].clone()
+        end_embeds = torch.zeros_like(start_embeds)
+        diff_embeds = torch.zeros_like(start_embeds)
         
-        # Fill valid span indices
+        # Process valid spans
         for i, indices in enumerate(span_indices):
             if indices is not None:
                 start_idx, end_idx = indices
-                # Ensure indices are within bounds
                 start_idx = max(0, min(start_idx, seq_len - 1))
                 end_idx = max(start_idx, min(end_idx, seq_len - 1))
                 
-                start_indices[i] = start_idx
-                end_indices[i] = end_idx
-                valid_spans[i] = True
-        
-        start_embeds = hidden_states[batch_idx, start_indices]  # [batch_size, hidden_size]
-        end_embeds = hidden_states[batch_idx, end_indices]      # [batch_size, hidden_size]
-        diff_embeds = end_embeds - start_embeds                 # [batch_size, hidden_size]
-        
-        # For invalid spans, use CLS embedding for all components
-        cls_embeds = hidden_states[:, 0, :]  # [batch_size, hidden_size]
-        zeros = torch.zeros_like(cls_embeds)
-        
-        # Apply mask for invalid spans
-        start_embeds = torch.where(valid_spans.unsqueeze(-1), start_embeds, cls_embeds)
-        end_embeds = torch.where(valid_spans.unsqueeze(-1), end_embeds, zeros)
-        diff_embeds = torch.where(valid_spans.unsqueeze(-1), diff_embeds, zeros)
+                start_embeds[i] = hidden_states[i, start_idx]
+                end_embeds[i] = hidden_states[i, end_idx]
+                diff_embeds[i] = end_embeds[i] - start_embeds[i]
         
         return torch.cat([start_embeds, end_embeds, diff_embeds], dim=-1)
     
-    
-    def _get_mean_pooled_embedding(self, hidden_states: torch.Tensor,
-                                       span_indices: List[Optional[Tuple[int, int]]]) -> torch.Tensor:
-        """mean pooling"""
-        batch_size, seq_len, hidden_size = hidden_states.shape
+    def _get_mean_pooled_embedding(self, 
+                                 hidden_states: torch.Tensor,
+                                 span_indices: List[Optional[Tuple[int, int]]]) -> torch.Tensor:
+        """Mean pooling over span"""
+        batch_size, seq_len, hidden_size = hidden_states.size()
         device = hidden_states.device
-        
-        # Create mask for span tokens
-        span_mask = torch.zeros(batch_size, seq_len, dtype=torch.bool, device=device)
+        span_embeddings = torch.zeros(batch_size, hidden_size, device=device)
         
         for i, indices in enumerate(span_indices):
             if indices is not None:
                 start_idx, end_idx = indices
                 start_idx = max(0, min(start_idx, seq_len - 1))
                 end_idx = max(start_idx, min(end_idx, seq_len - 1))
-                span_mask[i, start_idx:end_idx+1] = True
+                
+                span_tokens = hidden_states[i, start_idx:end_idx+1]
+                span_embeddings[i] = span_tokens.mean(dim=0)
             else:
-                # Use CLS token for invalid spans
-                span_mask[i, 0] = True
+                span_embeddings[i] = hidden_states[i, 0]  # CLS fallback
         
-        # Apply mask and compute mean
-        masked_hidden = hidden_states * span_mask.unsqueeze(-1).float()
-        span_lengths = span_mask.sum(dim=-1, keepdim=True).float()  # [batch_size, 1]
-        span_lengths = torch.clamp(span_lengths, min=1.0)  # Avoid division by zero
-        
-        span_embeddings = masked_hidden.sum(dim=1) / span_lengths  # [batch_size, hidden_size]
-        
-        return span_embeddings
+        return self.span_norm(span_embeddings)
     
-    def _compute_span_indices(self, texts: List[str], target_phrases: List[str]) -> List[Optional[Tuple[int, int]]]:
-        """Compute span indices for batch (used during inference)"""
+    def _get_attentive_pooled_embedding(self, 
+                                      hidden_states: torch.Tensor,
+                                      span_indices: List[Optional[Tuple[int, int]]]) -> torch.Tensor:
+        """Attentive pooling over span"""
+        batch_size, seq_len, hidden_size = hidden_states.size()
+        device = hidden_states.device
+        span_embeddings = torch.zeros(batch_size, hidden_size, device=device)
+        mask = torch.zeros(batch_size, seq_len, dtype=torch.bool, device=device)
+        
+        # Create span masks
+        for i, indices in enumerate(span_indices):
+            if indices is not None:
+                start_idx, end_idx = indices
+                start_idx = max(0, min(start_idx, seq_len - 1))
+                end_idx = max(start_idx, min(end_idx, seq_len - 1))
+                mask[i, start_idx:end_idx+1] = True
+            else:
+                mask[i, 0] = True  # CLS fallback
+        
+        # Apply attentive pooling
+        span_embeddings = self.attentive_pool(hidden_states, mask)
+        return self.span_norm(span_embeddings)
+        
+    
+    def _compute_span_indices(self, 
+                            texts: List[str], 
+                            target_phrases: List[str]) -> List[Optional[Tuple[int, int]]]:
+        """Batch span index computation"""
         return [
             self.extractor.get_span_indices(text, phrase)
             for text, phrase in zip(texts, target_phrases)
         ]
     
-    def tokenize_with_target(self, texts: List[str], target_phrases: List[str]) -> dict:
+    def tokenize_with_target(self, 
+                           texts: List[str], 
+                           target_phrases: List[str]) -> Dict[str, torch.Tensor]:
         """
-        Tokenize texts and compute span indices (optimized for training)
-        
-        Args:
-            texts: List of input texts
-            target_phrases: List of target phrases
-            
-        Returns:
-            Dictionary with tokenized inputs and span indices
+        Optimized tokenization with span index precomputation
         """
-        # Tokenize texts
         inputs = self.tokenizer(
             texts, 
-            padding=True, 
-            truncation=True, 
-            return_tensors="pt",
-            max_length=512
+            padding=True,
+            truncation=True,
+            max_length=512,
+            return_tensors="pt"
         )
         
         # Precompute span indices
         inputs["span_indices"] = self._compute_span_indices(texts, target_phrases)
-        inputs["texts"] = texts
-        inputs["target_phrases"] = target_phrases
-        
         return inputs
     
-    def encode(self, texts: List[str], target_phrases: List[str]) -> torch.Tensor:
+    def encode(self, 
+             texts: List[str], 
+             target_phrases: List[str]) -> torch.Tensor:
         """
-        Convenience method for encoding texts with target phrases
-        
-        Args:
-            texts: List of input texts
-            target_phrases: List of target phrases
-            
-        Returns:
-            Encoded embeddings [batch_size, hidden_size]
+        High-level encoding API
         """
         inputs = self.tokenize_with_target(texts, target_phrases)
         

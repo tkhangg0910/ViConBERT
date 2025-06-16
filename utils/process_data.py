@@ -48,6 +48,6 @@ if __name__=="__main__":
     for key, value in data.items():
         if len(value) < 10:
             total[key]=10-len(value)
-            print(key)
             
     print(total)
+    print(f"total: {len(total)}")
