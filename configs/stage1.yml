@@ -4,8 +4,8 @@ base_model_cache_dir: "embeddings/base_models"
 output_dir: "./checkpoints/stage1"
 
 data:
-  train_path: "./data/stage1/train_data.json"
-  valid_path: "./data/stage1/valid_data.json"
+  train_path: "data/processed/stage1_pseudo_sents/train_data.json"
+  valid_path: "data/processed/stage1_pseudo_sents/valid_data.json"
   num_workers: 16
 
 model:
