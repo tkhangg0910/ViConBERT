@@ -36,30 +36,34 @@ def create_optimizer(model, config):
                 custom_no_decay.append(param)
             else:
                 custom_decay.append(param)
-    
+    lr_base = float(config["training"]["optimizer"]["lr_base"])
+    lr_custom = float(config["training"]["optimizer"]["lr_custom"])
+    weight_decay_val = float(config["training"]["optimizer"]["weight_decay"])
+
     # Create parameter groups with different learning rates and weight decay
     optimizer_groups = [
         {
             "params": base_model_decay,
-            "lr": config["training"]["optimizer"]["lr_base"],
-            "weight_decay": config["training"]["optimizer"]["weight_decay"]
+            "lr": lr_base,  # ĐÃ CHUYỂN SANG FLOAT
+            "weight_decay": weight_decay_val  # ĐÃ CHUYỂN SANG FLOAT
         },
         {
             "params": base_model_no_decay,
-            "lr": config["training"]["optimizer"]["lr_base"],
-            "weight_decay": 0.0  # No weight decay for biases and layer norms
+            "lr": lr_base,
+            "weight_decay": 0.0
         },
         {
             "params": custom_decay,
-            "lr": config["training"]["optimizer"]["lr_custom"],
-            "weight_decay": config["training"]["optimizer"]["weight_decay"]
+            "lr": lr_custom,  # ĐÃ CHUYỂN SANG FLOAT
+            "weight_decay": weight_decay_val
         },
         {
             "params": custom_no_decay,
-            "lr": config["training"]["optimizer"]["lr_custom"],
-            "weight_decay": 0.0  # No weight decay for biases and layer norms
+            "lr": lr_custom,
+            "weight_decay": 0.0
         }
     ]
+
     
     # Filter out empty parameter groups
     optimizer_groups = [group for group in optimizer_groups if len(group["params"]) > 0]
