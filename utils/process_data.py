@@ -3,6 +3,7 @@ import os
 from collections import defaultdict
 import pandas as pd
 from sklearn.model_selection import train_test_split
+from load_config import load_config
 
 def split_contrastive_stage1_data(pseudo_sent_path, word_synsets_path, output_dir):
     word_synsets = pd.read_csv(word_synsets_path)
@@ -13,10 +14,13 @@ def split_contrastive_stage1_data(pseudo_sent_path, word_synsets_path, output_di
     valid_data = defaultdict(list)
 
     for word_id, sentences in data.items():
-        synset_id = word_synsets[word_synsets["word_id"] == int(word_id)]["synset_id"].values[0]
+        synset_row  = word_synsets[word_synsets["word_id"] == int(word_id)]
+        synset_id = int(synset_row["synset_id"].values[0])
         train_sents, valid_sents = train_test_split(sentences, test_size=0.2, random_state=42)
-        train_data[synset_id].extend([(word_id, sent) for sent in train_sents])
-        valid_data[synset_id].extend([(word_id, sent) for sent in valid_sents])
+        target_word = synset_row["word"].values[0]  
+        supersense = synset_row["pos"].values[0]
+        train_data[synset_id].extend([(word_id,target_word,supersense, sent) for sent in train_sents])
+        valid_data[synset_id].extend([(word_id,target_word,supersense, sent) for sent in valid_sents])
 
     final_train = []
     final_valid = []
@@ -26,46 +30,12 @@ def split_contrastive_stage1_data(pseudo_sent_path, word_synsets_path, output_di
         final_valid.extend(valid_data[synset_id][:min_samples])
 
     # Lưu dưới dạng danh sách các cặp (word_id, sentence)
-    with open(os.path.join(output_dir,"train_data.json"), "w") as f:
-        json.dump([{"word_id": w, "sentence": s, "synset_id": synset_id} 
+    with open(os.path.join(output_dir, "train_data.json"), 'w', encoding='utf-8') as f:
+        json.dump([{"word_id": w, "sentence": s,"target_word": target,"supersense":supersense, "synset_id": synset_id} 
                 for synset_id, group in train_data.items() 
-                for w, s in group], f)
+                for w,target,supersense, s in group], f,ensure_ascii=False,indent=2)
         
-    with open(os.path.join(output_dir,"valid_data.json"), "w") as f:
-        json.dump([{"word_id": w, "sentence": s, "synset_id": synset_id} 
+    with open(os.path.join(output_dir, "valid_data.json"), 'w', encoding='utf-8') as f:
+        json.dump([{"word_id": w, "sentence": s,"target_word": target,"supersense":supersense, "synset_id": synset_id} 
                 for synset_id, group in valid_data.items() 
-                for w, s in group], f)
-
-    
-if __name__=="__main__":
-    pseudo_sent_path="data/raw/stage_1_pseudo_sents/pseudo_sent.json"
-    word_synsets_path = "data/raw/stage_1_pseudo_sents/word_synsets_with_pos_with_gloss.csv"
-    output_dir = "data/processed/stage1_pseudo_sents"
-    # split_contrastive_stage1_data(pseudo_sent_path, word_synsets_path,output_dir)
-    import pandas as pd
-    df = pd.read_csv(word_synsets_path)
-    with open(pseudo_sent_path, encoding='utf-8') as f:
-        data = json.load(f)
-
-    total = {}
-    matched_rows = []
-
-    for key, value in data.items():
-        if len(value) < 10:
-            total[key] = 10 - len(value)
-
-            # Truy xuất thông tin trong df theo word_id
-            word_id = int(key)
-            rows = df[df['word_id'] == word_id]
-            if not rows.empty:
-                matched_rows.append(rows)
-
-    # Gộp tất cả dòng lại và lưu ra file CSV
-    if matched_rows:
-        result_df = pd.concat(matched_rows)
-        result_df.to_csv(f"short_entries_info.csv", index=False, encoding='utf-8-sig')
-        print(f"✅ Đã lưu thông tin của {len(result_df)} dòng vào short_entries_info.csv")
-    else:
-        print("⚠️ Không tìm thấy dòng nào khớp word_id trong df")
-
-    print(f"Tổng số key có ít hơn 10 câu: {len(total)}")
+                for w,target,supersense, s in group], f, ensure_ascii=False,indent=2)

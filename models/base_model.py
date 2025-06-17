@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import AutoModel, AutoTokenizer
-from typing import List, Optional, Tuple, Union, Dict
+from transformers import AutoModel, PreTrainedTokenizerFast
+from typing import List, Optional, Tuple, Dict
 import logging
 
 class SpanExtractor:
@@ -106,12 +106,10 @@ class FusionBlock(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass through enhanced fusion block"""
         # First layer with residual connection
-        residual = x
         x = self.fc1(x)
         x = self.norm1(x)
         x = self.dropout1(x)
         x = self.activation(x)
-        x = x + residual
         
         # Second layer with residual connection
         residual = x
@@ -206,6 +204,7 @@ class SynoViSenseEmbedding(nn.Module):
     
     def __init__(self, 
                  model_name: str = "vinai/phobert-base",
+                 cache_dir: str ="embeddings/base_models",
                  fusion_hidden_dim: int = 512,
                  span_method: str = "attentive",
                  cls_method: str = "layerwise",
@@ -233,8 +232,9 @@ class SynoViSenseEmbedding(nn.Module):
         self.base_model = AutoModel.from_pretrained(
             model_name,
             output_hidden_states=(cls_method == "layerwise")
+            ,cache_dir=cache_dir
         )
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.tokenizer = PreTrainedTokenizerFast.from_pretrained(model_name)
         self.hidden_size = self.base_model.config.hidden_size
         
         # Freeze base model if requested
