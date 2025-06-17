@@ -42,12 +42,30 @@ if __name__=="__main__":
     word_synsets_path = "data/raw/stage_1_pseudo_sents/word_synsets_with_pos_with_gloss.csv"
     output_dir = "data/processed/stage1_pseudo_sents"
     # split_contrastive_stage1_data(pseudo_sent_path, word_synsets_path,output_dir)
+    import pandas as pd
+    df = pd.read_csv(word_synsets_path)
     with open(pseudo_sent_path, encoding='utf-8') as f:
         data = json.load(f)
-    total={}
+
+    total = {}
+    matched_rows = []
+
     for key, value in data.items():
         if len(value) < 10:
-            total[key]=10-len(value)
-            
-    print(total)
-    print(f"total: {len(total)}")
+            total[key] = 10 - len(value)
+
+            # Truy xuất thông tin trong df theo word_id
+            word_id = int(key)
+            rows = df[df['word_id'] == word_id]
+            if not rows.empty:
+                matched_rows.append(rows)
+
+    # Gộp tất cả dòng lại và lưu ra file CSV
+    if matched_rows:
+        result_df = pd.concat(matched_rows)
+        result_df.to_csv(f"short_entries_info.csv", index=False, encoding='utf-8-sig')
+        print(f"✅ Đã lưu thông tin của {len(result_df)} dòng vào short_entries_info.csv")
+    else:
+        print("⚠️ Không tìm thấy dòng nào khớp word_id trong df")
+
+    print(f"Tổng số key có ít hơn 10 câu: {len(total)}")
