@@ -69,7 +69,7 @@ if __name__=="__main__":
         scheduler=scheduler,  # Add scheduler parameter
         model=model,
         device=device,
-        checkpoint_dir=config["training"]["checkpoint_dir"],
+        checkpoint_dir=config["output_dir"],
         early_stopping_patience=config["training"]["early_stopping_patience"],
         ckpt_interval=config["training"]["ckpt_interval"]
     )

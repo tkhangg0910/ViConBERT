@@ -44,8 +44,8 @@ def create_optimizer(model, config):
     optimizer_groups = [
         {
             "params": base_model_decay,
-            "lr": lr_base,  # ĐÃ CHUYỂN SANG FLOAT
-            "weight_decay": weight_decay_val  # ĐÃ CHUYỂN SANG FLOAT
+            "lr": lr_base,
+            "weight_decay": weight_decay_val
         },
         {
             "params": base_model_no_decay,
@@ -54,7 +54,7 @@ def create_optimizer(model, config):
         },
         {
             "params": custom_decay,
-            "lr": lr_custom,  # ĐÃ CHUYỂN SANG FLOAT
+            "lr": lr_custom,
             "weight_decay": weight_decay_val
         },
         {
