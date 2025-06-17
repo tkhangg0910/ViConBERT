@@ -75,6 +75,6 @@ def create_optimizer(model, config):
     print("Optimizer parameter groups:")
     for i, group in enumerate(optimizer.param_groups):
         param_count = sum(p.numel() for p in group['params'])
-        print(f"  Group {i}: {param_count:,} parameters, LR={group['lr']:.2e}, WD={group['weight_decay']}")
+        print(f"  Group {i}: {param_count:,} parameters, LR={float(group['lr']):.2e}, WD={float(group['weight_decay'])}")
     
     return optimizer
