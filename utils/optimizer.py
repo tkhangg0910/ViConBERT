@@ -67,7 +67,7 @@ def create_optimizer(model, config):
     # Create optimizer
     optimizer = AdamW(
         optimizer_groups,
-        eps=config["training"]["optimizer"]["eps"],
+        eps=float(config["training"]["optimizer"]["eps"])  ,
         betas=config["training"]["optimizer"]["betas"]
     )
     
