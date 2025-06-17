@@ -4,18 +4,16 @@ from models.base_model import SpanExtractor
 from transformers import AutoTokenizer
 import torch
 
-
-    
 class PseudoSents_Dataset(Dataset):
     def __init__(self, samples):
         self.samples = samples
-        
         self.word_to_synsets = defaultdict(list)
         self.synset_groups = defaultdict(list)
         self.word_group_pairs = defaultdict(list)
         self.synset_to_group = {}
+        self.polysemous_words = []
 
-
+        # Build dictionaries and identify polysemous words
         for sample in samples:
             synset_id = sample["synset_id"]
             word = sample["target_word"]
@@ -27,40 +25,27 @@ class PseudoSents_Dataset(Dataset):
             self.word_group_pairs[(word, group)].append(sample)
             self.synset_to_group[synset_id] = group
 
-        self.polysemous_words = []
-        self.synset_polysemy_weights = defaultdict(int)  
-        
+        # Identify polysemous words (words with >1 unique supersense group)
         for word, synsets in self.word_to_synsets.items():
             unique_groups = {group for _, group in synsets}
-            
             if len(unique_groups) > 1:
                 self.polysemous_words.append(word)
-                
-            for synset_id, _ in synsets:
-                    self.synset_polysemy_weights[synset_id] += 1
 
-        self.balanced_samples = []
+        # Compute sample weights
         self.sample_weights = []
+        max_group_size = max(len(g) for g in self.synset_groups.values()) if self.synset_groups else 1
         
-        max_samples = max(len(g) for g in self.synset_groups.values()) if self.synset_groups else 0
+        for sample in self.samples:
+            synset_id = sample["synset_id"]
+            word = sample["target_word"]
+            group_size = len(self.synset_groups[synset_id])
+            base_weight = max_group_size / group_size  
+            weight = base_weight * 2 if word in self.polysemous_words else base_weight
+            self.sample_weights.append(weight)
 
-        for synset_id, group_samples in self.synset_groups.items():
-            polysemy_weight = max(1, self.synset_polysemy_weights[synset_id])  
-            
-            repeat_count = max_samples // len(group_samples) * polysemy_weight
-            remainder = max_samples % len(group_samples)
-
-            repeated_samples = group_samples * repeat_count + group_samples[:remainder * polysemy_weight]
-            self.balanced_samples.extend(repeated_samples)
-
-            weight_val = 2.0 if polysemy_weight > 1 else 1.0
-            self.sample_weights.extend([weight_val] * len(repeated_samples))
-
-            
     def __len__(self):
-        return len(self.balanced_samples)
+        return len(self.samples)
     
-        
     def _get_supersense_group(self, supersense: str):
         if supersense.startswith('adj.') or supersense.startswith('adv.'):
             return 1
@@ -72,7 +57,7 @@ class PseudoSents_Dataset(Dataset):
             return 4
         
     def __getitem__(self, idx):
-        sample = self.balanced_samples[idx]
+        sample = self.samples[idx]
         return {
             "sentence": sample["sentence"],
             "target_word": sample["target_word"],
@@ -80,7 +65,6 @@ class PseudoSents_Dataset(Dataset):
         }
 
     def get_weighted_sampler(self):
-        """Tạo WeightedSampler cho việc lấy mẫu ưu tiên"""
         weights = torch.tensor(self.sample_weights, dtype=torch.float)
         return WeightedRandomSampler(
             weights, 
