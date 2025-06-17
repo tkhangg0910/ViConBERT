@@ -1,34 +1,80 @@
 from torch.optim import AdamW
 
 def create_optimizer(model, config):
-    no_decay = ["bias", "LayerNorm.weight"]
-    base_model_params = []
-    custom_params = []
+    """
+    Create optimizer with different learning rates for base model and custom layers
+    
+    Args:
+        model: The neural network model
+        config: Configuration dictionary
+        
+    Returns:
+        AdamW optimizer with parameter groups
+    """
+    # Parameters that should not have weight decay (biases and layer norms)
+    no_decay = ["bias", "LayerNorm.weight", "layernorm.weight"]
+    
+    # Separate parameters into base model and custom layers
+    base_model_decay = []
+    base_model_no_decay = []
+    custom_decay = []
+    custom_no_decay = []
     
     for name, param in model.named_parameters():
+        if not param.requires_grad:
+            continue
+            
+        # Check if parameter belongs to base model (PhoBERT)
         if "base_model" in name:
             if any(nd in name for nd in no_decay):
-                base_model_params.append(param)
+                base_model_no_decay.append(param)
             else:
-                base_model_params.append(param)
+                base_model_decay.append(param)
         else:
-            custom_params.append(param)
+            # Custom layers (FusionBlock, Pooling layers, etc.)
+            if any(nd in name for nd in no_decay):
+                custom_no_decay.append(param)
+            else:
+                custom_decay.append(param)
     
+    # Create parameter groups with different learning rates and weight decay
     optimizer_groups = [
         {
-            "params": base_model_params,
+            "params": base_model_decay,
             "lr": config["training"]["optimizer"]["lr_base"],
             "weight_decay": config["training"]["optimizer"]["weight_decay"]
         },
         {
-            "params": custom_params,
+            "params": base_model_no_decay,
+            "lr": config["training"]["optimizer"]["lr_base"],
+            "weight_decay": 0.0  # No weight decay for biases and layer norms
+        },
+        {
+            "params": custom_decay,
             "lr": config["training"]["optimizer"]["lr_custom"],
             "weight_decay": config["training"]["optimizer"]["weight_decay"]
+        },
+        {
+            "params": custom_no_decay,
+            "lr": config["training"]["optimizer"]["lr_custom"],
+            "weight_decay": 0.0  # No weight decay for biases and layer norms
         }
     ]
     
-    return AdamW(
+    # Filter out empty parameter groups
+    optimizer_groups = [group for group in optimizer_groups if len(group["params"]) > 0]
+    
+    # Create optimizer
+    optimizer = AdamW(
         optimizer_groups,
         eps=config["training"]["optimizer"]["eps"],
         betas=config["training"]["optimizer"]["betas"]
     )
+    
+    # Print parameter group information for debugging
+    print("Optimizer parameter groups:")
+    for i, group in enumerate(optimizer.param_groups):
+        param_count = sum(p.numel() for p in group['params'])
+        print(f"  Group {i}: {param_count:,} parameters, LR={group['lr']:.2e}, WD={group['weight_decay']}")
+    
+    return optimizer
