@@ -72,7 +72,7 @@ class SpanExtractor:
             start = pos + 1
 
         if not matches:
-            self.logger.warning(f"Target phrase '{target_phrase}' not found in text")
+            self.logger.warning(f"Could not find token indices for '{target_phrase}' in '{text}'")
             return None
 
         # Try each match to find the best token alignment
