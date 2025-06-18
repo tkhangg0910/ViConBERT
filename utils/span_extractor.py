@@ -106,3 +106,23 @@ class SpanExtractor:
 
         self.logger.warning(f"Could not find token indices for '{target_phrase}'")
         return None
+    
+    def get_span_text_from_indices(self, text, span_indices):
+        """Lấy văn bản tương ứng với chỉ số span - phiên bản cải thiện"""
+        if span_indices is None:
+            return None
+        encoding = self.tokenizer(text, return_offsets_mapping=True, add_special_tokens=True)
+        start_idx, end_idx = span_indices
+
+        # Kiểm tra chỉ số hợp lệ
+        if start_idx >= len(encoding["offset_mapping"]) or end_idx >= len(encoding["offset_mapping"]):
+            return None
+
+        # Lấy offset mapping cho span
+        start_char = encoding["offset_mapping"][start_idx][0]
+        end_char = encoding["offset_mapping"][end_idx][1]
+
+        # Trích xuất văn bản trực tiếp từ vị trí ký tự
+        span_text = text[start_char:end_char]
+
+        return span_text

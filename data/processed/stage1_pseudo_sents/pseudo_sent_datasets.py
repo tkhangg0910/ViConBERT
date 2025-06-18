@@ -2,11 +2,13 @@ from torch.utils.data import Dataset, WeightedRandomSampler
 from collections import defaultdict
 from transformers import PreTrainedTokenizerFast
 import torch
+from tqdm import tqdm
+import numpy as np
 from utils.span_extractor import SpanExtractor
 from utils.process_data import text_normalize
 
 class PseudoSents_Dataset(Dataset):
-    def __init__(self, samples):
+    def __init__(self, samples, tokenizer_name="vinai/phobert-base"):
         self.samples = samples
         self.word_to_synsets = defaultdict(list)
         self.synset_groups = defaultdict(list)
@@ -14,8 +16,20 @@ class PseudoSents_Dataset(Dataset):
         self.synset_to_group = {}
         self.polysemous_words = []
 
+        print("Normalizing text...")
+        sentences = [s["sentence"] for s in samples]
+        target_words = [s["target_word"] for s in samples]
+
+        normalized_sentences = [text_normalize(s) for s in tqdm(sentences)]
+        normalized_targets = [text_normalize(tw) for tw in tqdm(target_words)]
+
+        for i, sample in enumerate(samples):
+            sample["sentence"] = normalized_sentences[i]
+            sample["target_word"] = normalized_targets[i]
+        
         # Build dictionaries and identify polysemous words
-        for sample in samples:
+        print("Building dictionaries...")
+        for sample in tqdm(samples):
             synset_id = sample["synset_id"]
             word = sample["target_word"]
             supersense = sample["supersense"]
@@ -27,22 +41,41 @@ class PseudoSents_Dataset(Dataset):
             self.synset_to_group[synset_id] = group
 
         # Identify polysemous words (words with >1 unique supersense group)
-        for word, synsets in self.word_to_synsets.items():
+        print("Identifying polysemous words...")
+        for word, synsets in tqdm(self.word_to_synsets.items()):
             unique_groups = {group for _, group in synsets}
             if len(unique_groups) > 1:
                 self.polysemous_words.append(word)
 
         # Compute sample weights
+        print("Computing sample weights...")
         self.sample_weights = []
         max_group_size = max(len(g) for g in self.synset_groups.values()) if self.synset_groups else 1
         
-        for sample in self.samples:
+        for sample in tqdm(samples):
             synset_id = sample["synset_id"]
             word = sample["target_word"]
             group_size = len(self.synset_groups[synset_id])
             base_weight = max_group_size / group_size  
             weight = base_weight * 2 if word in self.polysemous_words else base_weight
             self.sample_weights.append(weight)
+        print("Precomputing span indices...")
+        
+        self.tokenizer = PreTrainedTokenizerFast.from_pretrained(tokenizer_name, use_fast=True)
+        self.span_extractor = SpanExtractor(self.tokenizer)
+
+        self.span_indices = []
+        for sample in tqdm(samples):
+            text = sample["sentence"]
+            target = sample["target_word"]
+            indices = self.span_extractor.get_span_indices(text, target)
+            if indices:
+                pred = self.span_extractor.get_span_text_from_indices(text,indices)
+                if target.lower().strip()!= pred.lower().strip():
+                    print(f"sentence: {text}")
+                    print(f"target: {target}")
+                    print(f"pred: {pred}")
+            self.span_indices.append(indices if indices else (0, 0))
 
     def __len__(self):
         return len(self.samples)
@@ -62,7 +95,8 @@ class PseudoSents_Dataset(Dataset):
         return {
             "sentence": sample["sentence"],
             "target_word": sample["target_word"],
-            "synset_id": sample["synset_id"]
+            "synset_id": sample["synset_id"],
+            "span_indices": self.span_indices[idx]
         }
 
     def get_weighted_sampler(self):
@@ -74,11 +108,15 @@ class PseudoSents_Dataset(Dataset):
         )
 
 def custom_collate_fn(batch):
-    sentences = [text_normalize(item["sentence"]) for item in batch]
+    sentences = [item["sentence"] for item in batch]
     target_words = [item["target_word"] for item in batch]
     synset_ids = [item["synset_id"] for item in batch]
+    span_indices = [item["span_indices"] for item in batch]
+
     
-    tokenizer = PreTrainedTokenizerFast.from_pretrained("vinai/phobert-base")
+    tokenizer = batch[0]["tokenizer"] if "tokenizer" in batch[0] else \
+        PreTrainedTokenizerFast.from_pretrained("vinai/phobert-base")
+
     inputs = tokenizer(
         sentences, 
         padding=True, 
@@ -87,16 +125,13 @@ def custom_collate_fn(batch):
         return_offsets_mapping=True,
         max_length=512
     )
-    span_extractor = SpanExtractor(tokenizer)
-    span_indices = []
-    for text, target in zip(sentences, target_words):
-        indices = span_extractor.get_span_indices(text, target)
-        span_indices.append(indices if indices else (0, 0))
     
+
     return {
         "input_ids": inputs["input_ids"],
-        "attn_mask":inputs["attention_mask"],
+        "attn_mask": inputs["attention_mask"],
         "span_indices": torch.tensor(span_indices),
         "synset_ids": torch.tensor(synset_ids)
     }
+
      
