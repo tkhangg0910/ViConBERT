@@ -21,7 +21,7 @@ class PseudoSents_Dataset(Dataset):
         target_words = [s["target_word"] for s in samples]
 
         normalized_sentences = [text_normalize(s) for s in tqdm(sentences)]
-        normalized_targets = [text_normalize(tw) for tw in tqdm(target_words)]
+        normalized_targets = [tw for tw in tqdm(target_words)]
 
         for i, sample in enumerate(samples):
             sample["sentence"] = normalized_sentences[i]
@@ -123,6 +123,7 @@ def custom_collate_fn(batch):
         truncation=True, 
         return_tensors="pt",
         return_offsets_mapping=True,
+        add_special_tokens=True,
         max_length=512
     )
     
