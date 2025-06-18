@@ -1,76 +1,10 @@
+import logging
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from transformers import AutoModel, PreTrainedTokenizerFast
 from typing import List, Optional, Tuple, Dict
-import logging
-
-class SpanExtractor:
-    """Extracts start and end indices for target phrases in Vietnamese text"""
-    
-    def __init__(self, tokenizer):
-        self.tokenizer = tokenizer
-        self.logger = logging.getLogger(__name__)
-    
-    def get_span_indices(self, text: str, target_phrase: str) -> Optional[Tuple[int, int]]:
-        """
-        Finds start and end token indices for target phrase
-        Handles Vietnamese subword tokenization with improved accuracy
-        
-        Args:
-            text: Full input text
-            target_phrase: Target phrase to locate
-            
-        Returns:
-            Tuple (start_idx, end_idx) if found, else None
-        """
-        # Normalize whitespace for better matching
-        text = ' '.join(text.split())
-        target_phrase = ' '.join(target_phrase.split())
-        
-        # Find character-level position
-        start_char = text.find(target_phrase)
-        if start_char == -1:
-            self.logger.warning(f"Target phrase '{target_phrase}' not found in text")
-            return None
-        
-        end_char = start_char + len(target_phrase)
-        
-        # Tokenize with offset mapping
-        encoding = self.tokenizer(
-            text, 
-            return_offsets_mapping=True, 
-            truncation=True, 
-            max_length=512,
-            add_special_tokens=True
-        )
-        offsets = encoding["offset_mapping"]
-        
-        # Find tokens within target span
-        start_idx, end_idx = None, None
-        
-        for i, (char_start, char_end) in enumerate(offsets):
-            # Skip special tokens with (0, 0) offsets
-            if char_start == 0 and char_end == 0 and i > 0:
-                continue
-                
-            # Check if token overlaps with target span
-            if char_end <= start_char:
-                continue
-            if char_start >= end_char:
-                break
-                
-            # Token is within or overlaps target span
-            if start_idx is None and char_start < end_char:
-                start_idx = i
-            if char_start < end_char:
-                end_idx = i
-        
-        if start_idx is not None and end_idx is not None:
-            return (start_idx, end_idx)
-        
-        self.logger.warning(f"Could not find token indices for '{target_phrase}'")
-        return None
+from utils.span_extractor import SpanExtractor
 
 class FusionBlock(nn.Module):
     """Enhanced neural block to combine CLS and span representations"""

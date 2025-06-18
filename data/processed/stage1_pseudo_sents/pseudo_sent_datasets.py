@@ -1,8 +1,9 @@
 from torch.utils.data import Dataset, WeightedRandomSampler
 from collections import defaultdict
-from models.base_model import SpanExtractor
-from transformers import AutoTokenizer
+from transformers import PreTrainedTokenizerFast
 import torch
+from utils.span_extractor import SpanExtractor
+from utils.process_data import text_normalize
 
 class PseudoSents_Dataset(Dataset):
     def __init__(self, samples):
@@ -73,16 +74,17 @@ class PseudoSents_Dataset(Dataset):
         )
 
 def custom_collate_fn(batch):
-    sentences = [item["sentence"] for item in batch]
+    sentences = [text_normalize(item["sentence"]) for item in batch]
     target_words = [item["target_word"] for item in batch]
     synset_ids = [item["synset_id"] for item in batch]
     
-    tokenizer = AutoTokenizer.from_pretrained("vinai/phobert-base")
+    tokenizer = PreTrainedTokenizerFast.from_pretrained("vinai/phobert-base")
     inputs = tokenizer(
         sentences, 
         padding=True, 
         truncation=True, 
         return_tensors="pt",
+        return_offsets_mapping=True,
         max_length=512
     )
     span_extractor = SpanExtractor(tokenizer)

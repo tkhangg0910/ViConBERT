@@ -3,7 +3,8 @@ import os
 from collections import defaultdict
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from load_config import load_config
+from underthesea.pipeline.text_normalize import token_normalize
+from underthesea.pipeline.word_tokenize.regex_tokenize import tokenize
 
 def split_contrastive_stage1_data(pseudo_sent_path, word_synsets_path, output_dir):
     word_synsets = pd.read_csv(word_synsets_path)
@@ -39,3 +40,18 @@ def split_contrastive_stage1_data(pseudo_sent_path, word_synsets_path, output_di
         json.dump([{"word_id": w, "sentence": s,"target_word": target,"supersense":supersense, "synset_id": synset_id} 
                 for synset_id, group in valid_data.items() 
                 for w,target,supersense, s in group], f, ensure_ascii=False,indent=2)
+        
+def text_normalize(text, tokenizer='underthesea'):
+      """
+
+      Args:
+          tokenizer (str): space or underthesea
+      """
+
+      if tokenizer == 'underthesea':
+          tokens = tokenize(text, fixed_words=["3d","t\"rưng"])
+      else:
+          tokens = text.split(" ")
+      normalized_tokens = [token_normalize(token) for token in tokens]
+      normalized_text = " ".join(normalized_tokens)
+      return normalized_text
