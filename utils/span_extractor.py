@@ -104,7 +104,7 @@ class SpanExtractor:
                 # print(f"Debug - Corresponding tokens: {tokens[start_idx:end_idx+1]}")
                 return (start_idx, end_idx)
 
-        self.logger.warning(f"Could not find token indices for '{target_phrase}'")
+        self.logger.warning(f"Could not find token indices for '{target_phrase}' in '{text}'")
         return None
     
     def get_span_text_from_indices(self, text, span_indices):
