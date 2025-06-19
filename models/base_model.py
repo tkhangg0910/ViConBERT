@@ -130,21 +130,6 @@ class LayerwiseCLSPooling(nn.Module):
         pooled = torch.sum(all_layer_cls * beta.unsqueeze(-1), dim=1)  # [batch, d]
         return pooled
 
-class FixedRobertaModel(nn.Module):
-    """Wrapper to completely disable token_type_ids in RoBERTa"""
-    def __init__(self, model):
-        super().__init__()
-        self.model = model
-        self.config = model.config
-        
-    def forward(self, input_ids, attention_mask, **kwargs):
-        # Always override token_type_ids to None
-        return self.model(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            token_type_ids=None,
-            **kwargs
-        )
 class SynoViSenseEmbedding(nn.Module):
     """
     Enhanced Vietnamese Contextual Embedding Model
@@ -179,12 +164,11 @@ class SynoViSenseEmbedding(nn.Module):
         self.logger = logging.getLogger(__name__)
         
         # Initialize base model
-        base = AutoModel.from_pretrained(
+        self.base_model = AutoModel.from_pretrained(
             model_name,
             output_hidden_states=(cls_method == "layerwise")
             ,cache_dir=cache_dir
         )
-        self.base_model = FixedRobertaModel(base)
         if hasattr(self.base_model, "token_type_ids"):
             del self.base_model.token_type_ids
         self.base_model.register_buffer("token_type_ids", None)
