@@ -39,10 +39,7 @@ if __name__=="__main__":
     )
 
     train_dataloader = DataLoader(train_set,
-                                  config["training"]["batch_size"],
                                   batch_sampler=b_sampler,
-                                  shuffle=config["training"]["shuffle"],
-                                  sampler=train_set.get_weighted_sampler(),
                                   collate_fn=custom_collate_fn,
                                   num_workers=config["data"]["num_workers"],
                                   pin_memory=True
