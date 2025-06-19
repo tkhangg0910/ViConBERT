@@ -22,11 +22,11 @@ training:
   ckpt_interval: 10
   shuffle: False
   batch_size: 128
-  epochs: 20
+  epochs: 50
   learning_rate: 2e-5
   warmup_steps: 1000
   max_seq_length: 128
-  early_stopping_patience: 3
+  early_stopping_patience: 5
   save_steps: 1000
   optimizer:
     name: "adamw"
