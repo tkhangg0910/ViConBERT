@@ -129,12 +129,15 @@ def custom_collate_fn(batch):
         padding=True, 
         truncation=True, 
         return_tensors="pt",
-        return_offsets_mapping=True,
         add_special_tokens=True,
         max_length=512,
-        return_token_type_ids=False
+        return_token_type_ids=False,  
+        return_attention_mask=True,
+        return_offsets_mapping=False   
     )
-    
+    if "token_type_ids" in inputs:
+        del inputs["token_type_ids"]
+
 
     return {
         "input_ids": inputs["input_ids"],
