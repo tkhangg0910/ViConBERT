@@ -8,7 +8,7 @@ from utils.span_extractor import SpanExtractor
 from utils.process_data import text_normalize
 
 class PseudoSents_Dataset(Dataset):
-    def __init__(self, samples, tokenizer_name="vinai/phobert-base"):
+    def __init__(self, samples, tokenizer):
         self.samples = samples
         self.word_to_synsets = defaultdict(list)
         self.synset_groups = defaultdict(list)
@@ -61,7 +61,7 @@ class PseudoSents_Dataset(Dataset):
             self.sample_weights.append(weight)
         print("Precomputing span indices...")
         
-        self.tokenizer = PreTrainedTokenizerFast.from_pretrained(tokenizer_name, use_fast=True)
+        self.tokenizer = tokenizer
         if self.tokenizer.pad_token is None:
             self.tokenizer.add_special_tokens({'pad_token': '[PAD]'})
         self.span_extractor = SpanExtractor(self.tokenizer)

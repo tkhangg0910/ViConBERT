@@ -100,14 +100,14 @@ class SpanExtractor:
                     start_idx = i
                 end_idx = i
 
+            max_length = self.tokenizer.model_max_length - 2  
             
             if start_idx is not None and end_idx is not None:
                 # print(f"Debug - Found token range: {start_idx}-{end_idx}")
                 # print(f"Debug - Corresponding tokens: {tokens[start_idx:end_idx+1]}")
-                start_idx = max(0, min(start_idx, max_token_idx))
-                end_idx = max(0, min(end_idx, max_token_idx))
-                if start_idx <= end_idx:
-                    return (start_idx, end_idx)
+                start_idx = min(start_idx, max_length)
+                end_idx = min(end_idx, max_length)
+                end_idx = max(start_idx, end_idx)
                 return (start_idx, end_idx)
 
         self.logger.warning(f"Could not find token indices for '{target_phrase}' in '{text}'")

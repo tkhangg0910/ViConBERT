@@ -137,6 +137,7 @@ class SynoViSenseEmbedding(nn.Module):
     """
     
     def __init__(self, 
+                 tokenizer,
                  model_name: str = "vinai/phobert-base",
                  cache_dir: str ="embeddings/base_models",
                  fusion_hidden_dim: int = 512,
@@ -168,7 +169,7 @@ class SynoViSenseEmbedding(nn.Module):
             output_hidden_states=(cls_method == "layerwise")
             ,cache_dir=cache_dir
         )
-        self.tokenizer = PreTrainedTokenizerFast.from_pretrained(model_name)
+        self.tokenizer = tokenizer
         self.hidden_size = self.base_model.config.hidden_size
         
         # Freeze base model if requested
@@ -199,7 +200,9 @@ class SynoViSenseEmbedding(nn.Module):
             output_dim=self.hidden_size,
             dropout=dropout
         )
-        
+        if tokenizer.pad_token is None:
+            tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+
         # Layer normalization for span representations
         self.span_norm = nn.LayerNorm(self.hidden_size)
         

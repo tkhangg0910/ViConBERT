@@ -10,6 +10,7 @@ from utils.optimizer import create_optimizer
 from utils.loss_fn import stage_1_supcon_loss
 from trainings.utils import train_model
 from transformers.utils import is_torch_available
+from transformers import PreTrainedTokenizerFast
 
 if is_torch_available() and torch.multiprocessing.get_start_method() == "fork":
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -22,8 +23,12 @@ if __name__=="__main__":
     with open(config["data"]["valid_path"], "r") as f:
         valid_sample = json.load(f)
         
-    train_set = PseudoSents_Dataset(train_sample)
-    valid_set = PseudoSents_Dataset(valid_sample)
+    tokenizer = PreTrainedTokenizerFast.from_pretrained(config["base_model"])
+    if tokenizer.pad_token is None:
+        tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+
+    train_set = PseudoSents_Dataset(train_sample, tokenizer)
+    valid_set = PseudoSents_Dataset(valid_sample, tokenizer)
     
     train_dataloader = DataLoader(train_set,
                                   config["training"]["batch_size"],
@@ -43,7 +48,8 @@ if __name__=="__main__":
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
-    model = SynoViSenseEmbedding(model_name=config["base_model"],
+    model = SynoViSenseEmbedding(tokenizer,
+                                model_name=config["base_model"],
                                  cache_dir=config["base_model_cache_dir"],
                                  fusion_hidden_dim=config["model"]["fusion_hidden_dim"],
                                  span_method=config["model"]["span_method"],
