@@ -1,16 +1,18 @@
 import json
 import os
+
 import torch
 from transformers import get_linear_schedule_with_warmup
 from torch.utils.data import DataLoader
-from data.processed.stage1_pseudo_sents.pseudo_sent_datasets import PseudoSents_Dataset, custom_collate_fn
+from transformers.utils import is_torch_available
+from transformers import PreTrainedTokenizerFast
+
+from data.processed.stage1_pseudo_sents.pseudo_sent_datasets import PseudoSents_Dataset, custom_collate_fn, ProportionalBatchSampler
 from models.base_model import SynoViSenseEmbedding
 from utils.load_config import load_config
 from utils.optimizer import create_optimizer
 from utils.loss_fn import stage_1_supcon_loss
 from trainings.utils import train_model
-from transformers.utils import is_torch_available
-from transformers import PreTrainedTokenizerFast
 
 if is_torch_available() and torch.multiprocessing.get_start_method() == "fork":
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -29,7 +31,13 @@ if __name__=="__main__":
 
     train_set = PseudoSents_Dataset(train_sample, tokenizer)
     valid_set = PseudoSents_Dataset(valid_sample, tokenizer)
-    
+    sampler = ProportionalBatchSampler(
+        dataset=train_set,
+        batch_size=32,
+        positive_ratio=config["training"]["batch_sampler"]["pos_ratio"], 
+        min_positive_samples=config["training"]["batch_sampler"]["min_pos"]  
+    )
+
     train_dataloader = DataLoader(train_set,
                                   config["training"]["batch_size"],
                                   shuffle=config["training"]["shuffle"],

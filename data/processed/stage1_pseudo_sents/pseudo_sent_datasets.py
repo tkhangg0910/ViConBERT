@@ -1,3 +1,4 @@
+import random
 from torch.utils.data import Dataset, WeightedRandomSampler
 from collections import defaultdict
 from transformers import PreTrainedTokenizerFast
@@ -142,3 +143,75 @@ def custom_collate_fn(batch):
     }
 
      
+class ProportionalBatchSampler:
+    def __init__(self,dataset, batch_size, positive_ratio=0.3, min_positive_samples=2):
+        """
+        Args:
+            positive_ratio: proportion of positive samples in batch (0.0 - 1.0)
+            min_positive_samples: min number of positive samples in a batch
+        """
+        self.dataset = dataset
+        self.batch_size = batch_size
+        self.positive_ratio = positive_ratio
+        self.min_positive_samples = min_positive_samples
+        
+        self.positive_samples_per_batch = max(
+            min_positive_samples, 
+            int(batch_size * positive_ratio)
+        )
+
+        self.synset_to_indices = defaultdict(list)
+        for idx, sample in enumerate(dataset.samples):
+            synset_id = sample["synset_id"]
+            self.synset_to_indices[synset_id].append(idx)
+
+        self.valid_synsets = [
+            synset for synset, indices in self.synset_to_indices.items()
+            if len(indices) >= min_positive_samples
+        ]
+
+        self.positive_groups = []
+
+        for synset in self.valid_synsets:
+            indices = self.synset_to_indices[synset]
+            random.shuffle(indices)
+            
+            for i in range(0, len(indices), min_positive_samples):
+                group = indices[i:i+min_positive_samples]
+                if len(group) == min_positive_samples:
+                    self.positive_groups.append(group)
+                    
+        self.all_indices = list(range(len(dataset)))
+        random.shuffle(self.all_indices)
+        
+        self.num_batches = len(self.all_indices) // (
+            batch_size - self.positive_samples_per_batch
+        )
+
+    def __iter__(self):
+        random.shuffle(self.positive_groups)
+        positive_group_iter = iter(self.positive_groups)
+        
+        random.shuffle(self.all_indices)
+        all_indices_iter = iter(self.all_indices)
+        
+        for _ in range(self.num_batches):
+            batch_indices = []
+            
+            try:
+                for _ in range(self.positive_samples_per_batch // self.min_positive_samples):
+                    batch_indices.extend(next(positive_group_iter))
+            except StopIteration:
+                pass
+            
+            remaining = self.batch_size - len(batch_indices)
+            for _ in range(remaining):
+                try:
+                    batch_indices.append(next(all_indices_iter))
+                except StopIteration:
+                    break
+            
+            yield batch_indices
+
+    def __len__(self):
+        return self.num_batches
