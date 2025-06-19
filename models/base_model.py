@@ -221,6 +221,7 @@ class SynoViSenseEmbedding(nn.Module):
         outputs = self.base_model(
             input_ids=input_ids,
             attention_mask=attention_mask,
+            token_type_ids=None,
             output_hidden_states=(self.cls_method == "layerwise")
         )
         
