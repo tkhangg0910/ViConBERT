@@ -28,6 +28,9 @@ training:
   max_seq_length: 128
   early_stopping_patience: 5
   save_steps: 1000
+  batch_sampler:
+    min_pos: 2
+    pos_ratio: 0.4
   optimizer:
     name: "adamw"
     lr_base: 2e-5        
