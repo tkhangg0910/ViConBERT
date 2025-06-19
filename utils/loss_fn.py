@@ -36,5 +36,3 @@ class stage_1_supcon_loss(nn.Module):
         
         return loss
 
-# Sử dụng
-loss_fn = HardSupConLoss(temp=0.07, margin=0.3)
