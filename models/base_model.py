@@ -57,6 +57,28 @@ class FusionBlock(nn.Module):
         
         return x
 
+class SpanGating(nn.Module):
+    def __init__(self, hidden_size):
+        super().__init__()
+        self.gate_net = nn.Sequential(
+            nn.Linear(2 * hidden_size, hidden_size),
+            nn.GELU(),
+            nn.LayerNorm(hidden_size),
+            nn.Linear(hidden_size, hidden_size),
+            nn.Sigmoid()
+        )
+        self.transform = nn.Sequential(
+            nn.Linear(hidden_size, hidden_size),
+            nn.GELU(),
+            nn.LayerNorm(hidden_size)
+        )
+        
+    def forward(self, span_rep, context_rep):
+        gate = self.gate_net(context_rep)
+        return self.transform(gate * span_rep + (1 - gate) * context_rep)
+
+
+
 class AttentivePooling(nn.Module):
     def __init__(self, hidden_size, attn_hidden=128):
         """
@@ -155,7 +177,8 @@ class SynoViSenseEmbedding(nn.Module):
         self.span_method = span_method
         self.cls_method = cls_method
         self.logger = logging.getLogger(__name__)
-        
+        self.span_gate = SpanGating(self.hidden_size)
+
         # Initialize base model
         self.base_model = AutoModel.from_pretrained(
             model_name,
@@ -239,7 +262,8 @@ class SynoViSenseEmbedding(nn.Module):
             last_hidden_state, 
             span_indices,
         )
-        
+        span_rep = self.span_gate(span_rep, cls_embed)
+
         # Combine and fuse representations
         combined = torch.cat([cls_embed, span_rep], dim=-1)
         return self.fusion(combined)

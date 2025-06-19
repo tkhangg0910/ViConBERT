@@ -1,33 +1,40 @@
 import torch
 import torch.nn.functional as F
+import torch.nn as nn
 
-def stage_1_supcon_loss(features, labels, temp=0.1):
-    device = features.device
-    batch_size = features.shape[0]
-    
-    if torch.isnan(features).any() or torch.isinf(features).any():
-        return torch.tensor(0.0, device=device)
+class stage_1_supcon_loss(nn.Module):
+    def __init__(self, temp=0.1, margin=0.5):
+        super().__init__()
+        self.temp = temp
+        self.margin = margin
+        
+    def forward(self, features, labels):
+        device = features.device
+        batch_size = features.shape[0]
+        
+        # Chuẩn hóa features
+        features = F.normalize(features, p=2, dim=1)
+        
+        # Tính similarity matrix
+        sim_matrix = torch.matmul(features, features.T) / self.temp
+        
+        # Tạo mask cho positive pairs
+        label_mask = torch.eq(labels.unsqueeze(1), labels.unsqueeze(0)).float()
+        positive_mask = label_mask - torch.eye(batch_size, device=device)
+        
+        # Tìm hardest negatives
+        negative_mask = 1 - label_mask
+        negatives = sim_matrix * negative_mask
+        hardest_negatives, _ = negatives.max(dim=1, keepdim=True)
+        
+        # Modified SupCon loss với hard negative mining
+        numerator = torch.exp(sim_matrix) * positive_mask
+        denominator = torch.exp(sim_matrix) + torch.exp(hardest_negatives + self.margin)
+        
+        log_prob = torch.log(numerator.sum(dim=1, keepdim=True) / denominator.sum(dim=1, keepdim=True))
+        loss = -log_prob.mean()
+        
+        return loss
 
-    features = F.normalize(features, p=2, dim=1)
-
-
-    similarity_matrix = torch.matmul(features, features.T) / temp
-    
-    mask = torch.eq(labels.unsqueeze(1), labels.unsqueeze(0)).float().to(device)
-    
-    mask = mask * (1 - torch.eye(batch_size, device=device))  
-    
-    logits_max, _ = torch.max(similarity_matrix, dim=1, keepdim=True)
-
-    logits = similarity_matrix - logits_max.detach()
-
-    exp_logits = torch.exp(logits)
-
-    log_prob = logits - torch.log(exp_logits.sum(dim=1, keepdim=True) + 1e-8)
-
-    mean_log_prob_pos = (mask * log_prob).sum(dim=1) / (mask.sum(dim=1) + 1e-8)
-
-    
-    loss = -mean_log_prob_pos.mean()
-
-    return loss
+# Sử dụng
+loss_fn = HardSupConLoss(temp=0.07, margin=0.3)
