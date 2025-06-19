@@ -151,7 +151,6 @@ class ProportionalBatchSampler(BatchSampler):
         self.neg_per_batch = batch_size - self.pos_per_batch
         self.dataset = dataset
         
-        # Xác định số batch thực tế
         self.num_batches = len(dataset) // batch_size
         
         # Build groups of "min_positive_samples" for each synset
@@ -163,7 +162,6 @@ class ProportionalBatchSampler(BatchSampler):
         for syn, idxs in syn2idx.items():
             if len(idxs) >= min_positive_samples:
                 random.shuffle(idxs)
-                # Chỉ lấy đủ số nhóm cần thiết
                 num_groups_needed = min(len(idxs) // min_positive_samples, self.num_batches // len(syn2idx))
                 for i in range(0, num_groups_needed * min_positive_samples, min_positive_samples):
                     grp = idxs[i:i+min_positive_samples]
