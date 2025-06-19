@@ -99,10 +99,15 @@ class SpanExtractor:
                     start_idx = i
                 end_idx = i
 
+            max_length = 512
+
             if start_idx is not None and end_idx is not None:
                 # print(f"Debug - Found token range: {start_idx}-{end_idx}")
                 # print(f"Debug - Corresponding tokens: {tokens[start_idx:end_idx+1]}")
+                start_idx = min(start_idx, max_length - 1)
+                end_idx = min(end_idx, max_length - 1)
                 return (start_idx, end_idx)
+
 
         self.logger.warning(f"Could not find token indices for '{target_phrase}' in '{text}'")
         return None
