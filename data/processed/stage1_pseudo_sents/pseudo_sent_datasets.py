@@ -144,29 +144,35 @@ def custom_collate_fn(batch):
     }
 
      
-
 class ProportionalBatchSampler(BatchSampler):
     def __init__(self, dataset, batch_size, positive_ratio=0.3, min_positive_samples=2):
-        # how many positives per batch?
         self.batch_size = batch_size
         self.pos_per_batch = max(min_positive_samples, int(batch_size * positive_ratio))
         self.neg_per_batch = batch_size - self.pos_per_batch
-
-        # build groups of “min_positive_samples” for each synset
+        self.dataset = dataset
+        
+        # Xác định số batch thực tế
+        self.num_batches = len(dataset) // batch_size
+        
+        # Build groups of "min_positive_samples" for each synset
         syn2idx = defaultdict(list)
         for i, s in enumerate(dataset.samples):
             syn2idx[s['synset_id']].append(i)
+        
         self.pos_groups = []
         for syn, idxs in syn2idx.items():
             if len(idxs) >= min_positive_samples:
                 random.shuffle(idxs)
-                for i in range(0, len(idxs), min_positive_samples):
+                # Chỉ lấy đủ số nhóm cần thiết
+                num_groups_needed = min(len(idxs) // min_positive_samples, self.num_batches // len(syn2idx))
+                for i in range(0, num_groups_needed * min_positive_samples, min_positive_samples):
                     grp = idxs[i:i+min_positive_samples]
-                    if len(grp)==min_positive_samples:
+                    if len(grp) == min_positive_samples:
                         self.pos_groups.append(grp)
+        
         random.shuffle(self.pos_groups)
 
-        # build a WeightedRandomSampler for negatives
+        # Build a WeightedRandomSampler for negatives
         weights = torch.tensor(dataset.sample_weights, dtype=torch.double)
         self.neg_sampler = WeightedRandomSampler(weights, num_samples=len(dataset), replacement=True)
 
@@ -174,25 +180,21 @@ class ProportionalBatchSampler(BatchSampler):
         pos_iter = iter(self.pos_groups)
         neg_iter = iter(self.neg_sampler)
 
-        while True:
+        for _ in range(self.num_batches):
             try:
-                # grab one positive group
                 pos_batch = next(pos_iter)
             except StopIteration:
-                # reshuffle positives on epoch boundary
                 random.shuffle(self.pos_groups)
                 pos_iter = iter(self.pos_groups)
                 pos_batch = next(pos_iter)
 
             batch = list(pos_batch)
-
-            # fill the rest of the batch with weighted negatives
+            
+            # Fill with negatives
             for _ in range(self.neg_per_batch):
                 batch.append(next(neg_iter))
-
+                
             yield batch
 
     def __len__(self):
-        # define it so that one “epoch” uses each pos_group once
-        return len(self.pos_groups)
-
+        return self.num_batches
