@@ -202,9 +202,9 @@ class SynoViSenseEmbedding(nn.Module):
         )
         if tokenizer.pad_token is None:
             tokenizer.add_special_tokens({'pad_token': '[PAD]'})
-            self.base_model.resize_token_embeddings(len(tokenizer))
+        self.base_model.resize_token_embeddings(len(tokenizer))
 
-
+        
         # Layer normalization for span representations
         self.span_norm = nn.LayerNorm(self.hidden_size)
         
