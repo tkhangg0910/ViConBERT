@@ -166,13 +166,15 @@ class SynoViSenseEmbedding(nn.Module):
         # Initialize base model
         self.base_model = AutoModel.from_pretrained(
             model_name,
-            output_hidden_states=(cls_method == "layerwise")
-            ,cache_dir=cache_dir
+            output_hidden_states=(cls_method == "layerwise"),
+            cache_dir=cache_dir
         )
-        if hasattr(self.base_model, "token_type_ids"):
-            del self.base_model.token_type_ids
-        self.base_model.register_buffer("token_type_ids", None)
-
+        
+        # Handle tokenizer pad token
+        if tokenizer.pad_token is None:
+            tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+        self.base_model.resize_token_embeddings(len(tokenizer))
+        
         self.tokenizer = tokenizer
         self.hidden_size = self.base_model.config.hidden_size
         
@@ -188,7 +190,7 @@ class SynoViSenseEmbedding(nn.Module):
         if span_method == "attentive":
             self.attentive_pool = AttentivePooling(self.hidden_size)
         
-        elif cls_method == "layerwise":
+        if cls_method == "layerwise":
             self.layerwise_pool = LayerwiseCLSPooling(self.hidden_size, layerwise_attn_dim)
         
         # Determine fusion input dimension
@@ -204,10 +206,6 @@ class SynoViSenseEmbedding(nn.Module):
             output_dim=self.hidden_size,
             dropout=dropout
         )
-        if tokenizer.pad_token is None:
-            tokenizer.add_special_tokens({'pad_token': '[PAD]'})
-        self.base_model.resize_token_embeddings(len(tokenizer))
-
         
         # Layer normalization for span representations
         self.span_norm = nn.LayerNorm(self.hidden_size)
@@ -221,11 +219,11 @@ class SynoViSenseEmbedding(nn.Module):
         """
         Forward pass with flexible span representation
         """
-        # Base model forward
+        # Base model forward - explicitly set token_type_ids to None
         outputs = self.base_model(
             input_ids=input_ids,
             attention_mask=attention_mask,
-            token_type_ids=None,
+            token_type_ids=None,  # Explicitly pass None
             output_hidden_states=(self.cls_method == "layerwise")
         )
         
