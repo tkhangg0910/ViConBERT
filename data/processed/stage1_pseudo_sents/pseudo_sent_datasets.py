@@ -78,7 +78,7 @@ class PseudoSents_Dataset(Dataset):
                 #     print(f"sentence: {text}")
                 #     print(f"target: {target}")
                 #     print(f"pred: {pred}")
-            self.span_indices.append(indices if indices else (0, 0))
+                self.span_indices.append(indices if indices else (0, 0))
 
     def __len__(self):
         return len(self.samples)
