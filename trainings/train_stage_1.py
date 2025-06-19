@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 from transformers.utils import is_torch_available
 from transformers import PreTrainedTokenizerFast
 
-from data.processed.stage1_pseudo_sents.pseudo_sent_datasets import PseudoSents_Dataset, custom_collate_fn, ProportionalBatchSampler
+from data.processed.stage1_pseudo_sents.pseudo_sent_datasets import PseudoSents_Dataset, custom_collate_fn,CustomSynsetAwareBatchSampler
 from models.base_model import SynoViSenseEmbedding
 from utils.load_config import load_config
 from utils.optimizer import create_optimizer
@@ -31,15 +31,15 @@ if __name__=="__main__":
 
     train_set = PseudoSents_Dataset(train_sample, tokenizer)
     valid_set = PseudoSents_Dataset(valid_sample, tokenizer)
-    sampler = ProportionalBatchSampler(
-        dataset=train_set,
-        batch_size=config["training"]["batch_size"],
-        positive_ratio=config["training"]["batch_sampler"]["pos_ratio"], 
-        min_positive_samples=config["training"]["batch_sampler"]["min_pos"]  
-    )
+    
+    sampler = train_set.get_weighted_sampler()
+
+    custom_batch_sampler = CustomSynsetAwareBatchSampler(
+        train_set, sampler=sampler, batch_size=config["training"]["batch_size"], drop_last=False
+    )   
 
     train_dataloader = DataLoader(train_set,
-                                  batch_sampler=sampler,
+                                  batch_sampler=custom_batch_sampler,
                                   collate_fn=custom_collate_fn,
                                   num_workers=config["data"]["num_workers"],
                                   pin_memory=True
@@ -83,7 +83,7 @@ if __name__=="__main__":
         valid_data_loader=valid_dataloader,
         loss_fn=loss_fn,
         optimizer=optim,
-        scheduler=scheduler,  # Add scheduler parameter
+        scheduler=scheduler, 
         model=model,
         device=device,
         checkpoint_dir=config["output_dir"],

@@ -33,20 +33,16 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
 
     history = {
         'train_loss': [],
-        'train_acc': [],
         'valid_loss': [],
-        'valid_acc': [],
         'epoch_times': []
     }
-    best_valid_acc = 0.0
+    best_valid_loss = float('inf')
     patience_counter = 0
     
     for epoch in range(num_epochs):
         epoch_start_time = datetime.now()
         model.train()
         running_loss = 0.0
-        correct_train = 0
-        total_train = 0
 
         for batch in tqdm(train_data_loader, desc=f"Epoch {epoch+1}/{num_epochs}"):
             input_ids = batch['input_ids'].to(device)
@@ -66,22 +62,17 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
 
             # Calculate metrics
             running_loss += loss.item()
-            _, predicted = torch.max(outputs.data, 1)
-            total_train += synset_ids.size(0)
-            correct_train += (predicted == synset_ids).sum().item()
+
 
         # Calculate training metrics
         epoch_time = (datetime.now() - epoch_start_time).total_seconds()
         train_loss = running_loss / len(train_data_loader)
-        train_acc = correct_train / total_train
 
 
-        valid_loss, valid_acc = evaluate_model(model, valid_data_loader, loss_fn, device)
+        valid_loss = evaluate_model(model, valid_data_loader, loss_fn, device)
 
         history['train_loss'].append(train_loss)
-        history['train_acc'].append(train_acc)
         history['valid_loss'].append(valid_loss)
-        history['valid_acc'].append(valid_acc)
         history['epoch_times'].append(epoch_time)
 
         if epoch % ckpt_interval == 0:
@@ -92,20 +83,16 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
                 'optimizer_state_dict': optimizer.state_dict(),
                 'scheduler_state_dict': scheduler.state_dict() if scheduler else None,
                 'train_loss': train_loss,
-                'train_acc': train_acc,
                 'valid_loss': valid_loss,
-                'valid_acc': valid_acc,
             }, checkpoint_path)
 
-        
-        # statistics
         print(f"\nEpoch {epoch+1}/{num_epochs}:")
-        print(f"  Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f}")
-        print(f"  Valid Loss: {valid_loss:.4f} | Valid Acc: {valid_acc:.4f}")
-
+        print(f"  Train Loss: {train_loss:.4f}")
+        print(f"  Valid Loss: {valid_loss:.4f}")
+        
         # Checkpoint saving and early stopping
-        if valid_acc > best_valid_acc:
-            best_valid_acc = valid_acc
+        if valid_loss < best_valid_loss:
+            best_valid_loss = valid_loss
             best_model_path = os.path.join(run_dir, "best_model.pt")
             torch.save(model.state_dict(), best_model_path)
             patience_counter = 0
@@ -119,9 +106,8 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
         # Print epoch summary
         print(f"\nEpoch {epoch+1} Summary:")
         print(f"  Time: {epoch_time:.2f}s")
-        print(f"  Train Loss: {train_loss:.4f} | Acc: {train_acc:.4f}")
-        print(f"  Valid Loss: {valid_loss:.4f} | Acc: {valid_acc:.4f}")
-        print(f"  Best Valid Acc: {best_valid_acc:.4f}")
+        print(f"  Train Loss: {train_loss:.4f}")
+        print(f"  Valid Loss: {valid_loss:.4f}")
         print(f"  Early stopping counter: {patience_counter}/{early_stopping_patience}")
 
     final_model_path = os.path.join(run_dir, "final_model.pt")
@@ -130,7 +116,7 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
     history_path = os.path.join(run_dir, "training_history.pt")
     torch.save(history, history_path)
     
-    print(f"\nTraining completed. Best validation accuracy: {best_valid_acc:.4f}")
+    print(f"\nTraining completed. Best validation accuracy: {best_valid_loss:.4f}")
     print(f"All checkpoints and models saved to: {run_dir}")
     
     return history, model
@@ -159,6 +145,5 @@ def evaluate_model(model, data_loader, loss_fn, device):
             correct += (predicted == synset_ids).sum().item()
     
     avg_loss = running_loss / len(data_loader)
-    accuracy = correct / total if total > 0 else 0.0
     
-    return avg_loss, accuracy
+    return avg_loss

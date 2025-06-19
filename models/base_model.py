@@ -77,18 +77,14 @@ class AttentivePooling(nn.Module):
         Returns:
             pooled: Tensor shape [batch_size, hidden_size]
         """
-        # Tính attention scores
         e = torch.tanh(self.W(embeddings))  # [batch, seq_len, attn_hidden]
         scores = self.u(e).squeeze(-1)      # [batch, seq_len]
         
-        # Xử lý mask
         if mask is not None:
             scores = scores.masked_fill(~mask, float('-inf'))
         
-        # Tính trọng số attention
         alpha = F.softmax(scores, dim=-1)   # [batch, seq_len]
         
-        # Tổng hợp có trọng số
         pooled = torch.sum(embeddings * alpha.unsqueeze(-1), dim=1)  # [batch, hidden_size]
         return pooled
     
@@ -119,14 +115,11 @@ class LayerwiseCLSPooling(nn.Module):
         else:
             all_layer_cls = all_layer_cls_embeddings
         
-        # Tính attention scores cho các layer
         e = torch.tanh(self.U(all_layer_cls))  # [batch, L, layer_attn_hidden]
         scores = self.v(e).squeeze(-1)         # [batch, L]
         
-        # Tính trọng số layer attention
         beta = F.softmax(scores, dim=-1)       # [batch, L]
         
-        # Tổng hợp có trọng số
         pooled = torch.sum(all_layer_cls * beta.unsqueeze(-1), dim=1)  # [batch, d]
         return pooled
 
@@ -169,17 +162,11 @@ class SynoViSenseEmbedding(nn.Module):
             output_hidden_states=(cls_method == "layerwise"),
             cache_dir=cache_dir
         )
-        
-        # Handle tokenizer pad token
-        if tokenizer.pad_token is None:
-            tokenizer.add_special_tokens({'pad_token': '[PAD]'})
         self.base_model.resize_token_embeddings(len(tokenizer))
+
         
         self.tokenizer = tokenizer
         self.hidden_size = self.base_model.config.hidden_size
-        
-        # Fix for token_type_ids buffer issue
-        self._fix_token_type_ids_buffer()
         
         # Freeze base model if requested
         if freeze_base:
@@ -212,30 +199,6 @@ class SynoViSenseEmbedding(nn.Module):
         
         # Layer normalization for span representations
         self.span_norm = nn.LayerNorm(self.hidden_size)
-    
-    def _fix_token_type_ids_buffer(self):
-        """
-        Fix the token_type_ids buffer size issue by removing or resizing the buffer
-        """
-        try:
-            # Option 1: Remove the buffer entirely (safest approach)
-            if hasattr(self.base_model.embeddings, 'token_type_ids'):
-                delattr(self.base_model.embeddings, 'token_type_ids')
-                self.base_model.embeddings.register_buffer(
-                    'token_type_ids', 
-                    torch.zeros(1, 512, dtype=torch.long), 
-                    persistent=False
-                )
-            
-            # Alternative: For RoBERTa models specifically
-            if hasattr(self.base_model, 'embeddings') and hasattr(self.base_model.embeddings, 'token_type_embeddings'):
-                # RoBERTa doesn't use token_type_ids, so we can safely remove any buffers
-                for name, buffer in list(self.base_model.embeddings.named_buffers()):
-                    if 'token_type_ids' in name:
-                        delattr(self.base_model.embeddings, name)
-                        
-        except Exception as e:
-            self.logger.warning(f"Could not fix token_type_ids buffer: {e}")
         
     def forward(self, 
                 input_ids: torch.Tensor, 
@@ -246,29 +209,12 @@ class SynoViSenseEmbedding(nn.Module):
         """
         Forward pass with flexible span representation
         """
-        # Base model forward - explicitly set token_type_ids to None and use_cache=False
-        try:
-            outputs = self.base_model(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                token_type_ids=None,  # Explicitly pass None
-                output_hidden_states=(self.cls_method == "layerwise"),
-                use_cache=False  # Disable caching to avoid buffer issues
-            )
-        except RuntimeError as e:
-            if "expanded size" in str(e) and "token_type_ids" in str(e):
-                # Fallback: try with token_type_ids of correct size
-                batch_size, seq_len = input_ids.shape
-                token_type_ids = torch.zeros_like(input_ids, dtype=torch.long)
-                outputs = self.base_model(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                    token_type_ids=token_type_ids,
-                    output_hidden_states=(self.cls_method == "layerwise"),
-                    use_cache=False
-                )
-            else:
-                raise e
+        # Base model forward - explicitly set token_type_ids to None
+        outputs = self.base_model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            output_hidden_states=(self.cls_method == "layerwise")
+        )
         
         last_hidden_state = outputs.last_hidden_state
         

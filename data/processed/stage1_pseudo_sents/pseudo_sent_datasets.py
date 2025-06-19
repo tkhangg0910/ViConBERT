@@ -73,11 +73,11 @@ class PseudoSents_Dataset(Dataset):
             target = sample["target_word"]
             indices = self.span_extractor.get_span_indices(text, target)
             if indices:
-                pred = self.span_extractor.get_span_text_from_indices(text,indices)
-                if target.lower().strip()!= pred.lower().strip():
-                    print(f"sentence: {text}")
-                    print(f"target: {target}")
-                    print(f"pred: {pred}")
+                # pred = self.span_extractor.get_span_text_from_indices(text,indices)
+                # if target.lower().strip()!= pred.lower().strip():
+                #     print(f"sentence: {text}")
+                #     print(f"target: {target}")
+                #     print(f"pred: {pred}")
             self.span_indices.append(indices if indices else (0, 0))
 
     def __len__(self):
@@ -117,12 +117,9 @@ def custom_collate_fn(batch):
     synset_ids = [item["synset_id"] for item in batch]
     span_indices = [item["span_indices"] for item in batch]
 
-    
     tokenizer = batch[0]["tokenizer"] if "tokenizer" in batch[0] else \
         PreTrainedTokenizerFast.from_pretrained("vinai/phobert-base")
 
-    if tokenizer.pad_token is None:
-        tokenizer.add_special_tokens({'pad_token': '[PAD]'})
 
     inputs = tokenizer(
         sentences, 
@@ -146,60 +143,53 @@ def custom_collate_fn(batch):
         "synset_ids": torch.tensor(synset_ids)
     }
 
-     
-class ProportionalBatchSampler(BatchSampler):
-    def __init__(self, dataset, batch_size, positive_ratio=0.3, min_positive_samples=2):
+class CustomSynsetAwareBatchSampler(BatchSampler):
+    def __init__(self, dataset, sampler, batch_size, drop_last=False):
+        self.dataset = dataset
+        self.sampler = sampler
         self.batch_size = batch_size
-        self.pos_per_batch = max(min_positive_samples, int(batch_size * positive_ratio))
-        self.neg_per_batch = batch_size - self.pos_per_batch
-        self.dataset_size = len(dataset)
-        
-        # Build synset groups
-        syn2idx = defaultdict(list)
-        for i, s in enumerate(dataset.samples):
-            syn2idx[s['synset_id']].append(i)
-        
-        self.pos_groups = []
-        for syn, idxs in syn2idx.items():
-            if len(idxs) >= min_positive_samples:
-                random.shuffle(idxs)
-                self.pos_groups.extend(idxs)  # Lưu tất cả index chứ không nhóm
-        
-        # Weighted sampler cho negative samples
-        weights = torch.tensor(dataset.sample_weights, dtype=torch.double)
-        self.neg_sampler = WeightedRandomSampler(weights, 
-                                               num_samples=len(dataset), 
-                                               replacement=True)
-        
-        # Tính toán số batch mỗi epoch
-        self.num_batches = (len(self.pos_groups) + self.dataset_size) // batch_size
+        self.drop_last = drop_last
+
+        # Map from synset_id to indices
+        self.synset_to_indices = defaultdict(list)
+        for idx, sample in enumerate(dataset.samples):
+            self.synset_to_indices[sample["synset_id"]].append(idx)
 
     def __iter__(self):
-        # Trộn positive indices
-        random.shuffle(self.pos_groups)
-        pos_iter = iter(self.pos_groups)
-        neg_iter = iter(self.neg_sampler)
-        
-        for _ in range(self.num_batches):
+        sampled_indices = list(self.sampler)
+        random.shuffle(sampled_indices)
+
+        i = 0
+        while i < len(sampled_indices):
             batch = []
-            
-            # Thêm positive samples
-            try:
-                for _ in range(self.pos_per_batch):
-                    batch.append(next(pos_iter))
-            except StopIteration:
-                pass  # Hết positive samples
-                
-            # Thêm negative samples cho đủ batch size
             while len(batch) < self.batch_size:
-                try:
-                    batch.append(next(neg_iter))
-                except StopIteration:
-                    # Reset sampler nếu cần
-                    neg_iter = iter(self.neg_sampler)
-                    batch.append(next(neg_iter))
-            
-            yield batch
+                if i >= len(sampled_indices):
+                    break
+                idx = sampled_indices[i]
+                i += 1
+                synset_id = self.dataset.samples[idx]["synset_id"]
+
+                # Add 50% of the batch from the same synset
+                synset_indices = self.synset_to_indices[synset_id]
+                same_synset_indices = random.sample(
+                    synset_indices,
+                    min(len(synset_indices), self.batch_size // 2)
+                )
+
+                batch = same_synset_indices.copy()
+
+                # Fill the rest with other random samples
+                while len(batch) < self.batch_size and i < len(sampled_indices):
+                    rand_idx = sampled_indices[i]
+                    if rand_idx not in batch:
+                        batch.append(rand_idx)
+                    i += 1
+
+                if len(batch) == self.batch_size or (not self.drop_last and len(batch) > 0):
+                    yield batch
 
     def __len__(self):
-        return self.num_batches
+        if self.drop_last:
+            return len(self.sampler) // self.batch_size
+        else:
+            return (len(self.sampler) + self.batch_size - 1) // self.batch_size
