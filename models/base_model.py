@@ -169,10 +169,6 @@ class SynoViSenseEmbedding(nn.Module):
             output_hidden_states=(cls_method == "layerwise")
             ,cache_dir=cache_dir
         )
-        if hasattr(self.base_model, "token_type_ids"):
-            del self.base_model.token_type_ids
-        self.base_model.register_buffer("token_type_ids", None)
-
         self.tokenizer = tokenizer
         self.hidden_size = self.base_model.config.hidden_size
         

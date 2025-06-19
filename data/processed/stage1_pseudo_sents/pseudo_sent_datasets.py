@@ -1,5 +1,5 @@
 import random
-from torch.utils.data import Dataset, WeightedRandomSampler,BatchSampler
+from torch.utils.data import Dataset, WeightedRandomSampler
 from collections import defaultdict
 from transformers import PreTrainedTokenizerFast
 import torch
@@ -129,15 +129,11 @@ def custom_collate_fn(batch):
         padding=True, 
         truncation=True, 
         return_tensors="pt",
+        return_offsets_mapping=True,
         add_special_tokens=True,
-        max_length=512,
-        return_token_type_ids=False,  
-        return_attention_mask=True,
-        return_offsets_mapping=False   
+        max_length=512
     )
-    if "token_type_ids" in inputs:
-        del inputs["token_type_ids"]
-
+    
 
     return {
         "input_ids": inputs["input_ids"],
@@ -147,59 +143,77 @@ def custom_collate_fn(batch):
     }
 
      
-class ProportionalBatchSampler(BatchSampler):
-    def __init__(self, dataset, batch_size, positive_ratio=0.3, min_positive_samples=2):
+class ProportionalBatchSampler:
+    def __init__(self,dataset, batch_size, positive_ratio=0.3, min_positive_samples=2):
+        """
+        Args:
+            positive_ratio: proportion of positive samples in batch (0.0 - 1.0)
+            min_positive_samples: min number of positive samples in a batch
+        """
+        self.dataset = dataset
         self.batch_size = batch_size
-        self.pos_per_batch = max(min_positive_samples, int(batch_size * positive_ratio))
-        self.neg_per_batch = batch_size - self.pos_per_batch
-        self.dataset_size = len(dataset)
+        self.positive_ratio = positive_ratio
+        self.min_positive_samples = min_positive_samples
         
-        # Build synset groups
-        syn2idx = defaultdict(list)
-        for i, s in enumerate(dataset.samples):
-            syn2idx[s['synset_id']].append(i)
+        self.positive_samples_per_batch = max(
+            min_positive_samples, 
+            int(batch_size * positive_ratio)
+        )
+
+        self.synset_to_indices = defaultdict(list)
+        for idx, sample in enumerate(dataset.samples):
+            synset_id = sample["synset_id"]
+            self.synset_to_indices[synset_id].append(idx)
+
+        self.valid_synsets = [
+            synset for synset, indices in self.synset_to_indices.items()
+            if len(indices) >= min_positive_samples
+        ]
+
+        self.positive_groups = []
+
+        for synset in self.valid_synsets:
+            indices = self.synset_to_indices[synset]
+            random.shuffle(indices)
+            
+            for i in range(0, len(indices), min_positive_samples):
+                group = indices[i:i+min_positive_samples]
+                if len(group) == min_positive_samples:
+                    self.positive_groups.append(group)
+                    
+        self.all_indices = list(range(len(dataset)))
+        random.shuffle(self.all_indices)
         
-        self.pos_groups = []
-        for syn, idxs in syn2idx.items():
-            if len(idxs) >= min_positive_samples:
-                random.shuffle(idxs)
-                self.pos_groups.extend(idxs)  # Lưu tất cả index chứ không nhóm
-        
-        # Weighted sampler cho negative samples
-        weights = torch.tensor(dataset.sample_weights, dtype=torch.double)
-        self.neg_sampler = WeightedRandomSampler(weights, 
-                                               num_samples=len(dataset), 
-                                               replacement=True)
-        
-        # Tính toán số batch mỗi epoch
-        self.num_batches = (len(self.pos_groups) + self.dataset_size) // batch_size
+        self.num_batches = len(self.all_indices) // (
+            batch_size - self.positive_samples_per_batch
+        )
 
     def __iter__(self):
-        # Trộn positive indices
-        random.shuffle(self.pos_groups)
-        pos_iter = iter(self.pos_groups)
-        neg_iter = iter(self.neg_sampler)
+        random.shuffle(self.positive_groups)
+        positive_group_iter = iter(self.positive_groups)
+        
+        random.shuffle(self.all_indices)
+        all_indices_iter = iter(self.all_indices)
         
         for _ in range(self.num_batches):
-            batch = []
+            batch_indices = []
             
-            # Thêm positive samples
             try:
-                for _ in range(self.pos_per_batch):
-                    batch.append(next(pos_iter))
+                # Thêm các mẫu positive
+                for _ in range(self.positive_samples_per_batch // self.min_positive_samples):
+                    batch_indices.extend(next(positive_group_iter))
             except StopIteration:
-                pass  # Hết positive samples
-                
-            # Thêm negative samples cho đủ batch size
-            while len(batch) < self.batch_size:
-                try:
-                    batch.append(next(neg_iter))
-                except StopIteration:
-                    # Reset sampler nếu cần
-                    neg_iter = iter(self.neg_sampler)
-                    batch.append(next(neg_iter))
+                pass
             
-            yield batch
+            # Thêm các mẫu ngẫu nhiên cho phần còn lại của batch
+            remaining = self.batch_size - len(batch_indices)
+            for _ in range(remaining):
+                try:
+                    batch_indices.append(next(all_indices_iter))
+                except StopIteration:
+                    break
+            
+            yield batch_indices
 
     def __len__(self):
         return self.num_batches
