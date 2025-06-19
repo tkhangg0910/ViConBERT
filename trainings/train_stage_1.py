@@ -33,7 +33,7 @@ if __name__=="__main__":
     valid_set = PseudoSents_Dataset(valid_sample, tokenizer)
     sampler = ProportionalBatchSampler(
         dataset=train_set,
-        batch_size=32,
+        batch_size=config["training"]["batch_size"],
         positive_ratio=config["training"]["batch_sampler"]["pos_ratio"], 
         min_positive_samples=config["training"]["batch_sampler"]["min_pos"]  
     )
