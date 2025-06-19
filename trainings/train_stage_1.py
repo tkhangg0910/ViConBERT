@@ -1,4 +1,5 @@
 import json
+import os
 import torch
 from transformers import get_linear_schedule_with_warmup
 from torch.utils.data import DataLoader
@@ -8,7 +9,11 @@ from utils.load_config import load_config
 from utils.optimizer import create_optimizer
 from utils.loss_fn import stage_1_supcon_loss
 from trainings.utils import train_model
+from transformers.utils import is_torch_available
 
+if is_torch_available() and torch.multiprocessing.get_start_method() == "fork":
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
+    
 if __name__=="__main__":
     config = load_config("configs/stage1.yml")
     

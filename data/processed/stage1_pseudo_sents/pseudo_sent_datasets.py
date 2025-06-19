@@ -62,6 +62,8 @@ class PseudoSents_Dataset(Dataset):
         print("Precomputing span indices...")
         
         self.tokenizer = PreTrainedTokenizerFast.from_pretrained(tokenizer_name, use_fast=True)
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.add_special_tokens({'pad_token': '[PAD]'})
         self.span_extractor = SpanExtractor(self.tokenizer)
 
         self.span_indices = []
@@ -96,7 +98,8 @@ class PseudoSents_Dataset(Dataset):
             "sentence": sample["sentence"],
             "target_word": sample["target_word"],
             "synset_id": sample["synset_id"],
-            "span_indices": self.span_indices[idx]
+            "span_indices": self.span_indices[idx],
+            "tokenizer": self.tokenizer
         }
 
     def get_weighted_sampler(self):
@@ -116,6 +119,9 @@ def custom_collate_fn(batch):
     
     tokenizer = batch[0]["tokenizer"] if "tokenizer" in batch[0] else \
         PreTrainedTokenizerFast.from_pretrained("vinai/phobert-base")
+
+    if tokenizer.pad_token is None:
+        tokenizer.add_special_tokens({'pad_token': '[PAD]'})
 
     inputs = tokenizer(
         sentences, 
