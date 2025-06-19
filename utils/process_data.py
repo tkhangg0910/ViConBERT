@@ -49,7 +49,7 @@ def text_normalize(text, tokenizer='underthesea'):
       """
 
       if tokenizer == 'underthesea':
-          tokens = tokenize(text, fixed_words=["3d","t\"rưng"])
+          tokens = tokenize(text, fixed_words=["3d","t\"rưng", "kế hoạch 34A","Kế hoạch 34A"])
       else:
           tokens = text.split(" ")
       normalized_tokens = [token_normalize(token) for token in tokens]
