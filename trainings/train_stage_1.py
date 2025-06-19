@@ -31,7 +31,7 @@ if __name__=="__main__":
 
     train_set = PseudoSents_Dataset(train_sample, tokenizer)
     valid_set = PseudoSents_Dataset(valid_sample, tokenizer)
-    sampler = ProportionalBatchSampler(
+    b_sampler = ProportionalBatchSampler(
         dataset=train_set,
         batch_size=config["training"]["batch_size"],
         positive_ratio=config["training"]["batch_sampler"]["pos_ratio"], 
@@ -40,6 +40,7 @@ if __name__=="__main__":
 
     train_dataloader = DataLoader(train_set,
                                   config["training"]["batch_size"],
+                                  batch_sampler=b_sampler,
                                   shuffle=config["training"]["shuffle"],
                                   sampler=train_set.get_weighted_sampler(),
                                   collate_fn=custom_collate_fn,
