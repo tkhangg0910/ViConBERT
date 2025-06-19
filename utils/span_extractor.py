@@ -77,6 +77,7 @@ class SpanExtractor:
 
         # Try each match to find the best token alignment
         offsets = encoding["offset_mapping"]
+        max_token_idx = len(offsets) - 1
 
         for start_char, end_char in matches:
             # print(f"Debug - Trying match at chars {start_char}-{end_char}: '{text[start_char:end_char]}'")
@@ -99,15 +100,15 @@ class SpanExtractor:
                     start_idx = i
                 end_idx = i
 
-            max_length = 512
-
+            
             if start_idx is not None and end_idx is not None:
                 # print(f"Debug - Found token range: {start_idx}-{end_idx}")
                 # print(f"Debug - Corresponding tokens: {tokens[start_idx:end_idx+1]}")
-                start_idx = min(start_idx, max_length - 1)
-                end_idx = min(end_idx, max_length - 1)
+                start_idx = max(0, min(start_idx, max_token_idx))
+                end_idx = max(0, min(end_idx, max_token_idx))
+                if start_idx <= end_idx:
+                    return (start_idx, end_idx)
                 return (start_idx, end_idx)
-
 
         self.logger.warning(f"Could not find token indices for '{target_phrase}' in '{text}'")
         return None
@@ -123,9 +124,16 @@ class SpanExtractor:
         if start_idx >= len(encoding["offset_mapping"]) or end_idx >= len(encoding["offset_mapping"]):
             return None
 
-        # Lấy offset mapping cho span
+        max_idx = len(encoding["offset_mapping"]) - 1
+        if start_idx > max_idx or end_idx > max_idx or start_idx < 0 or end_idx < 0:
+            self.logger.warning(f"Invalid span indices: ({start_idx}, {end_idx}), max_idx: {max_idx}")
+            return None
+        
         start_char = encoding["offset_mapping"][start_idx][0]
         end_char = encoding["offset_mapping"][end_idx][1]
+
+        # Trích xuất văn bản trực tiếp từ vị trí ký tự
+        span_text = text[start_char:end_char]
 
         # Trích xuất văn bản trực tiếp từ vị trí ký tự
         span_text = text[start_char:end_char]

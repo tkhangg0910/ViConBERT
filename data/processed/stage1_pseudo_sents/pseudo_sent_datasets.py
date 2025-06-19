@@ -133,26 +133,6 @@ def custom_collate_fn(batch):
         max_length=512
     )
     
-    adjusted_span_indices = []
-    offset_mappings = inputs["offset_mapping"]
-    
-    for i, (start_char, end_char) in enumerate(span_indices):
-        # Tìm chỉ số token tương ứng với vị trí ký tự
-        start_idx, end_idx = -1, -1
-        
-        for j, (char_start, char_end) in enumerate(offset_mappings[i]):
-            if char_start <= start_char < char_end and start_idx == -1:
-                start_idx = j
-            if char_start < end_char <= char_end:
-                end_idx = j
-                break
-        
-        # Nếu không tìm thấy, sử dụng chỉ số mặc định (0,0)
-        if start_idx == -1 or end_idx == -1:
-            adjusted_span_indices.append((0, 0))
-        else:
-            adjusted_span_indices.append((start_idx, end_idx))
-
 
     return {
         "input_ids": inputs["input_ids"],
