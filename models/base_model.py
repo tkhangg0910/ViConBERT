@@ -156,6 +156,7 @@ class SynoViSenseEmbedding(nn.Module):
                  model_name: str = "vinai/phobert-base",
                  cache_dir: str ="embeddings/base_models",
                  fusion_hidden_dim: int = 512,
+                 spangate_hidden_dim: int = 512,
                  span_method: str = "attentive",
                  cls_method: str = "layerwise",
                  dropout: float = 0.1,
@@ -175,9 +176,10 @@ class SynoViSenseEmbedding(nn.Module):
         """
         super().__init__()
         self.span_method = span_method
+        self.spangate_hidden_dim = spangate_hidden_dim
         self.cls_method = cls_method
         self.logger = logging.getLogger(__name__)
-        self.span_gate = SpanGating(self.hidden_size)
+        self.span_gate = SpanGating(self.spangate_hidden_dim)
 
         # Initialize base model
         self.base_model = AutoModel.from_pretrained(
