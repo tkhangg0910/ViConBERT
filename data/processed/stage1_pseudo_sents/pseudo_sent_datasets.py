@@ -99,32 +99,31 @@ class PseudoSents_Dataset(Dataset):
             "span_indices": span_indices
         }
 
-def custom_collate_fn(batch):
-    item = batch[0]
-    all_samples = item["samples"]
-    all_synset_labels = item["synset_labels"]
-    all_span_indices = item["span_indices"]
+    def custom_collate_fn(self,batch):
+        item = batch[0]
+        all_samples = item["samples"]
+        all_synset_labels = item["synset_labels"]
+        all_span_indices = item["span_indices"]
 
-    # Tokenize sentences
-    sentences = [s["sentence"] for s in all_samples]
-    tokenizer = PreTrainedTokenizerFast.from_pretrained("vinai/phobert-base")
-    
-    inputs = tokenizer(
-        sentences, 
-        padding=True, 
-        truncation=True, 
-        max_length=128,
-        return_tensors="pt",
-        return_attention_mask=True
-    )
+        # Tokenize sentences
+        sentences = [s["sentence"] for s in all_samples]
+        
+        inputs = self.tokenizer(
+            sentences, 
+            padding=True, 
+            truncation=True, 
+            max_length=128,
+            return_tensors="pt",
+            return_attention_mask=True
+        )
 
-    
-    return {
-        "input_ids": inputs["input_ids"],
-        "attention_mask": inputs["attention_mask"],
-        "span_indices": torch.tensor(all_span_indices),
-        "synset_labels": torch.tensor(all_synset_labels)
-    }
+        
+        return {
+            "input_ids": inputs["input_ids"],
+            "attention_mask": inputs["attention_mask"],
+            "span_indices": torch.tensor(all_span_indices),
+            "synset_labels": torch.tensor(all_synset_labels)
+        }
 
 
 class CustomSynsetAwareBatchSampler(BatchSampler):
