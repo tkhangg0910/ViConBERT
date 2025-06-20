@@ -373,7 +373,7 @@ class SynoViSenseEmbedding(nn.Module):
             texts, 
             padding=True,
             truncation=True,
-            max_length=512,
+            max_length=258 ,
             return_tensors="pt"
         )
         
