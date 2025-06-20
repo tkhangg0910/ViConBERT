@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 from transformers.utils import is_torch_available
 from transformers import PreTrainedTokenizerFast
 
-from data.processed.stage1_pseudo_sents.pseudo_sent_datasets import PseudoSents_Dataset, custom_collate_fn,CustomSynsetAwareBatchSampler
+from data.processed.stage1_pseudo_sents.pseudo_sent_datasets import PseudoSents_Dataset,CustomSynsetAwareBatchSampler
 from models.base_model import SynoViSenseEmbedding
 from utils.load_config import load_config
 from utils.optimizer import create_optimizer
@@ -42,14 +42,14 @@ if __name__=="__main__":
     train_dataloader = DataLoader(train_set,
                                   config["training"]["batch_size"],
                                   shuffle=False,
-                                  collate_fn=custom_collate_fn,
+                                  collate_fn=train_set.custom_collate_fn,
                                   num_workers=config["data"]["num_workers"],
                                   pin_memory=True
                                   )
     valid_dataloader = DataLoader(valid_set,
                                   config["training"]["batch_size"],
                                   shuffle=False,
-                                  collate_fn=custom_collate_fn,
+                                  collate_fn=valid_set.custom_collate_fn,
                                   num_workers=config["data"]["num_workers"],
                                   pin_memory=True
                                   )
