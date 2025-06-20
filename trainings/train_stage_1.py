@@ -75,7 +75,7 @@ if __name__=="__main__":
         num_training_steps=total_steps
     )
     
-    loss_fn = stage_1_supcon_loss
+    loss_fn = stage_1_supcon_loss(temp=0.3, margin=0.5)
 
     history, trained_model = train_model(
         num_epochs=config["training"]["epochs"],
