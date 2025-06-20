@@ -24,7 +24,7 @@ class PseudoSents_Dataset(Dataset):
         for sample in tqdm(samples):
             # Normalize text
             normalized_sentence = text_normalize(sample["sentence"])
-            normalized_target = text_normalize(sample["target_word"])
+            normalized_target = sample["target_word"]
             
             # Get supersense group
             group = self._get_supersense_group(sample["supersense"])

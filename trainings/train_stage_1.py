@@ -20,9 +20,9 @@ if is_torch_available() and torch.multiprocessing.get_start_method() == "fork":
 if __name__=="__main__":
     config = load_config("configs/stage1.yml")
     
-    with open(config["data"]["train_path"], "r") as f:
+    with open(config["data"]["train_path"], "r",encoding="utf-8") as f:
         train_sample = json.load(f)
-    with open(config["data"]["valid_path"], "r") as f:
+    with open(config["data"]["valid_path"], "r",encoding="utf-8") as f:
         valid_sample = json.load(f)
         
     tokenizer = PreTrainedTokenizerFast.from_pretrained(config["base_model"])
