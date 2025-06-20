@@ -120,7 +120,7 @@ class PseudoSents_Dataset(Dataset):
         
         return {
             "input_ids": inputs["input_ids"],
-            "attention_mask": inputs["attention_mask"],
+            "attn_mask": inputs["attention_mask"],
             "span_indices": torch.tensor(all_span_indices),
             "synset_labels": torch.tensor(all_synset_labels)
         }
