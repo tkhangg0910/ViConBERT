@@ -4,6 +4,7 @@ import torch.nn as nn
 
 class InfoNceLoss(nn.Module):
     def __init__(self,temperature=0.1):
+        super(InfoNceLoss, self).__init__()  
         self.temperature = temperature
         
     def forward(self,embeddings, labels):
