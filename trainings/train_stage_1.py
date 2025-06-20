@@ -11,7 +11,7 @@ from data.processed.stage1_pseudo_sents.pseudo_sent_datasets import PseudoSents_
 from models.base_model import SynoViSenseEmbedding
 from utils.load_config import load_config
 from utils.optimizer import create_optimizer
-from utils.loss_fn import stage_1_supcon_loss
+from utils.loss_fn import InfoNceLoss
 from trainings.utils import train_model
 
 if is_torch_available() and torch.multiprocessing.get_start_method() == "fork":
@@ -32,14 +32,15 @@ if __name__=="__main__":
     train_set = PseudoSents_Dataset(train_sample, tokenizer)
     valid_set = PseudoSents_Dataset(valid_sample, tokenizer)
     
-    sampler = train_set.get_weighted_sampler()
+    # sampler = train_set.get_weighted_sampler()
 
-    custom_batch_sampler = CustomSynsetAwareBatchSampler(
-        train_set, sampler=sampler, batch_size=config["training"]["batch_size"], drop_last=False
-    )   
+    # custom_batch_sampler = CustomSynsetAwareBatchSampler(
+    #     train_set, sampler=sampler, batch_size=config["training"]["batch_size"], drop_last=False
+    # )   
 
     train_dataloader = DataLoader(train_set,
-                                  batch_sampler=custom_batch_sampler,
+                                  config["training"]["batch_size"],
+                                  shuffle=False,
                                   collate_fn=custom_collate_fn,
                                   num_workers=config["data"]["num_workers"],
                                   pin_memory=True
@@ -75,7 +76,7 @@ if __name__=="__main__":
         num_training_steps=total_steps
     )
     
-    loss_fn = stage_1_supcon_loss(temp=0.3, margin=0.5)
+    loss_fn = InfoNceLoss()
 
     history, trained_model = train_model(
         num_epochs=config["training"]["epochs"],

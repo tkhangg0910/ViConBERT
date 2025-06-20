@@ -9,79 +9,76 @@ from utils.span_extractor import SpanExtractor
 from utils.process_data import text_normalize
 
 class PseudoSents_Dataset(Dataset):
-    def __init__(self, samples, tokenizer):
-        self.samples = samples
-        self.word_to_synsets = defaultdict(list)
-        self.synset_groups = defaultdict(list)
-        self.word_group_pairs = defaultdict(list)
-        self.synset_to_group = {}
-        self.polysemous_words = []
-
-        print("Normalizing text...")
-        sentences = [s["sentence"] for s in samples]
-        target_words = [s["target_word"] for s in samples]
-
-        normalized_sentences = [text_normalize(s) for s in tqdm(sentences)]
-        normalized_targets = [tw for tw in tqdm(target_words)]
-
-        for i, sample in enumerate(samples):
-            sample["sentence"] = normalized_sentences[i]
-            sample["target_word"] = normalized_targets[i]
-        
-        # Build dictionaries and identify polysemous words
-        print("Building dictionaries...")
-        for sample in tqdm(samples):
-            synset_id = sample["synset_id"]
-            word = sample["target_word"]
-            supersense = sample["supersense"]
-            group = self._get_supersense_group(supersense)
-
-            self.synset_groups[synset_id].append(sample)
-            self.word_to_synsets[word].append((synset_id, group))
-            self.word_group_pairs[(word, group)].append(sample)
-            self.synset_to_group[synset_id] = group
-
-        # Identify polysemous words (words with >1 unique supersense group)
-        print("Identifying polysemous words...")
-        for word, synsets in tqdm(self.word_to_synsets.items()):
-            unique_groups = {group for _, group in synsets}
-            if len(unique_groups) > 1:
-                self.polysemous_words.append(word)
-
-        # Compute sample weights
-        print("Computing sample weights...")
-        self.sample_weights = []
-        max_group_size = max(len(g) for g in self.synset_groups.values()) if self.synset_groups else 1
-        
-        for sample in tqdm(samples):
-            synset_id = sample["synset_id"]
-            word = sample["target_word"]
-            group_size = len(self.synset_groups[synset_id])
-            base_weight = max_group_size / group_size  
-            weight = base_weight * 2 if word in self.polysemous_words else base_weight
-            self.sample_weights.append(weight)
-        print("Precomputing span indices...")
-        
+    def __init__(self, samples, tokenizer, num_synsets_per_batch=32, samples_per_synset=8):
         self.tokenizer = tokenizer
         if self.tokenizer.pad_token is None:
             self.tokenizer.add_special_tokens({'pad_token': '[PAD]'})
         self.span_extractor = SpanExtractor(self.tokenizer)
+        self.num_synsets_per_batch = num_synsets_per_batch
+        self.samples_per_synset = samples_per_synset
 
-        self.span_indices = []
+        self.synset_groups = defaultdict(list)
+        self.synset_to_group = {}
+        self.all_samples = []
+
         for sample in tqdm(samples):
-            text = sample["sentence"]
-            target = sample["target_word"]
-            indices = self.span_extractor.get_span_indices(text, target)
-            if indices:
-                # pred = self.span_extractor.get_span_text_from_indices(text,indices)
-                # if target.lower().strip()!= pred.lower().strip():
-                #     print(f"sentence: {text}")
-                #     print(f"target: {target}")
-                #     print(f"pred: {pred}")
-                self.span_indices.append(indices if indices else (0, 0))
-
+            # Normalize text
+            normalized_sentence = text_normalize(sample["sentence"])
+            normalized_target = text_normalize(sample["target_word"])
+            
+            # Get supersense group
+            group = self._get_supersense_group(sample["supersense"])
+            
+            # Create new sample
+            new_sample = {
+                "sentence": normalized_sentence,
+                "target_word": normalized_target,
+                "synset_id": sample["synset_id"],
+                "group": group
+            }
+            
+            # Add to synset groups
+            self.synset_groups[sample["synset_id"]].append(new_sample)
+            self.synset_to_group[sample["synset_id"]] = group
+            self.all_samples.append(new_sample)
+            
+        print("Precomputing span indices...")
+        self.span_indices = []
+        for sample in tqdm(self.all_samples):
+            indices = self.span_extractor.get_span_indices(
+                sample["sentence"], 
+                sample["target_word"]
+            )
+            self.span_indices.append(indices if indices else (0, 0))
+        
+        # Create batch structure
+        print("Organizing batches...")
+        self.batches = []
+        synset_ids = list(self.synset_groups.keys())
+        
+        for _ in range(len(synset_ids) // num_synsets_per_batch):
+            # Select random synsets for this batch
+            selected_synsets = random.sample(synset_ids, num_synsets_per_batch)
+            
+            batch_samples = []
+            batch_synset_labels = []
+            
+            for i, synset_id in enumerate(selected_synsets):
+                synset_samples = self.synset_groups[synset_id]
+                
+                # Select samples for this synset
+                if len(synset_samples) < samples_per_synset:
+                    selected_samples = random.choices(synset_samples, k=samples_per_synset)
+                else:
+                    selected_samples = random.sample(synset_samples, samples_per_synset)
+                
+                batch_samples.extend(selected_samples)
+                batch_synset_labels.extend([i] * samples_per_synset)
+            
+            self.batches.append((batch_samples, batch_synset_labels))
+    
     def __len__(self):
-        return len(self.samples)
+        return len(self.batches)
     
     def _get_supersense_group(self, supersense: str):
         if supersense.startswith('adj.') or supersense.startswith('adv.'):
@@ -92,55 +89,48 @@ class PseudoSents_Dataset(Dataset):
             return 3
         else:
             return 4
-        
+    
     def __getitem__(self, idx):
-        sample = self.samples[idx]
+        samples, synset_labels = self.batches[idx]
+        span_indices = [self.span_indices[self.all_samples.index(s)] for s in samples]
         return {
-            "sentence": sample["sentence"],
-            "target_word": sample["target_word"],
-            "synset_id": sample["synset_id"],
-            "span_indices": self.span_indices[idx],
-            "tokenizer": self.tokenizer
+            "samples": samples,
+            "synset_labels": synset_labels,
+            "span_indices": span_indices
         }
 
-    def get_weighted_sampler(self):
-        weights = torch.tensor(self.sample_weights, dtype=torch.float)
-        return WeightedRandomSampler(
-            weights, 
-            num_samples=len(self), 
-            replacement=True
-        )
-
 def custom_collate_fn(batch):
-    sentences = [item["sentence"] for item in batch]
-    target_words = [item["target_word"] for item in batch]
-    synset_ids = [item["synset_id"] for item in batch]
-    span_indices = [item["span_indices"] for item in batch]
-
-    tokenizer = batch[0]["tokenizer"] if "tokenizer" in batch[0] else \
-        PreTrainedTokenizerFast.from_pretrained("vinai/phobert-base")
-
-
+    all_samples = []
+    all_synset_labels = []
+    all_span_indices = []
+    
+    # Flatten batch
+    for item in batch:
+        all_samples.extend(item["samples"])
+        all_synset_labels.extend(item["synset_labels"])
+        all_span_indices.extend(item["span_indices"])
+    
+    # Tokenize sentences
+    sentences = [s["sentence"] for s in all_samples]
+    tokenizer = PreTrainedTokenizerFast.from_pretrained("vinai/phobert-base")
+    
     inputs = tokenizer(
         sentences, 
         padding=True, 
         truncation=True, 
+        max_length=128,
         return_tensors="pt",
-        add_special_tokens=True,
-        max_length=258 ,
-        return_attention_mask=True,
-        return_offsets_mapping=False   
+        return_attention_mask=True
     )
-    if "token_type_ids" in inputs:
-        del inputs["token_type_ids"]
 
-
+    
     return {
         "input_ids": inputs["input_ids"],
-        "attn_mask": inputs["attention_mask"],
-        "span_indices": torch.tensor(span_indices),
-        "synset_ids": torch.tensor(synset_ids)
+        "attention_mask": inputs["attention_mask"],
+        "span_indices": torch.tensor(all_span_indices),
+        "synset_labels": torch.tensor(all_synset_labels)
     }
+
 
 class CustomSynsetAwareBatchSampler(BatchSampler):
     def __init__(self, dataset, sampler, batch_size, drop_last=False):

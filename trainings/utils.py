@@ -55,6 +55,7 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
             with autocast(device_type=device):
                 outputs = model(input_ids, attention_mask, span_indices=span_indices)
                 loss = loss_fn(outputs, synset_ids)  
+                
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
