@@ -30,9 +30,13 @@ class stage_1_supcon_loss(nn.Module):
         # Modified SupCon loss với hard negative mining
         numerator = torch.exp(sim_matrix) * positive_mask
         denominator = torch.exp(sim_matrix) + torch.exp(hardest_negatives + self.margin)
-        
-        log_prob = torch.log(numerator.sum(dim=1, keepdim=True) / denominator.sum(dim=1, keepdim=True))
+        numerator_sum = numerator.sum(dim=1, keepdim=True)
+        denominator_sum = denominator.sum(dim=1, keepdim=True)
+        eps = 1e-8
+        ratio = numerator_sum / (denominator_sum + eps)
+        log_prob = torch.log(ratio + eps)
         loss = -log_prob.mean()
-        
-        return loss
 
+        return loss if torch.is_tensor(loss) else torch.tensor(0.0, requires_grad=True, device=device)
+
+        
