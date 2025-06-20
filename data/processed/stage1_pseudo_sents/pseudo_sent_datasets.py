@@ -128,7 +128,6 @@ def custom_collate_fn(batch):
         return_tensors="pt",
         add_special_tokens=True,
         max_length=258 ,
-        return_token_type_ids=False,  
         return_attention_mask=True,
         return_offsets_mapping=False   
     )
