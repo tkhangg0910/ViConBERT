@@ -19,7 +19,8 @@ if is_torch_available() and torch.multiprocessing.get_start_method() == "fork":
     
 if __name__=="__main__":
     config = load_config("configs/stage1.yml")
-    
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(device)
     with open(config["data"]["train_path"], "r",encoding="utf-8") as f:
         train_sample = json.load(f)
     with open(config["data"]["valid_path"], "r",encoding="utf-8") as f:
@@ -53,7 +54,7 @@ if __name__=="__main__":
                                   pin_memory=True
                                   )
     
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    
     
     model = SynoViSenseEmbedding(tokenizer,
                                 model_name=config["base_model"],

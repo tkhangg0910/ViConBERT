@@ -100,16 +100,11 @@ class PseudoSents_Dataset(Dataset):
         }
 
 def custom_collate_fn(batch):
-    all_samples = []
-    all_synset_labels = []
-    all_span_indices = []
-    
-    # Flatten batch
-    for item in batch:
-        all_samples.extend(item["samples"])
-        all_synset_labels.extend(item["synset_labels"])
-        all_span_indices.extend(item["span_indices"])
-    
+    item = batch[0]
+    all_samples = item["samples"]
+    all_synset_labels = item["synset_labels"]
+    all_span_indices = item["span_indices"]
+
     # Tokenize sentences
     sentences = [s["sentence"] for s in all_samples]
     tokenizer = PreTrainedTokenizerFast.from_pretrained("vinai/phobert-base")

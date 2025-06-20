@@ -30,7 +30,6 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
     run_dir = os.path.join(checkpoint_dir, f"run_{run_id}")
     os.makedirs(run_dir, exist_ok=True)
     scaler = GradScaler()
-
     history = {
         'train_loss': [],
         'valid_loss': [],
@@ -44,10 +43,14 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
         model.train()
         running_loss = 0.0
 
-        for batch in tqdm(train_data_loader, desc=f"Epoch {epoch+1}/{num_epochs}"):
+        for batch in tqdm(train_data_loader, 
+                 desc=f"Epoch {epoch+1}/{num_epochs}",
+                 position=0,  
+                 leave=True,  
+                 mininterval=5):
             input_ids = batch['input_ids'].to(device)
             attention_mask = batch['attn_mask'].to(device)
-            span_indices = batch['span_indices']
+            span_indices = batch['span_indices'].to(device)
             synset_ids = batch['synset_ids'].to(device)
 
             optimizer.zero_grad()
