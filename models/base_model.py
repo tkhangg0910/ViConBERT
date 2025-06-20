@@ -61,7 +61,7 @@ class SpanGating(nn.Module):
     def __init__(self, hidden_size):
         super().__init__()
         self.gate_net = nn.Sequential(
-            nn.Linear(2 * hidden_size, hidden_size),
+            nn.Linear(hidden_size, hidden_size),
             nn.GELU(),
             nn.LayerNorm(hidden_size),
             nn.Linear(hidden_size, hidden_size),
