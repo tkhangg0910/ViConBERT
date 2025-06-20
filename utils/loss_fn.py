@@ -22,7 +22,7 @@ class InfoNceLoss(nn.Module):
         numerator = pos_sim.sum(dim=1)  # [N]
         
         exp_sim = torch.exp(sim_matrix / self.temperature)
-        denominator = exp_sim.sum(dim=1) - torch.exp(torch.ones(embeddings.size(0)) / self.temperature)
+        denominator = exp_sim.sum(dim=1) - torch.exp(torch.ones(embeddings.size(0), device=embeddings.device) / self.temperature)
         
         loss_per_sample = -torch.log(numerator / denominator)
         return loss_per_sample.mean()

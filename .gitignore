@@ -5,3 +5,4 @@ data/processed/stage1_pseudo_sents/train_data.json
 data/processed/stage1_pseudo_sents/valid_data.json
 /embeddings
 data/raw/stage_1_pseudo_sents/polysemous_words.csv
+data/raw/stage_1_pseudo_sents/word_synsets_without_polysemy.csv
