@@ -75,7 +75,8 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
-
+                    # Learning rate scheduling
+            
             # Calculate training metrics
             running_loss += loss.item()
             _, predicted = torch.max(outputs.data, 1)
@@ -89,7 +90,9 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
                 'Loss': f'{current_loss:.4f}',
                 'Acc': f'{current_acc:.2f}%'
             })
-
+            
+            if scheduler:
+                scheduler.step() 
         # ======================
         # VALIDATION PHASE
         # ======================
@@ -107,10 +110,6 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
         history['valid_accuracy'].append(valid_accuracy)
         history['epoch_times'].append(epoch_time)
 
-        # Learning rate scheduling
-        if scheduler:
-            scheduler.step(valid_loss)  # For ReduceLROnPlateau
-            # scheduler.step()  # For other schedulers
 
         # ======================
         # CHECKPOINTING

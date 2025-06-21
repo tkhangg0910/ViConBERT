@@ -68,12 +68,16 @@ if __name__=="__main__":
                                  ).to(device)
     
     total_steps = len(train_dataloader) * config["training"]["epochs"] 
-     
+    steps_per_epoch = len(train_dataloader)
+    print(f"Steps per epoch: {steps_per_epoch}")
+    print(f"Total steps: {total_steps}")
+    warmup_steps = int(0.1 * total_steps)
+    
     optim = create_optimizer(model, config)
     
     scheduler = get_linear_schedule_with_warmup(
         optim,
-        num_warmup_steps=config["training"]["warmup_steps"],
+        num_warmup_steps=warmup_steps,
         num_training_steps=total_steps
     )
     
