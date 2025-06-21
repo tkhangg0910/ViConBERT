@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 from transformers.utils import is_torch_available
 from transformers import PreTrainedTokenizerFast
 
-from data.processed.stage1_pseudo_sents.pseudo_sent_datasets import PseudoSents_Dataset,CustomSynsetAwareBatchSampler
+from data.processed.stage1_pseudo_sents.pseudo_sent_datasets import PseudoSents_Dataset
 from models.base_model import SynoViSenseEmbedding
 from utils.load_config import load_config
 from utils.optimizer import create_optimizer
