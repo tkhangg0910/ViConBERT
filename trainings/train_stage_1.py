@@ -30,8 +30,8 @@ if __name__=="__main__":
     if tokenizer.pad_token is None:
         tokenizer.add_special_tokens({'pad_token': '[PAD]'})
 
-    train_set = PseudoSents_Dataset(train_sample, tokenizer)
-    valid_set = PseudoSents_Dataset(valid_sample, tokenizer)
+    train_set = PseudoSents_Dataset(train_sample, tokenizer, is_training=True)
+    valid_set = PseudoSents_Dataset(valid_sample, tokenizer, is_training=False,samples_per_synset=-1)
     
     # sampler = train_set.get_weighted_sampler()
 
@@ -41,7 +41,7 @@ if __name__=="__main__":
 
     train_dataloader = DataLoader(train_set,
                                   config["training"]["batch_size"],
-                                  shuffle=False,
+                                  shuffle=True,
                                   collate_fn=train_set.custom_collate_fn,
                                   num_workers=config["data"]["num_workers"],
                                   pin_memory=True
