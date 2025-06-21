@@ -46,8 +46,7 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
         for batch in tqdm(train_data_loader, 
                  desc=f"Epoch {epoch+1}/{num_epochs}",
                  position=0,  
-                 leave=True,  
-                 mininterval=5):
+                 leave=True):
             input_ids = batch['input_ids'].to(device)
             attention_mask = batch['attn_mask'].to(device)
             span_indices = batch['span_indices'].to(device)
@@ -133,7 +132,7 @@ def evaluate_model(model, data_loader, loss_fn, device):
     total = 0
     
     with torch.no_grad():
-        for batch in data_loader:
+        for batch in tqdm(data_loader):
             input_ids = batch['input_ids'].to(device)
             attention_mask = batch['attn_mask'].to(device)
             span_indices = batch['span_indices']  
