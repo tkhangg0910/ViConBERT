@@ -9,21 +9,26 @@ from utils.span_extractor import SpanExtractor
 from utils.process_data import text_normalize
 
 class PseudoSents_Dataset(Dataset):
-    def __init__(self, samples, tokenizer, num_synsets_per_batch=32, samples_per_synset=8, is_training=True):
+    def __init__(self, samples, tokenizer, num_synsets_per_batch=32, samples_per_synset=8, is_training=True,val_mini_batch_size=512):
         self.tokenizer = tokenizer
         if self.tokenizer.pad_token is None:
             self.tokenizer.add_special_tokens({'pad_token': '[PAD]'})
         self.span_extractor = SpanExtractor(self.tokenizer)
         self.num_synsets_per_batch = num_synsets_per_batch
         self.samples_per_synset = samples_per_synset
-        self.is_training = is_training  # Phân biệt training vs validation
-
+        self.is_training = is_training  
+        self.val_mini_batch_size = val_mini_batch_size
+        
         self.synset_groups = defaultdict(list)
         self.synset_to_group = {}
         self.all_samples = []
-        self.sample_to_index = {}  # Mapping để tối ưu hiệu suất
+        self.sample_to_index = {} 
+
+        self.global_synset_to_label = {}
+        self.global_label_to_synset = {}
 
         # Process samples
+        all_synsets = set()
         for i, sample in enumerate(tqdm(samples, desc="Processing samples")):
             normalized_sentence = text_normalize(sample["sentence"])
             normalized_target = sample["target_word"]
@@ -40,7 +45,13 @@ class PseudoSents_Dataset(Dataset):
             self.synset_to_group[sample["synset_id"]] = group
             self.all_samples.append(new_sample)
             self.sample_to_index[id(new_sample)] = i
-            
+            all_synsets.add(sample["synset_id"])
+
+        sorted_synsets = sorted(list(all_synsets))
+        for idx, synset_id in enumerate(sorted_synsets):
+            self.global_synset_to_label[synset_id] = idx
+            self.global_label_to_synset[idx] = synset_id
+
         # Precompute span indices
         print("Precomputing span indices...")
         self.span_indices = []
@@ -49,18 +60,20 @@ class PseudoSents_Dataset(Dataset):
                 sample["sentence"], 
                 sample["target_word"]
             )
+            # if not indices 
             self.span_indices.append(indices if indices else (0, 0))
         
         # Filter synsets with enough samples
         self.valid_synsets = [
             synset_id for synset_id, samples_list in self.synset_groups.items()
-            if len(samples_list) >= 1  # Có thể adjust threshold này
+            if len(samples_list) >= 1  
         ]
         
         print(f"Total synsets: {len(self.synset_groups)}")
         print(f"Valid synsets: {len(self.valid_synsets)}")
         print(f"Total samples: {len(self.all_samples)}")
-        
+        print(f"Global label count: {len(self.global_synset_to_label)}")
+
         # Generate batches for current epoch
         self._generate_batches()
     
@@ -70,70 +83,60 @@ class PseudoSents_Dataset(Dataset):
         synset_ids = self.valid_synsets.copy()
         
         if self.is_training:
-            # Training: shuffle và random sampling
             random.shuffle(synset_ids)
             
-            # Tạo batches, đảm bảo sử dụng tất cả synsets
             for i in range(0, len(synset_ids), self.num_synsets_per_batch):
                 batch_synsets = synset_ids[i:i + self.num_synsets_per_batch]
                 
-                # Nếu batch cuối không đủ synsets, padding với random synsets
                 if len(batch_synsets) < self.num_synsets_per_batch:
                     remaining = self.num_synsets_per_batch - len(batch_synsets)
-                    batch_synsets.extend(random.choices(self.valid_synsets, k=remaining))
-                
+                    additional = [x for x in self.valid_synsets if x not in batch_synsets]
+
+                    if len(additional) >= remaining:
+                        batch_synsets.extend(random.sample(additional, remaining))
+                    else:
+                        batch_synsets.extend(additional)
+                        batch_synsets.extend(random.choices(
+                            [x for x in self.valid_synsets if x not in batch_synsets], 
+                            k=remaining - len(additional)
+                        ))
+
                 batch_samples = []
                 batch_synset_labels = []
                 
                 for label_idx, synset_id in enumerate(batch_synsets):
                     synset_samples = self.synset_groups[synset_id]
                     
-                    # Random sampling cho training
+                    # Random sampling for training
                     if len(synset_samples) < self.samples_per_synset:
                         selected_samples = random.choices(synset_samples, k=self.samples_per_synset)
                     else:
                         selected_samples = random.sample(synset_samples, self.samples_per_synset)
                     
                     batch_samples.extend(selected_samples)
-                    batch_synset_labels.extend([label_idx] * self.samples_per_synset)
+                    global_label = self.global_synset_to_label[synset_id]
+                    batch_synset_labels.extend([global_label] * self.samples_per_synset)
                 
                 self.batches.append((batch_samples, batch_synset_labels))
         
         else:
-            # Validation: deterministic, evaluate toàn bộ tập
-            # Không shuffle, giữ thứ tự cố định
-            synset_ids.sort()  # Đảm bảo thứ tự cố định
-            
-            for i in range(0, len(synset_ids), self.num_synsets_per_batch):
-                batch_synsets = synset_ids[i:i + self.num_synsets_per_batch]
-                
-                # Với validation, nếu batch cuối không đủ synsets thì cứ để vậy
-                # Không cần padding để tránh evaluate trùng lặp
-                batch_samples = []
-                batch_synset_labels = []
-                
-                for label_idx, synset_id in enumerate(batch_synsets):
-                    synset_samples = self.synset_groups[synset_id]
-                    
-                    # Lấy tất cả samples hoặc cố định số lượng
-                    if self.samples_per_synset == -1:
-                        # Lấy tất cả samples
-                        selected_samples = synset_samples
-                        samples_count = len(selected_samples)
-                    else:
-                        # Lấy số lượng cố định, nhưng deterministic
-                        if len(synset_samples) <= self.samples_per_synset:
-                            selected_samples = synset_samples
-                        else:
-                            # Lấy samples đầu tiên (deterministic)
-                            selected_samples = synset_samples[:self.samples_per_synset]
-                        samples_count = len(selected_samples)
-                    
-                    batch_samples.extend(selected_samples)
-                    batch_synset_labels.extend([label_idx] * samples_count)
-                
-                if batch_samples:  # Chỉ add batch nếu có samples
-                    self.batches.append((batch_samples, batch_synset_labels))
+            self.batches = []
+            batch_size_val = self.val_mini_batch_size
+
+            all_samples = []
+            all_synset_labels = []
+
+            for synset_id in synset_ids:
+                for sample in self.synset_groups[synset_id]:
+                    all_samples.append(sample)
+                    global_label = self.global_synset_to_label[synset_id]
+                    all_synset_labels.append(global_label)
+
+            for i in range(0, len(all_samples), batch_size_val):
+                batch_samples = all_samples[i:i+batch_size_val]
+                batch_synset_labels = all_synset_labels[i:i+batch_size_val]
+                self.batches.append((batch_samples, batch_synset_labels))
+
     
     def __len__(self):
         return len(self.batches)
@@ -153,7 +156,6 @@ class PseudoSents_Dataset(Dataset):
         """Return a single batch"""
         samples, synset_labels = self.batches[idx]
         
-        # Tối ưu hóa việc lấy span indices
         span_indices = []
         for sample in samples:
             sample_idx = self.sample_to_index[id(sample)]
@@ -169,7 +171,6 @@ class PseudoSents_Dataset(Dataset):
         """Call this at the end of each epoch to regenerate batches (only for training)"""
         if self.is_training:
             self._generate_batches()
-        # Validation dataset không cần regenerate vì cần kết quả consistent
 
     def custom_collate_fn(self, batch):
         """Collate function for DataLoader"""

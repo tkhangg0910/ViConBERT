@@ -5,11 +5,14 @@ import torch.nn.functional as F
 from transformers import AutoModel, PreTrainedTokenizerFast
 from typing import List, Optional, Tuple, Dict
 from utils.span_extractor import SpanExtractor
+from typing import Callable
 
 class FusionBlock(nn.Module):
     """Enhanced neural block to combine CLS and span representations"""
     
-    def __init__(self, input_dim: int, hidden_dim: int, output_dim: int, dropout: float = 0.1):
+    def __init__(self, input_dim: int, hidden_dim: int, 
+                 output_dim: int,num_layers: int = 2, dropout: float = 0.1,
+                 activation: Callable = nn.GELU,use_residual: bool = True):
         """
         Args:
             input_dim: Dimension of concatenated features
@@ -18,42 +21,49 @@ class FusionBlock(nn.Module):
             dropout: Dropout rate for regularization
         """
         super().__init__()
-        self.fc1 = nn.Linear(input_dim, hidden_dim)
-        self.norm1 = nn.LayerNorm(hidden_dim)
-        self.dropout1 = nn.Dropout(dropout)
-        self.activation = nn.GELU()
-        
-        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
-        self.norm2 = nn.LayerNorm(hidden_dim)
-        self.dropout2 = nn.Dropout(dropout)
-        
-        self.fc_out = nn.Linear(hidden_dim, output_dim)
-        
+        self.use_residual = use_residual
+        self.activation_fn = activation()
+
+        self.input_layer = nn.Linear(input_dim, hidden_dim)
+
+        self.hidden_layers = nn.ModuleList()
+        self.norms = nn.ModuleList()
+        self.dropouts = nn.ModuleList()
+
+        for _ in range(num_layers):
+            self.hidden_layers.append(nn.Linear(hidden_dim, hidden_dim))
+            self.norms.append(nn.LayerNorm(hidden_dim))
+            self.dropouts.append(nn.Dropout(dropout))
+        self.output_layer = nn.Linear(hidden_dim, output_dim)
+
         self._init_weights()
-    
+
     def _init_weights(self):
-        """Initialize weights with Xavier/He initialization"""
-        for layer in [self.fc1, self.fc2, self.fc_out]:
-            nn.init.xavier_uniform_(layer.weight)
-            nn.init.normal_(layer.bias, std=1e-6)
+        nn.init.xavier_uniform_(self.input_layer.weight)
+        nn.init.normal_(self.input_layer.bias, std=1e-6)
+        
+        for layer in self.hidden_layers:
+            if isinstance(layer, nn.Linear):
+                nn.init.xavier_uniform_(layer.weight)
+                nn.init.normal_(layer.bias, std=1e-6)
+            
+        nn.init.xavier_uniform_(self.output_layer.weight)
+        nn.init.normal_(self.output_layer.bias, std=1e-6)
+
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass through enhanced fusion block"""
-        # First layer with residual connection
-        x = self.fc1(x)
-        x = self.norm1(x)
-        x = self.dropout1(x)
-        x = self.activation(x)
-        
-        # Second layer with residual connection
-        residual = x
-        x = self.fc2(x)
-        x = self.norm2(x)
-        x = self.dropout2(x)
-        x = self.activation(x)
-        x = x + residual
-        # Output layer
-        x = self.fc_out(x)
+        x = self.input_layer(x)
+        for layer, norm, dropout in zip(self.hidden_layers, self.norms, self.dropouts):
+            residual = x
+            x = layer(x)
+            x = norm(x)
+            x = dropout(x)
+            x = self.activation_fn(x)
+            if self.use_residual:
+                x = x + residual
+        x = self.output_layer(x)
+
         
         return x
 
@@ -217,7 +227,8 @@ class SynoViSenseEmbedding(nn.Module):
             input_dim=input_dim,
             hidden_dim=fusion_hidden_dim,
             output_dim=self.hidden_size,
-            dropout=dropout
+            dropout=dropout,
+            num_layers=1
         )
         
         # Layer normalization for span representations

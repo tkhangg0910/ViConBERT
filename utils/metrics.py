@@ -189,3 +189,80 @@ def compute_full_metrics(embeddings, labels, k_vals=(1, 5, 10), device='cuda'):
     
     metrics['nmi'] = normalized_mutual_info(embeddings, labels)
     return metrics
+
+def compute_full_metrics_large_scale(embeddings, labels, k_vals, device='cuda'):
+    """
+    Computes metrics for very large datasets using efficient chunking
+    Optimized for validation set with 66k+ samples
+    """
+    # Normalize embeddings for cosine similarity
+    embeddings = normalize_embeddings(embeddings)
+    n = len(embeddings)
+    
+    # Auto chunk size based on GPU memory
+    if device == 'cuda':
+        total_mem = torch.cuda.get_device_properties(device).total_memory
+        used_mem = torch.cuda.memory_allocated(device)
+        free_mem = total_mem - used_mem
+        mem_per_row = 4 * embeddings.shape[1] * n
+        chunk_size = max(1, int(free_mem / mem_per_row))
+        chunk_size = min(chunk_size, 5000)  
+    else:
+        chunk_size = 1000
+    
+    print(f"Using chunk size: {chunk_size} for validation metrics")
+    
+    max_k = max(k_vals)
+    
+    # Storage for top-k results
+    topk_indices = torch.empty((n, max_k), dtype=torch.long, device='cpu')
+    
+    # Compute similarity in chunks
+    for i in tqdm(range(0, n, chunk_size), desc="Computing similarity"):
+        start_i = i
+        end_i = min(i + chunk_size, n)
+        chunk_size_actual = end_i - start_i
+        
+        # Compute chunk similarity
+        chunk = embeddings[start_i:end_i].to(device)
+        full_emb = embeddings.to(device)
+        sim = torch.mm(chunk, full_emb.t())
+        
+        # Set diagonal to -inf to exclude self-similarity
+        for j in range(chunk_size_actual):
+            idx = start_i + j
+            sim[j, idx] = -float('inf')
+        
+        # Get top-k for this chunk
+        _, chunk_topk_indices = torch.topk(sim, max_k, dim=1)
+        topk_indices[start_i:end_i] = chunk_topk_indices.cpu()
+    
+    # Move labels to CPU for efficient computation
+    labels = labels.cpu()
+    
+    # Calculate metrics
+    metrics = {}
+    for k in k_vals:
+        recall_sum = 0.0
+        precision_sum = 0.0
+        
+        for i in tqdm(range(n), desc=f"Computing metrics@k={k}"):
+            # Get top-k indices for this sample
+            topk = topk_indices[i, :k]
+            
+            # Find matches
+            matches = (labels[topk] == labels[i])
+            
+            # Recall: at least one match in top-k
+            recall_sum += matches.any().item()
+            
+            # Precision: fraction of matches in top-k
+            precision_sum += matches.float().mean().item()
+        
+        metrics[f'recall@{k}'] = recall_sum / n
+        metrics[f'precision@{k}'] = precision_sum / n
+    
+    # Compute NMI with sampling
+    metrics['nmi'] = normalized_mutual_info(embeddings.cpu(), labels.cpu())
+    
+    return metrics

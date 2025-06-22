@@ -3,7 +3,7 @@ import torch
 from tqdm import tqdm
 from torch.amp import GradScaler, autocast
 from datetime import datetime
-from utils.metrics import compute_step_metrics, compute_full_metrics  
+from utils.metrics import compute_step_metrics, compute_full_metrics_large_scale
 
 def train_model(num_epochs, train_data_loader, valid_data_loader, 
                 loss_fn, optimizer, model, device, 
@@ -244,12 +244,12 @@ def evaluate_model(model, data_loader, loss_fn, device, metric_k_vals=(1, 5, 10)
     all_embeddings = []
     all_labels = []
     
-    with torch.no_grad():
+    with torch.inference_mode():
         eval_pbar = tqdm(data_loader, desc="Evaluating", position=0, leave=False)
         for batch in eval_pbar:
             input_ids = batch['input_ids'].to(device)
             attention_mask = batch['attn_mask'].to(device)
-            span_indices = batch['span_indices'].to(device)  # Fixed: move to device
+            span_indices = batch['span_indices'].to(device) 
             synset_ids = batch['synset_ids'].to(device)
             
             with autocast(device_type=device):
@@ -266,8 +266,13 @@ def evaluate_model(model, data_loader, loss_fn, device, metric_k_vals=(1, 5, 10)
     all_labels = torch.cat(all_labels, dim=0)
     avg_loss = running_loss / len(data_loader)
         
-        # Tính retrieval metrics và NMI
-    full_metrics = compute_full_metrics(all_embeddings, all_labels, k_vals=metric_k_vals, device=device)
+    full_metrics = compute_full_metrics_large_scale(
+        all_embeddings, 
+        all_labels, 
+        k_vals=metric_k_vals, 
+        device=device
+    )
+
     
     return {
         'loss': avg_loss,
