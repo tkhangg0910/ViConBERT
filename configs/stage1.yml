@@ -9,7 +9,7 @@ data:
   num_workers: 16
 
 model:
-  span_method: "mean"  
+  span_method: "attentive"  
   cls_method: "last"  
   projection_dim: 256
   temperature: 0.3
