@@ -170,7 +170,9 @@ class SynoViSenseEmbedding(nn.Module):
                  cls_method: str = "layerwise",
                  dropout: float = 0.1,
                  freeze_base: bool = False,
-                 layerwise_attn_dim: int = 128):
+                 layerwise_attn_dim: int = 128,
+                 use_cls = True
+                 ):
         """
         Args:
             model_name: Pre-trained model name
@@ -187,7 +189,7 @@ class SynoViSenseEmbedding(nn.Module):
         self.span_method = span_method
         self.cls_method = cls_method
         self.logger = logging.getLogger(__name__)
-
+        self.use_cls = use_cls
         # Initialize base model
         self.base_model = AutoModel.from_pretrained(
             model_name,
@@ -217,11 +219,16 @@ class SynoViSenseEmbedding(nn.Module):
             self.layerwise_pool = LayerwiseCLSPooling(self.hidden_size, layerwise_attn_dim)
         
         # Determine fusion input dimension
-        if span_method == "diff_sum":
-            input_dim = 4 * self.hidden_size  # CLS + (start, end, diff)
+        if use_cls:
+            if span_method == "diff_sum":
+                input_dim = 4 * self.hidden_size  # CLS + (start, end, diff)
+            else:
+                input_dim = 2 * self.hidden_size  # CLS + span representation
         else:
-            input_dim = 2 * self.hidden_size  # CLS + span representation
-        
+            if span_method == "diff_sum":
+                input_dim = 3 * self.hidden_size  # CLS + (start, end, diff)
+            else:
+                input_dim = self.hidden_size  # CLS + span representation
         # Fusion block
         self.fusion = FusionBlock(
             input_dim=input_dim,
@@ -253,14 +260,15 @@ class SynoViSenseEmbedding(nn.Module):
         last_hidden_state = outputs.last_hidden_state
         
         # Get CLS representation
-        if self.cls_method == "layerwise":
-            all_hidden_states = outputs.hidden_states
-            cls_embed = self.layerwise_pool(
-                [hidden[:, 0] for hidden in all_hidden_states[1:]]
-                )
-        else:
-            cls_embed = last_hidden_state[:, 0, :]
-        
+        if self.use_cls:
+            if self.cls_method == "layerwise":
+                all_hidden_states = outputs.hidden_states
+                cls_embed = self.layerwise_pool(
+                    [hidden[:, 0] for hidden in all_hidden_states[1:]]
+                    )
+            else:
+                cls_embed = last_hidden_state[:, 0, :]
+            
         
         # Compute span indices if needed
         if span_indices is None:
@@ -273,11 +281,15 @@ class SynoViSenseEmbedding(nn.Module):
             last_hidden_state, 
             span_indices,
         )
-        span_rep = self.span_gate(span_rep, cls_embed)
+        if self.use_cls:
+            span_rep = self.span_gate(span_rep, cls_embed)
 
         # Combine and fuse representations
-        combined = torch.cat([cls_embed, span_rep], dim=-1)
-        return self.fusion(combined)
+        if self.use_cls:
+            combined = torch.cat([cls_embed, span_rep], dim=-1)
+            return self.fusion(combined)
+        else:
+            return self.fusion(cls_embed)
     
     def _get_span_representation(self, 
                                hidden_states: torch.Tensor, 

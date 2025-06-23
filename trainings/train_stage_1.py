@@ -78,11 +78,11 @@ if __name__=="__main__":
     
     optim = create_optimizer(model, config)
     
-    scheduler = get_linear_schedule_with_warmup(
-        optim,
-        num_warmup_steps=warmup_steps,
-        num_training_steps=total_steps
-    )
+    # scheduler = get_linear_schedule_with_warmup(
+    #     optim,
+    #     num_warmup_steps=warmup_steps,
+    #     num_training_steps=total_steps
+    # )
     
     loss_fn = InfoNceLoss()
 
@@ -92,7 +92,6 @@ if __name__=="__main__":
         valid_data_loader=valid_dataloader,
         loss_fn=loss_fn,
         optimizer=optim,
-        scheduler=scheduler, 
         model=model,
         device=device,
         checkpoint_dir=config["output_dir"],
