@@ -34,7 +34,7 @@ if __name__=="__main__":
                                     , is_training=True, num_synsets_per_batch=128,samples_per_synset=5)
     valid_set = PseudoSents_Dataset(valid_sample, tokenizer, is_training=False,
                                     num_synsets_per_batch=128, 
-                                    samples_per_synset=5)
+                                    samples_per_synset=6)
     
     # sampler = train_set.get_weighted_sampler()
 
