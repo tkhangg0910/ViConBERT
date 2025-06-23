@@ -9,7 +9,7 @@ from utils.span_extractor import SpanExtractor
 from utils.process_data import text_normalize
 
 class PseudoSents_Dataset(Dataset):
-    def __init__(self, samples, tokenizer, num_synsets_per_batch=32, samples_per_synset=8, is_training=True,val_mini_batch_size=512):
+    def __init__(self, samples, tokenizer, num_synsets_per_batch=32, samples_per_synset=8, is_training=True,val_mini_batch_size=768):
         self.tokenizer = tokenizer
         if self.tokenizer.pad_token is None:
             self.tokenizer.add_special_tokens({'pad_token': '[PAD]'})
@@ -134,15 +134,21 @@ class PseudoSents_Dataset(Dataset):
             all_synset_labels = []
 
             for synset_id in synset_ids:
+                global_label = self.global_synset_to_label[synset_id]
                 for sample in self.synset_groups[synset_id]:
                     all_samples.append(sample)
-                    global_label = self.global_synset_to_label[synset_id]
                     all_synset_labels.append(global_label)
-
-            for i in range(0, len(all_samples), batch_size_val):
-                batch_samples = all_samples[i:i+batch_size_val]
-                batch_synset_labels = all_synset_labels[i:i+batch_size_val]
+            
+            num_samples = len(all_samples)
+            for start_idx in range(0, num_samples, self.val_mini_batch_size):
+                end_idx = min(start_idx + self.val_mini_batch_size, num_samples)
+                batch_samples = all_samples[start_idx:end_idx]
+                batch_synset_labels = all_synset_labels[start_idx:end_idx]
                 self.batches.append((batch_samples, batch_synset_labels))
+            
+            print(f"Validation batches: {len(self.batches)}")
+            print(f"Total validation samples: {num_samples}")
+
 
     
     def __len__(self):

@@ -6,6 +6,7 @@ from transformers import get_linear_schedule_with_warmup
 from torch.utils.data import DataLoader
 from transformers.utils import is_torch_available
 from transformers import PreTrainedTokenizerFast
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from data.processed.stage1_pseudo_sents.pseudo_sent_datasets import PseudoSents_Dataset
 from models.base_model import SynoViSenseEmbedding
@@ -83,6 +84,14 @@ if __name__=="__main__":
     #     num_warmup_steps=warmup_steps,
     #     num_training_steps=total_steps
     # )
+    scheduler = ReduceLROnPlateau(
+        optimizer = optim,
+        mode='min',         
+        factor=0.5,         
+        patience=2,         
+        min_lr=1e-6          
+    )
+
     
     loss_fn = InfoNceLoss()
 

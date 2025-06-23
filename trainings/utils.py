@@ -115,8 +115,8 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
             else:
                 train_pbar.set_postfix({'Loss': f'{loss.item():.4f}'})
             
-            if scheduler:
-                scheduler.step() 
+            # if scheduler:
+            #     scheduler.step() 
                 
         train_metrics = {}
         for k in metric_k_vals:
@@ -132,6 +132,12 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
         print(f"\nValidating epoch {epoch+1}...")
         valid_metrics = evaluate_model(model, valid_data_loader, loss_fn, device, metric_k_vals)
         
+         # ======================
+        # SCHEDULER STEP (EPOCH-LEVEL)
+        # ======================
+        if scheduler:
+            scheduler.step(valid_metrics['loss'])
+            
         # Calculate final training metrics
         epoch_time = (datetime.now() - epoch_start_time).total_seconds()
         train_loss = running_loss / len(train_data_loader)
