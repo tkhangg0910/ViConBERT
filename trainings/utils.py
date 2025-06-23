@@ -199,7 +199,7 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
         print(f"    Loss: {valid_metrics['loss']:.4f}")
         for k in metric_k_vals:
             print(f"    Recall@{k}: {valid_metrics[f'recall@{k}']:.4f} | Precision@{k}: {valid_metrics[f'precision@{k}']:.4f}")
-        print(f"    NMI: {valid_metrics['nmi']:.4f}")
+        # print(f"    NMI: {valid_metrics['nmi']:.4f}")
         
         print(f"\n  Early stopping: {patience_counter}/{early_stopping_patience}")
         

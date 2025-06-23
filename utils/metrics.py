@@ -187,7 +187,7 @@ def compute_full_metrics(embeddings, labels, k_vals=(1, 5, 10), device='cuda'):
         metrics[f'recall@{k}'] = recall_at_k_full(embeddings, labels, k, device=device)
         metrics[f'precision@{k}'] = precision_at_k_full(embeddings, labels, k, device=device)
     
-    metrics['nmi'] = normalized_mutual_info(embeddings, labels)
+    # metrics['nmi'] = normalized_mutual_info(embeddings, labels)
     return metrics
 
 def compute_full_metrics_large_scale(embeddings, labels, k_vals, device='cuda'):
@@ -263,6 +263,6 @@ def compute_full_metrics_large_scale(embeddings, labels, k_vals, device='cuda'):
         metrics[f'precision@{k}'] = precision_sum / n
     
     # Compute NMI with sampling
-    metrics['nmi'] = normalized_mutual_info(embeddings.cpu(), labels.cpu())
+    # metrics['nmi'] = normalized_mutual_info(embeddings.cpu(), labels.cpu())
     
     return metrics
