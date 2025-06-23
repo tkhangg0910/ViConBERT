@@ -142,46 +142,51 @@ class SpanExtractor:
 def create_masked_version(
     text: str, 
     target_phrase: str, 
-    tokenizer: PreTrainedTokenizerFast,
+    tokenizer: PreTrainedTokenizerFast
 ) -> Tuple[Optional[str], Optional[Tuple[int, int]]]:
-    """
-    Args:
-        text: sentence
-        target_phrase: target word
-        tokenizer: Initialized Tokenizer     
-    Returns:
-        Tuple (masked_text, mask_position) or (None, None)
-    """
-    # Chuẩn hóa khoảng trắng
     mask_token = tokenizer.mask_token
 
     text = ' '.join(text.split())
     target_phrase = ' '.join(target_phrase.split())
     
-    if not target_phrase:
+    if not target_phrase or not text:
         return None, None
     
-    # Tạo span extractor tạm thời
     extractor = SpanExtractor(tokenizer)
     
-    # Lấy vị trí token của target_phrase
     span_indices = extractor.get_span_indices(text, target_phrase)
     
     if span_indices is None:
         return None, None
     
-    # Tokenize câu để lấy danh sách token
-    encoding = tokenizer(text, add_special_tokens=True)
-    tokens = tokenizer.convert_ids_to_tokens(encoding["input_ids"])
+    encoding = tokenizer(text, add_special_tokens=True, return_offsets_mapping=True)
+    input_ids = encoding["input_ids"]
     
-    # Tạo phiên bản masked
+    if not input_ids:
+        return None, None
+    
+    tokens = tokenizer.convert_ids_to_tokens(input_ids)
+    
+    if not tokens or any(tok is None for tok in tokens):
+        return None, None
+    
     masked_tokens = tokens.copy()
     start_idx, end_idx = span_indices
     
-    # Thay thế target phrase bằng mask token
+    n_tokens = len(tokens)
+    start_idx = max(0, min(start_idx, n_tokens - 1))
+    end_idx = max(start_idx, min(end_idx, n_tokens - 1))
+    print(masked_tokens[start_idx:end_idx+1])
+
     masked_tokens[start_idx:end_idx+1] = [mask_token] * (end_idx - start_idx + 1)
     
-    # Ghép lại thành câu
-    masked_text = tokenizer.convert_tokens_to_string(masked_tokens)
+    filtered_tokens = [tok for tok in masked_tokens if tok is not None]
+    
+    try:
+        masked_text = tokenizer.convert_tokens_to_string(filtered_tokens)
+    except Exception as e:
+        print(f"Error converting tokens to string: {e}")
+        print(f"Tokens: {filtered_tokens}")
+        return None, None
     
     return masked_text, (start_idx, end_idx)
