@@ -176,28 +176,12 @@ def normalized_mutual_info(embeddings, labels, max_samples=10000, random_state=0
     
     return normalized_mutual_info_score(labels, cluster_labels)
 
-def compute_full_metrics(embeddings, labels, k_vals=(1, 5, 10), device='cuda'):
-    """
-    Compute full evaluation metrics
-    Returns a dictionary of computed metrics
-    """
-    metrics = {}
-    
-    for k in k_vals:
-        metrics[f'recall@{k}'] = recall_at_k_full(embeddings, labels, k, device=device)
-        metrics[f'precision@{k}'] = precision_at_k_full(embeddings, labels, k, device=device)
-    
-    # metrics['nmi'] = normalized_mutual_info(embeddings, labels)
-    return metrics
-
 def compute_full_metrics_large_scale(embeddings, labels, k_vals, device='cuda'):
-    """
-    Computes metrics for very large datasets using efficient chunking
-    Optimized for validation set with 66k+ samples
-    """
-    # Normalize embeddings for cosine similarity
     embeddings = normalize_embeddings(embeddings)
     n = len(embeddings)
+    
+    unique_labels, label_counts = torch.unique(labels, return_counts=True)
+    label_count_dict = dict(zip(unique_labels.tolist(), label_counts.tolist()))
     
     # Auto chunk size based on GPU memory
     if device == 'cuda':
@@ -210,59 +194,51 @@ def compute_full_metrics_large_scale(embeddings, labels, k_vals, device='cuda'):
     else:
         chunk_size = 1000
     
-    print(f"Using chunk size: {chunk_size} for validation metrics")
-    
     max_k = max(k_vals)
-    
-    # Storage for top-k results
     topk_indices = torch.empty((n, max_k), dtype=torch.long, device='cpu')
     
-    # Compute similarity in chunks
     for i in tqdm(range(0, n, chunk_size), desc="Computing similarity"):
         start_i = i
         end_i = min(i + chunk_size, n)
-        chunk_size_actual = end_i - start_i
-        
-        # Compute chunk similarity
         chunk = embeddings[start_i:end_i].to(device)
         full_emb = embeddings.to(device)
+        
         sim = torch.mm(chunk, full_emb.t())
         
-        # Set diagonal to -inf to exclude self-similarity
-        for j in range(chunk_size_actual):
-            idx = start_i + j
-            sim[j, idx] = -float('inf')
+        # Vectorized diagonal masking
+        rows = torch.arange(chunk.size(0), device=device)
+        cols = torch.arange(start_i, end_i, device=device)
+        sim[rows, cols] = -float('inf')
         
-        # Get top-k for this chunk
         _, chunk_topk_indices = torch.topk(sim, max_k, dim=1)
         topk_indices[start_i:end_i] = chunk_topk_indices.cpu()
     
-    # Move labels to CPU for efficient computation
-    labels = labels.cpu()
+    labels_cpu = labels.cpu()
     
-    # Calculate metrics
     metrics = {}
     for k in k_vals:
         recall_sum = 0.0
         precision_sum = 0.0
+        valid_samples = 0 
         
         for i in tqdm(range(n), desc=f"Computing metrics@k={k}"):
-            # Get top-k indices for this sample
+            current_label = labels_cpu[i].item()
+            current_count = label_count_dict.get(current_label, 0)
             topk = topk_indices[i, :k]
+            matches = (labels_cpu[topk] == labels_cpu[i])
             
-            # Find matches
-            matches = (labels[topk] == labels[i])
-            
-            # Recall: at least one match in top-k
             recall_sum += matches.any().item()
             
-            # Precision: fraction of matches in top-k
-            precision_sum += matches.float().mean().item()
+            if current_count > 1: 
+                actual_k = min(k, current_count - 1)  
+                precision_sum += matches.float().sum().item() / actual_k
+                valid_samples += 1
         
         metrics[f'recall@{k}'] = recall_sum / n
-        metrics[f'precision@{k}'] = precision_sum / n
-    
-    # Compute NMI with sampling
-    # metrics['nmi'] = normalized_mutual_info(embeddings.cpu(), labels.cpu())
+        
+        if valid_samples > 0:
+            metrics[f'precision@{k}'] = precision_sum / valid_samples
+        else:
+            metrics[f'precision@{k}'] = 0.0
     
     return metrics
