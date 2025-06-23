@@ -64,8 +64,8 @@ class PseudoSents_Dataset(Dataset):
             if indices:
                 pred = self.span_extractor.get_span_text_from_indices(sample["sentence"],indices)
                 if sample["target_word"].lower().strip()!= pred.lower().strip():
-                    print(f"sentence: {sample["sentence"]}")
-                    print(f"target: {sample["target_word"]}")
+                    print(f"sentence: {sample['sentence']}")
+                    print(f"target: {sample['target_word']}")
                     print(f"pred: {pred}")
 
             self.span_indices.append(indices if indices else (0, 0))
