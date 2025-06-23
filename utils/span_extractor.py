@@ -120,7 +120,6 @@ class SpanExtractor:
         encoding = self.tokenizer(text, return_offsets_mapping=True, add_special_tokens=True)
         start_idx, end_idx = span_indices
 
-        # Kiểm tra chỉ số hợp lệ
         if start_idx >= len(encoding["offset_mapping"]) or end_idx >= len(encoding["offset_mapping"]):
             return None
 
@@ -132,10 +131,57 @@ class SpanExtractor:
         start_char = encoding["offset_mapping"][start_idx][0]
         end_char = encoding["offset_mapping"][end_idx][1]
 
-        # Trích xuất văn bản trực tiếp từ vị trí ký tự
         span_text = text[start_char:end_char]
 
         # Trích xuất văn bản trực tiếp từ vị trí ký tự
         span_text = text[start_char:end_char]
 
         return span_text
+    
+    
+def create_masked_version(
+    text: str, 
+    target_phrase: str, 
+    tokenizer: PreTrainedTokenizerFast,
+) -> Tuple[Optional[str], Optional[Tuple[int, int]]]:
+    """
+    Args:
+        text: sentence
+        target_phrase: target word
+        tokenizer: Initialized Tokenizer     
+    Returns:
+        Tuple (masked_text, mask_position) or (None, None)
+    """
+    # Chuẩn hóa khoảng trắng
+    mask_token = tokenizer.mask_token
+
+    text = ' '.join(text.split())
+    target_phrase = ' '.join(target_phrase.split())
+    
+    if not target_phrase:
+        return None, None
+    
+    # Tạo span extractor tạm thời
+    extractor = SpanExtractor(tokenizer)
+    
+    # Lấy vị trí token của target_phrase
+    span_indices = extractor.get_span_indices(text, target_phrase)
+    
+    if span_indices is None:
+        return None, None
+    
+    # Tokenize câu để lấy danh sách token
+    encoding = tokenizer(text, add_special_tokens=True)
+    tokens = tokenizer.convert_ids_to_tokens(encoding["input_ids"])
+    
+    # Tạo phiên bản masked
+    masked_tokens = tokens.copy()
+    start_idx, end_idx = span_indices
+    
+    # Thay thế target phrase bằng mask token
+    masked_tokens[start_idx:end_idx+1] = [mask_token] * (end_idx - start_idx + 1)
+    
+    # Ghép lại thành câu
+    masked_text = tokenizer.convert_tokens_to_string(masked_tokens)
+    
+    return masked_text, (start_idx, end_idx)
