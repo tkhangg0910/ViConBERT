@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import AutoModel, PreTrainedTokenizerFast
 from typing import List, Optional, Tuple, Dict
-from utils.span_extractor import SpanExtractor
+from utils.span_extractor import SpanExtractor, create_masked_version
 from typing import Callable
 
 class MLPBlock(nn.Module):
@@ -12,7 +12,8 @@ class MLPBlock(nn.Module):
     
     def __init__(self, input_dim: int, hidden_dim: int, 
                  output_dim: int,num_layers: int = 2, dropout: float = 0.1,
-                 activation: Callable = nn.GELU,use_residual: bool = True):
+                 activation: Callable = nn.GELU,use_residual: bool = True,
+                 final_activation = None):
         """
         Args:
             input_dim: Dimension of concatenated features
@@ -25,7 +26,8 @@ class MLPBlock(nn.Module):
         self.activation_fn = activation()
 
         self.input_layer = nn.Linear(input_dim, hidden_dim)
-
+        if final_activation:
+            self.final_activation = final_activation
         self.hidden_layers = nn.ModuleList()
         self.norms = nn.ModuleList()
         self.dropouts = nn.ModuleList()
@@ -62,12 +64,14 @@ class MLPBlock(nn.Module):
             x = self.activation_fn(x)
             if self.use_residual:
                 x = x + residual
+        if self.final_activation:
+            x = self.final_activation()
         x = self.output_layer(x)
 
         
         return x
 
-class SynoViSenseEmbedding(nn.Module):
+class SynoViSenseEmbeddingV1(nn.Module):
     """
     Enhanced Vietnamese Contextual Embedding Model
     with multiple span representation options
@@ -138,7 +142,7 @@ class SynoViSenseEmbedding(nn.Module):
             output_dim=self.hidden_size,
             dropout=dropout,
             num_layers=fusion_num_layers,
-            activation=nn.Sigmoid()
+            final_activation=nn.Sigmoid()
 
         )
         
@@ -184,10 +188,11 @@ class SynoViSenseEmbedding(nn.Module):
     
     def tokenize_with_target(self, 
                            texts: List[str], 
-                           target_phrases: List[str]) -> Dict[str, torch.Tensor]:
+                           target_phrases: List[str]) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Optimized tokenization with span index precomputation
         """
+        
         word_input = self.tokenizer(
             target_phrases, 
             padding=True,
@@ -195,8 +200,15 @@ class SynoViSenseEmbedding(nn.Module):
             max_length=128 ,
             return_tensors="pt"
         )
-        
-        return word_input
+        masked_sents =  [create_masked_version(text, phrase, self.tokenizer) for text, phrase in zip(texts, target_phrases)]
+        context_input = self.tokenizer(
+            masked_sents, 
+            padding=True,
+            truncation=True,
+            max_length=128 ,
+            return_tensors="pt"
+        )
+        return word_input, context_input
     
     def encode(self, 
            texts: List[str], 
@@ -206,3 +218,76 @@ class SynoViSenseEmbedding(nn.Module):
         with torch.inference_mode():
             embeddings = self.forward(word_input, context_input)
         return embeddings
+
+class SynoViSenseEmbeddingV2(nn.Module):
+    def __init__(self, 
+        tokenizer,
+        model_name: str = "vinai/phobert-base",
+        cache_dir: str ="embeddings/base_models",
+        fusion_hidden_dim: int = 512,
+        wp_num_layers:int=1,
+        sp_num_layers:int=1,
+        dropout: float = 0.1,
+        freeze_base: bool = False,
+        fusion_num_layers:int=1
+        ):
+        super().__init__()
+        """
+        Args:
+            model_name: Pre-trained model name
+            fusion_hidden_dim: Fusion block hidden dimension
+            span_method: Span representation method 
+                         ("diff_sum", "mean", "attentive")
+            cls_method: cls representation method 
+                         ("layerwise", "last")
+            dropout: Dropout rate
+            freeze_base: Freeze base model parameters
+            layerwise_attn_dim: Attention dim for layerwise pooling
+        """
+        
+        self.tokenizer = tokenizer
+        self.base_model = AutoModel.from_pretrained(model_name, 
+                                              cache_dir=cache_dir)
+        self.hidden_size = self.base_model.config.hidden_size
+
+        self.fusion_gate = MLPBlock(
+            input_dim=self.hidden_size*2,
+            hidden_dim=fusion_hidden_dim,
+            output_dim=self.hidden_size,
+            dropout=dropout,
+            num_layers=fusion_num_layers,
+            final_activation=nn.Sigmoid()
+        )
+        
+        self.context_proj = MLPBlock(
+            input_dim=self.hidden_size,
+            hidden_dim=fusion_hidden_dim,
+            output_dim=self.hidden_size,
+            dropout=dropout,
+            num_layers=sp_num_layers
+        )
+        
+        if freeze_base:
+            for param in self.base_model.parameters():
+                param.requires_grad = False
+        
+        self.word_projection = MLPBlock(
+            input_dim=self.hidden_size,
+            hidden_dim=fusion_hidden_dim,
+            output_dim=self.hidden_size,
+            dropout=dropout,
+            num_layers=wp_num_layers
+        )
+     
+    def _encode_word(self, word_input_ids, word_attention_mask):
+        outputs = self.base_model(
+            input_ids=word_input_ids,
+            attention_mask=word_attention_mask
+        )
+        word_rep = outputs.last_hidden_state[:, 0] 
+        return self.word_projection(word_rep)
+    
+    
+    # def forward(self, input_ids, attention_mask, span_positions):
+
+        
