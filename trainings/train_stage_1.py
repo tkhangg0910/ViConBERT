@@ -32,10 +32,8 @@ if __name__=="__main__":
         tokenizer.add_special_tokens({'pad_token': '[PAD]'})
 
     train_set = PseudoSents_Dataset(train_sample, tokenizer
-                                    , is_training=True, num_synsets_per_batch=128,samples_per_synset=5)
-    valid_set = PseudoSents_Dataset(valid_sample, tokenizer, is_training=False,
-                                    num_synsets_per_batch=128, 
-                                    samples_per_synset=6)
+                                    , is_training=True, num_synsets_per_batch=128,samples_per_synset=6)
+    valid_set = PseudoSents_Dataset(valid_sample, tokenizer, is_training=False)
     
     # sampler = train_set.get_weighted_sampler()
 
@@ -68,7 +66,8 @@ if __name__=="__main__":
                                  cls_method=config["model"]["cls_method"],
                                  dropout=config["model"]["dropout"],
                                  freeze_base=config["model"]["freeze_base"],
-                                 layerwise_attn_dim=config["model"]["layerwise_attn_dim"]
+                                 layerwise_attn_dim=config["model"]["layerwise_attn_dim"],
+                                 fusion_num_layers=2
                                  ).to(device)
     
     total_steps = len(train_dataloader) * config["training"]["epochs"] 

@@ -171,7 +171,8 @@ class SynoViSenseEmbedding(nn.Module):
                  dropout: float = 0.1,
                  freeze_base: bool = False,
                  layerwise_attn_dim: int = 128,
-                 use_cls = True
+                 use_cls = True,
+                 fusion_num_layers=1
                  ):
         """
         Args:
@@ -235,7 +236,7 @@ class SynoViSenseEmbedding(nn.Module):
             hidden_dim=fusion_hidden_dim,
             output_dim=self.hidden_size,
             dropout=dropout,
-            num_layers=1
+            num_layers=fusion_num_layers
         )
         
         # Layer normalization for span representations
