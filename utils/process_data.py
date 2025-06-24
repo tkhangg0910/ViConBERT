@@ -31,12 +31,12 @@ def split_contrastive_stage1_data(pseudo_sent_path, word_synsets_path, output_di
         final_valid.extend(valid_data[synset_id][:min_samples])
 
     # Lưu dưới dạng danh sách các cặp (word_id, sentence)
-    with open(os.path.join(output_dir, "train_data.json"), 'w', encoding='utf-8') as f:
+    with open(os.path.join(output_dir, "train_data_v2.json"), 'w', encoding='utf-8') as f:
         json.dump([{"word_id": w, "sentence": s,"target_word": target,"supersense":supersense, "synset_id": synset_id} 
                 for synset_id, group in train_data.items() 
                 for w,target,supersense, s in group], f,ensure_ascii=False,indent=2)
         
-    with open(os.path.join(output_dir, "valid_data.json"), 'w', encoding='utf-8') as f:
+    with open(os.path.join(output_dir, "valid_data_v2.json"), 'w', encoding='utf-8') as f:
         json.dump([{"word_id": w, "sentence": s,"target_word": target,"supersense":supersense, "synset_id": synset_id} 
                 for synset_id, group in valid_data.items() 
                 for w,target,supersense, s in group], f, ensure_ascii=False,indent=2)

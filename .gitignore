@@ -9,3 +9,5 @@ data/raw/stage_1_pseudo_sents/word_synsets_without_polysemy.csv
 data/raw/stage_1_pseudo_sents/synsets_with_multiple_words.csv
 /data/raw/vietnamses-wordnet_cleaned
 data/raw/stage_1_pseudo_sents/filtered_word_synsets.csv
+data/processed/stage1_pseudo_sents/train_data_v2.json
+data/processed/stage1_pseudo_sents/valid_data_v2.json
