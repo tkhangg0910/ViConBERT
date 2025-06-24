@@ -198,7 +198,7 @@ class SynoViSenseEmbeddingV2(nn.Module):
         cache_dir: str ="embeddings/base_models",
         fusion_hidden_dim: int = 512,
         wp_num_layers:int=1,
-        sp_num_layers:int=1,
+        cp_num_layers:int=1,
         dropout: float = 0.1,
         freeze_base: bool = False,
         fusion_num_layers:int=1,
@@ -237,7 +237,7 @@ class SynoViSenseEmbeddingV2(nn.Module):
             hidden_dim=fusion_hidden_dim,
             output_dim=self.hidden_size,
             dropout=dropout,
-            num_layers=sp_num_layers
+            num_layers=cp_num_layers
         )
         
         if freeze_base:

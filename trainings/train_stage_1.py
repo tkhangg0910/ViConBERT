@@ -45,9 +45,8 @@ if __name__=="__main__":
 
     train_set = PseudoSents_Dataset(train_sample, tokenizer
                                     , is_training=True, 
-                                    num_synsets_per_batch=128,samples_per_synset=6
-                                    use_sent_masking=(args.model=="v1")
-                                    )
+                                    num_synsets_per_batch=128,samples_per_synset=6,
+                                    use_sent_masking=(args.model=="v1"))
     valid_set = PseudoSents_Dataset(valid_sample, tokenizer, is_training=False
                                     ,use_sent_masking=(args.model=="v1"))
     
@@ -73,14 +72,19 @@ if __name__=="__main__":
                                   )
     
     arc = SynoViSenseEmbeddingV1 if args.model=="v1" else SynoViSenseEmbeddingV2
-    
+    optional={
+        "context_window_size":config["model"]["context_window_size"]
+        }if args.model=="v1" else {}
     model = arc(tokenizer,
                 model_name=config["base_model"],
                 cache_dir=config["base_model_cache_dir"],
                 fusion_hidden_dim=config["model"]["fusion_hidden_dim"],
                 dropout=config["model"]["dropout"],
                 freeze_base=config["model"]["freeze_base"],
-                fusion_num_layers=2
+                fusion_num_layers=config["model"]["fusion_num_layers"],
+                wp_num_layers=config["model"]["wp_num_layers"],
+                cp_num_layers=config["model"]["cp_num_layers"],
+                **optional
                 ).to(device)
 
     total_steps = len(train_dataloader) * config["training"]["epochs"] 

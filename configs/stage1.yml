@@ -4,19 +4,19 @@ base_model_cache_dir: "embeddings/base_models"
 output_dir: "./checkpoints/stage1/phobert_base"
 
 data:
-  train_path: "data/processed/stage1_pseudo_sents/train_data.json"
-  valid_path: "data/processed/stage1_pseudo_sents/valid_data.json"
+  train_path: "data/processed/stage1_pseudo_sents/train_data_v2.json"
+  valid_path: "data/processed/stage1_pseudo_sents/valid_data_v2.json"
   num_workers: 16
 
-model:
-  span_method: "attentive"  
-  cls_method: "last"  
-  projection_dim: 256
+model:  
   temperature: 0.3
   freeze_base: False
   fusion_hidden_dim: 512
-  layerwise_attn_dim: 128
   dropout: 0.3
+  wp_num_layers: 1
+  cp_num_layers: 1
+  fusion_num_layers: 2
+  context_window_size: 3
 
 training:
   ckpt_interval: 10
