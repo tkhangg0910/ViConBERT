@@ -67,7 +67,7 @@ class PseudoSents_Dataset(Dataset):
                     sample["sentence"], 
                     sample["target_word"]
                 )
-                if "<mask>" not in masked_sent.split() or not re.search(r"<mask>", masked_sent):
+                if "<mask>" not in masked_sent.split() and not re.search(r"<mask>", masked_sent):
                     print(masked_sent)
                 self.masked_sents.append(masked_sent)
         else:
