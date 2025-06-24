@@ -1,10 +1,9 @@
 import logging
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from transformers import AutoModel, PreTrainedTokenizerFast
-from typing import List, Optional, Tuple, Dict
-from utils.span_extractor import SpanExtractor, create_masked_version
+from transformers import AutoModel
+from typing import List, Tuple
+from utils.span_extractor import create_masked_version
 from typing import Callable
 
 class MLPBlock(nn.Module):
