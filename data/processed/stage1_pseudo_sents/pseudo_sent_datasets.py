@@ -66,7 +66,6 @@ class PseudoSents_Dataset(Dataset):
                     sample["sentence"], 
                     sample["target_word"]
                 )
-                print(masked_sent)
                 self.masked_sents.append(masked_sent)
         else:
             print("Precomputing span indices...")
