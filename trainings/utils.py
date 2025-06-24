@@ -71,10 +71,10 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
             global_step += 1
             num_batches += 1
             
-            word_input_ids=batch["word_input_ids"].to(device),
-            word_attention_mask=batch["word_attn_mask"].to(device),
-            context_input_ids=batch["context_input_ids"].to(device),
-            context_attention_mask=batch["context_attn_mask"].to(device),
+            word_input_ids=batch["word_input_ids"].to(device)
+            word_attention_mask=batch["word_attn_mask"].to(device)
+            context_input_ids=batch["context_input_ids"].to(device)
+            context_attention_mask=batch["context_attn_mask"].to(device)
             target_spans = None
             if "target_spans" in batch and batch["target_spans"] is not None:
                 target_spans = batch["target_spans"].to(device)
@@ -263,10 +263,10 @@ def evaluate_model(model, data_loader, loss_fn, device, metric_k_vals=(1, 5, 10)
     with torch.inference_mode():
         eval_pbar = tqdm(data_loader, desc="Evaluating", position=0, leave=False)
         for batch in eval_pbar:
-            word_input_ids=batch["word_input_ids"].to(device),
-            word_attention_mask=batch["word_attn_mask"].to(device),
-            context_input_ids=batch["context_input_ids"].to(device),
-            context_attention_mask=batch["context_attn_mask"].to(device),
+            word_input_ids=batch["word_input_ids"].to(device)
+            word_attention_mask=batch["word_attn_mask"].to(device)
+            context_input_ids=batch["context_input_ids"].to(device)
+            context_attention_mask=batch["context_attn_mask"].to(device)
             target_spans=batch["span_indices"].to(device)
             synset_ids=batch["synset_ids"].to(device)
             target_spans = batch.get("target_spans")
