@@ -241,7 +241,7 @@ class PseudoSents_Dataset(Dataset):
             target_words,
             padding=True,
             truncation=True,
-            max_length=64,
+            max_length=128,
             return_tensors="pt",
             return_attention_mask=True
         )
