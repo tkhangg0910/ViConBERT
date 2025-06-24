@@ -3,7 +3,6 @@ import torch
 import torch.nn as nn
 from transformers import AutoModel
 from typing import List, Tuple
-from utils.span_extractor import create_masked_version
 from typing import Callable
 
 class MLPBlock(nn.Module):
