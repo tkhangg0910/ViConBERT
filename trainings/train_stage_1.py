@@ -75,7 +75,7 @@ if __name__=="__main__":
     arc = SynoViSenseEmbeddingV1 if args.model=="v1" else SynoViSenseEmbeddingV2
     optional={
         "context_window_size":config["model"]["context_window_size"]
-        }if args.model=="v1" else {}
+        }if args.model=="v2" else {}
     model = arc(tokenizer,
                 model_name=config["base_model"],
                 cache_dir=config["base_model_cache_dir"],

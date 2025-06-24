@@ -162,7 +162,10 @@ class SentenceMasking:
         if span_indices is None:
             return None, None
         
-        encoding = self.tokenizer(text, add_special_tokens=True, return_offsets_mapping=True)
+        encoding = self.tokenizer(text, 
+                                  add_special_tokens=True, 
+                                  return_offsets_mapping=True,
+                                  truncation=True)
         input_ids = encoding["input_ids"]
         
         if not input_ids:

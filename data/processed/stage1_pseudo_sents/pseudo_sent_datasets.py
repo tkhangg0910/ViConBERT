@@ -1,4 +1,5 @@
 import random
+import re
 from torch.utils.data import Dataset, DataLoader
 from collections import defaultdict
 from transformers import PreTrainedTokenizerFast
@@ -16,7 +17,7 @@ class PseudoSents_Dataset(Dataset):
         if self.tokenizer.pad_token is None:
             self.tokenizer.add_special_tokens({'pad_token': '[PAD]'})
         if use_sent_masking:
-            self.sent_masking = SentenceMasking(tokenizer)
+            self.sent_masking = SentenceMasking(self.tokenizer)
         else:
             self.span_extractor = SpanExtractor(self.tokenizer)
         self.num_synsets_per_batch = num_synsets_per_batch
@@ -66,7 +67,7 @@ class PseudoSents_Dataset(Dataset):
                     sample["sentence"], 
                     sample["target_word"]
                 )
-                if "<mask>" not in masked_sent.split():
+                if "<mask>" not in masked_sent.split() or not re.search(r"<mask>", masked_sent):
                     print(masked_sent)
                 self.masked_sents.append(masked_sent)
         else:
