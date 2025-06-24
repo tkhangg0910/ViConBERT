@@ -153,7 +153,7 @@ class SynoViSenseEmbeddingV1(nn.Module):
                 word_attention_mask: torch.Tensor,
                 context_input_ids: torch.Tensor,
                 context_attention_mask: torch.Tensor,
-                ):
+                target_spans: torch.Tensor):
         """
         Forward pass with flexible span representation
         """
