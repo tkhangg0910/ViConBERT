@@ -58,7 +58,7 @@ if __name__=="__main__":
     
     
     
-    model = SynoViSenseEmbedding(tokenizer,
+    model = SynoViSenseEmbeddingV1(tokenizer,
                                 model_name=config["base_model"],
                                  cache_dir=config["base_model_cache_dir"],
                                  fusion_hidden_dim=config["model"]["fusion_hidden_dim"],

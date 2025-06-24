@@ -138,55 +138,57 @@ class SpanExtractor:
 
         return span_text
     
-    
-def create_masked_version(
-    text: str, 
-    target_phrase: str, 
-    tokenizer: PreTrainedTokenizerFast
-) -> Tuple[Optional[str], Optional[Tuple[int, int]]]:
-    mask_token = tokenizer.mask_token
+class SentenceMasking:
+    def __init__(self,tokenizer: PreTrainedTokenizerFast):
+        self.tokenizer=tokenizer 
+        
+    def create_masked_version(self,
+        text: str, 
+        target_phrase: str, 
+        
+    ) -> Tuple[Optional[str], Optional[Tuple[int, int]]]:
+        mask_token = self.tokenizer.mask_token
 
-    text = ' '.join(text.split())
-    target_phrase = ' '.join(target_phrase.split())
-    
-    if not target_phrase or not text:
-        return None, None
-    
-    extractor = SpanExtractor(tokenizer)
-    
-    span_indices = extractor.get_span_indices(text, target_phrase)
-    
-    if span_indices is None:
-        return None, None
-    
-    encoding = tokenizer(text, add_special_tokens=True, return_offsets_mapping=True)
-    input_ids = encoding["input_ids"]
-    
-    if not input_ids:
-        return None, None
-    
-    tokens = tokenizer.convert_ids_to_tokens(input_ids)
-    
-    if not tokens or any(tok is None for tok in tokens):
-        return None, None
-    
-    masked_tokens = tokens.copy()
-    start_idx, end_idx = span_indices
-    
-    n_tokens = len(tokens)
-    start_idx = max(0, min(start_idx, n_tokens - 1))
-    end_idx = max(start_idx, min(end_idx, n_tokens - 1))
-    print(masked_tokens[start_idx:end_idx+1])
+        text = ' '.join(text.split())
+        target_phrase = ' '.join(target_phrase.split())
+        
+        if not target_phrase or not text:
+            return None, None
+        
+        extractor = SpanExtractor(self.tokenizer)
+        
+        span_indices = extractor.get_span_indices(text, target_phrase)
+        
+        if span_indices is None:
+            return None, None
+        
+        encoding = self.tokenizer(text, add_special_tokens=True, return_offsets_mapping=True)
+        input_ids = encoding["input_ids"]
+        
+        if not input_ids:
+            return None, None
+        
+        tokens = self.tokenizer.convert_ids_to_tokens(input_ids)
+        
+        if not tokens or any(tok is None for tok in tokens):
+            return None, None
+        
+        masked_tokens = tokens.copy()
+        start_idx, end_idx = span_indices
+        
+        n_tokens = len(tokens)
+        start_idx = max(0, min(start_idx, n_tokens - 1))
+        end_idx = max(start_idx, min(end_idx, n_tokens - 1))
 
-    masked_tokens[start_idx:end_idx+1] = [mask_token] * (end_idx - start_idx + 1)
-    
-    filtered_tokens = [tok for tok in masked_tokens if tok is not None]
-    
-    try:
-        masked_text = tokenizer.convert_tokens_to_string(filtered_tokens)
-    except Exception as e:
-        print(f"Error converting tokens to string: {e}")
-        print(f"Tokens: {filtered_tokens}")
-        return None, None
-    
-    return masked_text, (start_idx, end_idx)
+        masked_tokens[start_idx:end_idx+1] = [mask_token]
+        
+        filtered_tokens = [tok for tok in masked_tokens if tok is not None]
+        
+        try:
+            masked_text = self.tokenizer.convert_tokens_to_string(filtered_tokens)
+        except Exception as e:
+            print(f"Error converting tokens to string: {e}")
+            print(f"Tokens: {filtered_tokens}")
+            return None, None
+        
+        return masked_text, (start_idx, end_idx)

@@ -149,19 +149,21 @@ class SynoViSenseEmbeddingV1(nn.Module):
         self.span_norm = nn.LayerNorm(self.hidden_size)
         
     def forward(self, 
-                word_input: torch.Tensor, 
-                context_input: torch.Tensor
+                word_input_ids: torch.Tensor,
+                word_attention_mask: torch.Tensor,
+                context_input_ids: torch.Tensor,
+                context_attention_mask: torch.Tensor,
                 ):
         """
         Forward pass with flexible span representation
         """
         word_emb = self._encode_word(
-            word_input["input_ids"],
-            word_input["attention_mask"]
+            word_input_ids,
+            word_attention_mask
         )
         context_emb = self._encode_context(
-            context_input["input_ids"],
-            context_input["attention_mask"]
+            context_input_ids,
+            context_attention_mask
         )
         combined = torch.cat([word_emb, context_emb], dim=-1)
         gate = self.fusion_gate(combined)
@@ -184,39 +186,6 @@ class SynoViSenseEmbeddingV1(nn.Module):
         )
         context_rep = outputs.last_hidden_state[:, 0]  
         return self.context_projection(context_rep)
-    
-    def tokenize_with_target(self, 
-                           texts: List[str], 
-                           target_phrases: List[str]) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Optimized tokenization with span index precomputation
-        """
-        
-        word_input = self.tokenizer(
-            target_phrases, 
-            padding=True,
-            truncation=True,
-            max_length=128 ,
-            return_tensors="pt"
-        )
-        masked_sents =  [create_masked_version(text, phrase, self.tokenizer) for text, phrase in zip(texts, target_phrases)]
-        context_input = self.tokenizer(
-            masked_sents, 
-            padding=True,
-            truncation=True,
-            max_length=128 ,
-            return_tensors="pt"
-        )
-        return word_input, context_input
-    
-    def encode(self, 
-           texts: List[str], 
-           target_phrases: List[str]) -> torch.Tensor:
-        word_input, context_input = self.tokenize_with_target(texts, target_phrases)
-        
-        with torch.inference_mode():
-            embeddings = self.forward(word_input, context_input)
-        return embeddings
 
 class SynoViSenseEmbeddingV2(nn.Module):
     def __init__(self, 
@@ -228,7 +197,8 @@ class SynoViSenseEmbeddingV2(nn.Module):
         sp_num_layers:int=1,
         dropout: float = 0.1,
         freeze_base: bool = False,
-        fusion_num_layers:int=1
+        fusion_num_layers:int=1,
+        context_window_size:int = 3
         ):
         super().__init__()
         """
@@ -243,7 +213,7 @@ class SynoViSenseEmbeddingV2(nn.Module):
             freeze_base: Freeze base model parameters
             layerwise_attn_dim: Attention dim for layerwise pooling
         """
-        
+        self.context_window_size = context_window_size
         self.tokenizer = tokenizer
         self.base_model = AutoModel.from_pretrained(model_name, 
                                               cache_dir=cache_dir)
@@ -285,63 +255,84 @@ class SynoViSenseEmbeddingV2(nn.Module):
         )
         word_rep = outputs.last_hidden_state[:, 0] 
         return self.word_projection(word_rep)
-    
     def _encode_context(self, context_input_ids: torch.Tensor,
-                        context_attention_mask: torch.Tensor
-                        ,target_positions: torch.Tensor) -> torch.Tensor:
+                        context_attention_mask: torch.Tensor,
+                        target_spans: torch.Tensor) -> torch.Tensor:
         """
-        Vectorized context encoding with masked target focusing
+        Vectorized context encoding with target span
         context_input_ids: [batch_size, seq_len]
-        target_positions: [batch_size] 
+        target_spans: [batch_size, 2] (start, end) indices
         """
-        batch_size, seq_len = context_input_ids.shape
-        
         outputs = self.base_model(
             input_ids=context_input_ids,
-            attention_mask=context_attention_mask  
+            attention_mask=context_attention_mask
         )
-
         context_embeddings = outputs.last_hidden_state  # [batch, seq_len, hidden_size]
+        batch_size, seq_len, hidden_size = context_embeddings.shape
         
-        window_size = 3
-        positions = torch.arange(seq_len, device=context_embeddings.device).unsqueeze(0)  # [1, seq_len]
-        target_pos = target_positions.unsqueeze(1)  # [batch, 1]
+        # Create span mask - already handles multi-token spans
+        start_positions = target_spans[:, 0]
+        end_positions = target_spans[:, 1]
         
-        dist = positions - target_pos  # [batch, seq_len]
+        # Create position indices [0, 1, 2, ..., seq_len-1]
+        positions = torch.arange(seq_len, device=context_embeddings.device)
+        positions = positions.unsqueeze(0).expand(batch_size, -1)  # [batch, seq_len]
         
-        window_mask = (dist >= -window_size) & (dist <= window_size)  # [batch, seq_len]
+        # Create mask for tokens within target spans (compound words)
+        span_mask = (positions >= start_positions.unsqueeze(1)) & (positions <= end_positions.unsqueeze(1))
         
-        weights = torch.exp(-0.5 * (dist.float() / window_size)**2)  # Gaussian weights
+        # Combine with attention mask
+        valid_mask = span_mask & context_attention_mask.bool()
         
-        valid_mask = window_mask & context_attention_mask.bool()
-
+        # Apply window mask around the span
+        window_size = self.context_window_size
+        # Create a window around the entire span (not just center)
+        left_window = positions >= (start_positions.unsqueeze(1) - window_size)
+        right_window = positions <= (end_positions.unsqueeze(1) + window_size)
+        window_mask = left_window & right_window
+        
+        # Apply Gaussian weights within the window
+        # Compute distance to nearest edge of the span
+        dist_to_start = torch.abs(positions - start_positions.unsqueeze(1))
+        dist_to_end = torch.abs(positions - end_positions.unsqueeze(1))
+        min_dist = torch.min(dist_to_start, dist_to_end)
+        
+        # Gaussian weights based on distance to span
+        weights = torch.exp(-0.5 * (min_dist.float() / window_size) ** 2)
+        
+        # Apply combined masks
+        final_mask = valid_mask | window_mask 
         weights = torch.where(
-            valid_mask, 
+            final_mask, 
             weights, 
             torch.zeros_like(weights)
         )
-
+        
+        # Normalize weights
         weights = weights / (weights.sum(dim=1, keepdim=True) + 1e-8)
         
-        weighted_embeddings = context_embeddings * weights.unsqueeze(-1)  # [batch, seq_len, hidden_size]
-        context_vectors = weighted_embeddings.sum(dim=1)  # [batch, hidden_size]
+        # Apply weighted averaging
+        weighted_embeddings = context_embeddings * weights.unsqueeze(-1)
+        context_vectors = weighted_embeddings.sum(dim=1)
         
         return self.context_proj(context_vectors)
         
         
     def forward(self, 
-                word_input: torch.Tensor, 
-                context_input: torch.Tensor,
-                target_positions: torch.Tensor = None):
+                word_input_ids: torch.Tensor,
+                word_attention_mask: torch.Tensor,
+                context_input_ids: torch.Tensor,
+                context_attention_mask: torch.Tensor,
+                target_spans: torch.Tensor):
         
         word_emb = self._encode_word(
-            word_input["input_ids"],
-            word_input["attention_mask"]
+            word_input_ids,
+            word_attention_mask
         )
         context_emb = self._encode_context(
-            context_input["input_ids"],
-            context_input["attention_mask"],
-            target_positions
+            context_input_ids,
+            context_attention_mask,
+            target_spans
         )
         
         combined = torch.cat([word_emb, context_emb], dim=-1)

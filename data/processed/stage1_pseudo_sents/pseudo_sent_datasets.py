@@ -5,15 +5,20 @@ from transformers import PreTrainedTokenizerFast
 import torch
 from tqdm import tqdm
 import numpy as np
-from utils.span_extractor import SpanExtractor
+from utils.span_extractor import SpanExtractor,SentenceMasking
 from utils.process_data import text_normalize
 
 class PseudoSents_Dataset(Dataset):
-    def __init__(self, samples, tokenizer, num_synsets_per_batch=32, samples_per_synset=8, is_training=True,val_mini_batch_size=768):
+    def __init__(self, samples, tokenizer, num_synsets_per_batch=32, samples_per_synset=8, is_training=True,val_mini_batch_size=768,
+                 use_sent_masking=False):
         self.tokenizer = tokenizer
+        self.use_sent_masking= use_sent_masking
         if self.tokenizer.pad_token is None:
             self.tokenizer.add_special_tokens({'pad_token': '[PAD]'})
-        self.span_extractor = SpanExtractor(self.tokenizer)
+        if use_sent_masking:
+            self.sent_masking = SentenceMasking(tokenizer)
+        else:
+            self.span_extractor = SpanExtractor(self.tokenizer)
         self.num_synsets_per_batch = num_synsets_per_batch
         self.samples_per_synset = samples_per_synset
         self.is_training = is_training  
@@ -53,22 +58,33 @@ class PseudoSents_Dataset(Dataset):
             self.global_label_to_synset[idx] = synset_id
 
         # Precompute span indices
-        print("Precomputing span indices...")
-        self.span_indices = []
-        for sample in tqdm(self.all_samples, desc="Computing spans"):
-            indices = self.span_extractor.get_span_indices(
-                sample["sentence"], 
-                sample["target_word"]
-            )
-            # if not indices 
-            if indices:
-                pred = self.span_extractor.get_span_text_from_indices(sample["sentence"],indices)
-                if sample["target_word"].lower().strip()!= pred.lower().strip():
-                    print(f"sentence: {sample['sentence']}")
-                    print(f"target: {sample['target_word']}")
-                    print(f"pred: {pred}")
+        if use_sent_masking:
+            print("Precomputing masking sentence...")
+            self.masked_sents = []
+            for sample in tqdm(self.all_samples, desc="Computing spans"):
+                masked_sent, span_idx = self.sent_masking.create_masked_version(
+                    sample["sentence"], 
+                    sample["target_word"]
+                )
+                print(masked_sent)
+                self.masked_sents.append(masked_sent)
+        else:
+            print("Precomputing span indices...")
+            self.span_indices = []
+            for sample in tqdm(self.all_samples, desc="Computing spans"):
+                indices = self.span_extractor.get_span_indices(
+                    sample["sentence"], 
+                    sample["target_word"]
+                )
+                # if not indices 
+                if indices:
+                    pred = self.span_extractor.get_span_text_from_indices(sample["sentence"],indices)
+                    if sample["target_word"].lower().strip()!= pred.lower().strip():
+                        print(f"sentence: {sample['sentence']}")
+                        print(f"target: {sample['target_word']}")
+                        print(f"pred: {pred}")
 
-            self.span_indices.append(indices if indices else (0, 0))
+                self.span_indices.append(indices if indices else (0, 0))
         
         # Filter synsets with enough samples
         self.valid_synsets = [
@@ -145,9 +161,6 @@ class PseudoSents_Dataset(Dataset):
                 batch_samples = all_samples[start_idx:end_idx]
                 batch_synset_labels = all_synset_labels[start_idx:end_idx]
                 self.batches.append((batch_samples, batch_synset_labels))
-            
-            print(f"Validation batches: {len(self.batches)}")
-            print(f"Total validation samples: {num_samples}")
 
 
     
@@ -169,6 +182,17 @@ class PseudoSents_Dataset(Dataset):
         """Return a single batch"""
         samples, synset_labels = self.batches[idx]
         
+        if self.use_sent_masking:
+            masked_sents = []
+            for sample in samples:
+                sample_idx = self.sample_to_index[id(sample)]
+                masked_sents.append(self.masked_sents[sample_idx])
+            return {
+                "samples": samples,
+                "synset_labels": synset_labels,
+                "masked_sents": masked_sents
+            }
+            
         span_indices = []
         for sample in samples:
             sample_idx = self.sample_to_index[id(sample)]
@@ -193,12 +217,14 @@ class PseudoSents_Dataset(Dataset):
         item = batch[0]
         all_samples = item["samples"]
         all_synset_labels = item["synset_labels"]
-        all_span_indices = item["span_indices"]
-
-        # Tokenize sentences
-        sentences = [s["sentence"] for s in all_samples]
-        
-        inputs = self.tokenizer(
+        if self.use_sent_masking:
+            sentences = [s for s in item["masked_sents"]]
+        else:
+            all_span_indices = item["span_indices"]
+            # Tokenize sentences
+            sentences = [s["sentence"] for s in all_samples]
+            
+        context_inputs = self.tokenizer(
             sentences, 
             padding=True, 
             truncation=True, 
@@ -207,9 +233,22 @@ class PseudoSents_Dataset(Dataset):
             return_attention_mask=True
         )
         
+        # Tokenize target word
+        target_words = [s["target_word"] for s in all_samples]
+        word_inputs = self.tokenizer(
+            target_words,
+            padding=True,
+            truncation=True,
+            max_length=64,
+            return_tensors="pt",
+            return_attention_mask=True
+        )
+        
         return {
-            "input_ids": inputs["input_ids"],
-            "attn_mask": inputs["attention_mask"],
-            "span_indices": torch.tensor(all_span_indices, dtype=torch.long),
+            "context_input_ids": context_inputs["input_ids"],
+            "context_attn_mask": context_inputs["attention_mask"],
+            "word_input_ids": word_inputs["input_ids"],
+            "word_attn_mask": word_inputs["attention_mask"],
+            "target_spans": torch.tensor(all_span_indices, dtype=torch.long) if not self.use_sent_masking else None,
             "synset_ids": torch.tensor(all_synset_labels, dtype=torch.long)
         }
