@@ -232,9 +232,10 @@ class PseudoSents_Dataset(Dataset):
             truncation=True, 
             max_length=128,
             return_tensors="pt",
-            return_attention_mask=True
+            return_attention_mask=True,
+            return_offsets_mapping=True
         )
-        
+
         # Tokenize target word
         target_words = [s["target_word"] for s in all_samples]
         word_inputs = self.tokenizer(
@@ -243,7 +244,7 @@ class PseudoSents_Dataset(Dataset):
             truncation=True,
             max_length=64,
             return_tensors="pt",
-            return_attention_mask=True
+            return_attention_mask=True,
         )
         
         return {

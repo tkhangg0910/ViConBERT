@@ -269,7 +269,7 @@ class SynoViSenseEmbeddingV2(nn.Module):
         context_input_ids: [batch_size, seq_len]
         target_spans: [batch_size, 2] (start, end) indices
         """
-        
+        print("To Here")
         outputs = self.base_model(
             input_ids=context_input_ids,
             attention_mask=context_attention_mask
