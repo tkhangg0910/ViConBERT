@@ -223,7 +223,7 @@ class SynoViSenseEmbeddingV2(nn.Module):
         self.base_model = AutoModel.from_pretrained(model_name, 
                                               cache_dir=cache_dir)
         self.hidden_size = self.base_model.config.hidden_size
-
+        self.base_model.resize_token_embeddings(len(tokenizer))
         self.fusion_gate = MLPBlock(
             input_dim=self.hidden_size*2,
             hidden_dim=fusion_hidden_dim,
@@ -269,7 +269,6 @@ class SynoViSenseEmbeddingV2(nn.Module):
         context_input_ids: [batch_size, seq_len]
         target_spans: [batch_size, 2] (start, end) indices
         """
-        print("To Here")
         outputs = self.base_model(
             input_ids=context_input_ids,
             attention_mask=context_attention_mask
