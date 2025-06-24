@@ -287,7 +287,65 @@ class SynoViSenseEmbeddingV2(nn.Module):
         word_rep = outputs.last_hidden_state[:, 0] 
         return self.word_projection(word_rep)
     
-    
-    # def forward(self, input_ids, attention_mask, span_positions):
-
+    def _encode_context(self, context_input_ids: torch.Tensor,
+                        context_attention_mask: torch.Tensor
+                        ,target_positions: torch.Tensor) -> torch.Tensor:
+        """
+        Vectorized context encoding with masked target focusing
+        context_input_ids: [batch_size, seq_len]
+        target_positions: [batch_size] 
+        """
+        batch_size, seq_len = context_input_ids.shape
         
+        outputs = self.base_model(
+            input_ids=context_input_ids,
+            attention_mask=context_attention_mask  
+        )
+
+        context_embeddings = outputs.last_hidden_state  # [batch, seq_len, hidden_size]
+        
+        window_size = 3
+        positions = torch.arange(seq_len, device=context_embeddings.device).unsqueeze(0)  # [1, seq_len]
+        target_pos = target_positions.unsqueeze(1)  # [batch, 1]
+        
+        dist = positions - target_pos  # [batch, seq_len]
+        
+        window_mask = (dist >= -window_size) & (dist <= window_size)  # [batch, seq_len]
+        
+        weights = torch.exp(-0.5 * (dist.float() / window_size)**2)  # Gaussian weights
+        
+        valid_mask = window_mask & context_attention_mask.bool()
+
+        weights = torch.where(
+            valid_mask, 
+            weights, 
+            torch.zeros_like(weights)
+        )
+
+        weights = weights / (weights.sum(dim=1, keepdim=True) + 1e-8)
+        
+        weighted_embeddings = context_embeddings * weights.unsqueeze(-1)  # [batch, seq_len, hidden_size]
+        context_vectors = weighted_embeddings.sum(dim=1)  # [batch, hidden_size]
+        
+        return self.context_proj(context_vectors)
+        
+        
+    def forward(self, 
+                word_input: torch.Tensor, 
+                context_input: torch.Tensor,
+                target_positions: torch.Tensor = None):
+        
+        word_emb = self._encode_word(
+            word_input["input_ids"],
+            word_input["attention_mask"]
+        )
+        context_emb = self._encode_context(
+            context_input["input_ids"],
+            context_input["attention_mask"],
+            target_positions
+        )
+        
+        combined = torch.cat([word_emb, context_emb], dim=-1)
+        gate = self.fusion_gate(combined)
+        fused_embed = gate * word_emb + (1 - gate) * context_emb
+        return fused_embed
