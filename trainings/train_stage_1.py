@@ -43,12 +43,13 @@ if __name__=="__main__":
     if tokenizer.pad_token is None:
         tokenizer.add_special_tokens({'pad_token': '[PAD]'})
 
+    
     train_set = PseudoSents_Dataset(train_sample, tokenizer
                                     , is_training=True, 
                                     num_synsets_per_batch=128,samples_per_synset=6,
-                                    use_sent_masking=(args.model=="v1"))
+                                    use_sent_masking=args.model=="v1")
     valid_set = PseudoSents_Dataset(valid_sample, tokenizer, is_training=False
-                                    ,use_sent_masking=(args.model=="v1"))
+                                    ,use_sent_masking=args.model=="v1")
     
     # sampler = train_set.get_weighted_sampler()
 
