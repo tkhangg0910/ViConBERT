@@ -9,9 +9,14 @@ from typing import Callable
 class MLPBlock(nn.Module):
     """Enhanced neural block to combine context and word representations"""
     
-    def __init__(self, input_dim: int, hidden_dim: int, 
-                 output_dim: int,num_layers: int = 2, dropout: float = 0.1,
-                 activation: Callable = nn.GELU,use_residual: bool = True,
+    def __init__(self, 
+                 input_dim: int, 
+                 hidden_dim: int, 
+                 output_dim: int,
+                 num_layers: int = 2, 
+                 dropout: float = 0.1,
+                 activation: Callable = nn.GELU,
+                 use_residual: bool = True,
                  final_activation = None):
         """
         Args:
@@ -153,7 +158,7 @@ class SynoViSenseEmbeddingV1(nn.Module):
                 word_attention_mask: torch.Tensor,
                 context_input_ids: torch.Tensor,
                 context_attention_mask: torch.Tensor,
-                target_spans: torch.Tensor):
+                target_spans =None):
         """
         Forward pass with flexible span representation
         """

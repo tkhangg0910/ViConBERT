@@ -75,9 +75,9 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
             word_attention_mask=batch["word_attn_mask"].to(device),
             context_input_ids=batch["context_input_ids"].to(device),
             context_attention_mask=batch["context_attn_mask"].to(device),
-            target_spans=batch.get("target_spans")
-            if target_spans:
-                target_spans.to(device)
+            target_spans = None
+            if "target_spans" in batch and batch["target_spans"] is not None:
+                target_spans = batch["target_spans"].to(device)
             synset_ids=batch["synset_ids"].to(device)
 
             optimizer.zero_grad()
@@ -269,7 +269,9 @@ def evaluate_model(model, data_loader, loss_fn, device, metric_k_vals=(1, 5, 10)
             context_attention_mask=batch["context_attn_mask"].to(device),
             target_spans=batch["span_indices"].to(device)
             synset_ids=batch["synset_ids"].to(device)
-            
+            target_spans = batch.get("target_spans")
+            if target_spans is not None:
+                target_spans = target_spans.to(device)
             with autocast(device_type=device):
                 outputs = model(
                     word_input_ids=word_input_ids,
