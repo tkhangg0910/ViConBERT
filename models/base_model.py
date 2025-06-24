@@ -260,6 +260,7 @@ class SynoViSenseEmbeddingV2(nn.Module):
         )
         word_rep = outputs.last_hidden_state[:, 0] 
         return self.word_projection(word_rep)
+    
     def _encode_context(self, context_input_ids: torch.Tensor,
                         context_attention_mask: torch.Tensor,
                         target_spans: torch.Tensor) -> torch.Tensor:
@@ -268,17 +269,18 @@ class SynoViSenseEmbeddingV2(nn.Module):
         context_input_ids: [batch_size, seq_len]
         target_spans: [batch_size, 2] (start, end) indices
         """
+        
         outputs = self.base_model(
             input_ids=context_input_ids,
             attention_mask=context_attention_mask
         )
         context_embeddings = outputs.last_hidden_state  # [batch, seq_len, hidden_size]
         batch_size, seq_len, hidden_size = context_embeddings.shape
-        
+        target_spans = torch.clamp(target_spans, 0, seq_len-1)
         # Create span mask - already handles multi-token spans
-        start_positions = target_spans[:, 0]
-        end_positions = target_spans[:, 1]
-        
+        start_positions = torch.min(target_spans[:, 0], target_spans[:, 1])
+        end_positions = torch.max(target_spans[:, 0], target_spans[:, 1])
+
         # Create position indices [0, 1, 2, ..., seq_len-1]
         positions = torch.arange(seq_len, device=context_embeddings.device)
         positions = positions.unsqueeze(0).expand(batch_size, -1)  # [batch, seq_len]
