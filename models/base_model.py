@@ -29,6 +29,7 @@ class MLPBlock(nn.Module):
         self.activation_fn = activation()
 
         self.input_layer = nn.Linear(input_dim, hidden_dim)
+        self.final_activation=None
         if final_activation:
             self.final_activation = final_activation
         self.hidden_layers = nn.ModuleList()
