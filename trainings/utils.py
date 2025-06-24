@@ -267,7 +267,6 @@ def evaluate_model(model, data_loader, loss_fn, device, metric_k_vals=(1, 5, 10)
             word_attention_mask=batch["word_attn_mask"].to(device)
             context_input_ids=batch["context_input_ids"].to(device)
             context_attention_mask=batch["context_attn_mask"].to(device)
-            target_spans=batch["span_indices"].to(device)
             synset_ids=batch["synset_ids"].to(device)
             target_spans = batch.get("target_spans")
             if target_spans is not None:
