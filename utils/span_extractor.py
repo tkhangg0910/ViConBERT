@@ -180,7 +180,7 @@ class SentenceMasking:
         start_idx = max(0, min(start_idx, n_tokens - 1))
         end_idx = max(start_idx, min(end_idx, n_tokens - 1))
 
-        masked_tokens[start_idx:end_idx+1] = [mask_token]
+        masked_tokens[start_idx:end_idx+1] = [mask_token+"</w>"]
         
         filtered_tokens = [tok for tok in masked_tokens if tok is not None]
         
@@ -190,5 +190,5 @@ class SentenceMasking:
             print(f"Error converting tokens to string: {e}")
             print(f"Tokens: {filtered_tokens}")
             return None, None
-        
+        masked_text = re.sub(r'\s*<[/]?s>\s*', ' ', masked_text).strip()
         return masked_text, (start_idx, end_idx)
