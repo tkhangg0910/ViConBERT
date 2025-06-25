@@ -233,12 +233,18 @@ def compute_full_metrics_large_scale(embeddings, labels, k_vals, device='cuda'):
                 actual_k = min(k, current_count - 1)  
                 precision_sum += matches.float().sum().item() / actual_k
                 valid_samples += 1
-        
-        metrics[f'recall@{k}'] = recall_sum / n
+        recall = recall_sum / n
+        metrics[f'recall@{k}'] = recall
         
         if valid_samples > 0:
-            metrics[f'precision@{k}'] = precision_sum / valid_samples
+            precision = precision_sum / valid_samples
         else:
-            metrics[f'precision@{k}'] = 0.0
-    
+            precision = 0.0
+        metrics[f'precision@{k}'] = precision
+        if precision + recall > 0:
+            f1 = 2 * (precision * recall) / (precision + recall)
+        else:
+            f1 = 0.0
+        metrics[f'f1@{k}'] = f1
+     
     return metrics
