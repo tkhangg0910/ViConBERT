@@ -192,6 +192,35 @@ class SynoViSenseEmbeddingV1(nn.Module):
         context_rep = outputs.last_hidden_state[:, 0]  
         return self.context_projection(context_rep)
 
+class ContextAttention(nn.Module):
+    def __init__(self, hidden_size, num_heads=4, dropout=0.1):
+        super().__init__()
+        self.attention = nn.MultiheadAttention(
+            embed_dim=hidden_size,
+            num_heads=num_heads,
+            dropout=dropout,
+            batch_first=True
+        )
+        self.norm = nn.LayerNorm(hidden_size)
+        self.dropout = nn.Dropout(dropout)
+        
+    def forward(self, query, context, attention_mask):
+        # query: [batch_size, hidden_dim]
+        # context: [batch_size, seq_len, hidden_dim]
+        # attention_mask: [batch_size, seq_len]
+        
+        query = query.unsqueeze(1)
+        attn_output, _ = self.attention(
+            query=query,
+            key=context,
+            value=context,
+            key_padding_mask=~attention_mask.bool()
+        )
+        attn_output = self.dropout(attn_output.squeeze(1))
+        return self.norm(attn_output + query.squeeze(1))
+
+
+
 class SynoViSenseEmbeddingV2(nn.Module):
     def __init__(self, 
         tokenizer,
@@ -203,7 +232,9 @@ class SynoViSenseEmbeddingV2(nn.Module):
         dropout: float = 0.1,
         freeze_base: bool = False,
         fusion_num_layers:int=1,
-        context_window_size:int = 3
+        context_window_size:int = 3,
+        use_context_attention: bool = True,
+        context_num_heads: int = 4,
         ):
         super().__init__()
         """
@@ -223,15 +254,18 @@ class SynoViSenseEmbeddingV2(nn.Module):
         self.base_model = AutoModel.from_pretrained(model_name, 
                                               cache_dir=cache_dir)
         self.hidden_size = self.base_model.config.hidden_size
+        self.use_context_attention = use_context_attention
         self.base_model.resize_token_embeddings(len(tokenizer))
-        self.fusion_gate = MLPBlock(
-            input_dim=self.hidden_size*2,
-            hidden_dim=fusion_hidden_dim,
-            output_dim=self.hidden_size,
+        
+        self.fusion_attention = nn.MultiheadAttention(
+            embed_dim=self.hidden_size,
+            num_heads=context_num_heads,
             dropout=dropout,
-            num_layers=fusion_num_layers,
-            final_activation=nn.Sigmoid()
+            batch_first=True
         )
+        self.fusion_norm = nn.LayerNorm(self.hidden_size)
+        self.fusion_dropout = nn.Dropout(dropout)
+
         
         self.context_proj = MLPBlock(
             input_dim=self.hidden_size,
@@ -240,11 +274,6 @@ class SynoViSenseEmbeddingV2(nn.Module):
             dropout=dropout,
             num_layers=cp_num_layers
         )
-        
-        if freeze_base:
-            for param in self.base_model.parameters():
-                param.requires_grad = False
-        
         self.word_projection = MLPBlock(
             input_dim=self.hidden_size,
             hidden_dim=fusion_hidden_dim,
@@ -252,7 +281,25 @@ class SynoViSenseEmbeddingV2(nn.Module):
             dropout=dropout,
             num_layers=wp_num_layers
         )
-     
+        self.output_proj = MLPBlock(
+            input_dim=self.hidden_size,
+            hidden_dim=fusion_hidden_dim,
+            output_dim=self.hidden_size,
+            dropout=dropout,
+            num_layers=fusion_num_layers
+        )
+
+        if freeze_base:
+            for param in self.base_model.parameters():
+                param.requires_grad = False
+                
+        if self.use_context_attention:
+            self.context_attention = ContextAttention(
+                hidden_size=self.hidden_size,
+                num_heads=context_num_heads,
+                dropout=dropout
+            )
+
     def _encode_word(self, word_input_ids, word_attention_mask):
         outputs = self.base_model(
             input_ids=word_input_ids,
@@ -261,67 +308,42 @@ class SynoViSenseEmbeddingV2(nn.Module):
         word_rep = outputs.last_hidden_state[:, 0] 
         return self.word_projection(word_rep)
     
-    def _encode_context(self, context_input_ids: torch.Tensor,
-                        context_attention_mask: torch.Tensor,
-                        target_spans: torch.Tensor) -> torch.Tensor:
-        """
-        Vectorized context encoding with target span
-        context_input_ids: [batch_size, seq_len]
-        target_spans: [batch_size, 2] (start, end) indices
-        """
+    def _encode_context(self, context_input_ids, context_attention_mask, target_spans):
         outputs = self.base_model(
             input_ids=context_input_ids,
             attention_mask=context_attention_mask
         )
-        context_embeddings = outputs.last_hidden_state  # [batch, seq_len, hidden_size]
-        batch_size, seq_len, hidden_size = context_embeddings.shape
-        target_spans = torch.clamp(target_spans, 0, seq_len-1)
-        # Create span mask - already handles multi-token spans
-        start_positions = torch.min(target_spans[:, 0], target_spans[:, 1])
-        end_positions = torch.max(target_spans[:, 0], target_spans[:, 1])
-
-        # Create position indices [0, 1, 2, ..., seq_len-1]
-        positions = torch.arange(seq_len, device=context_embeddings.device)
-        positions = positions.unsqueeze(0).expand(batch_size, -1)  # [batch, seq_len]
+        context_embeddings = outputs.last_hidden_state
         
-        # Create mask for tokens within target spans (compound words)
-        span_mask = (positions >= start_positions.unsqueeze(1)) & (positions <= end_positions.unsqueeze(1))
+        # Get target span representation
+        batch_size = context_embeddings.size(0)
+        span_reps = []
         
-        # Combine with attention mask
-        valid_mask = span_mask & context_attention_mask.bool()
+        for i in range(batch_size):
+            start_pos = max(0, min(target_spans[i, 0], context_embeddings.size(1)-1))
+            end_pos = max(0, min(target_spans[i, 1], context_embeddings.size(1)-1))
+            
+            if start_pos > end_pos:
+                start_pos, end_pos = end_pos, start_pos
+                
+            span_rep = context_embeddings[i, start_pos:end_pos+1].mean(dim=0)
+            span_reps.append(span_rep)
+            
+        span_reps = torch.stack(span_reps)
         
-        # Apply window mask around the span
-        window_size = self.context_window_size
-        # Create a window around the entire span (not just center)
-        left_window = positions >= (start_positions.unsqueeze(1) - window_size)
-        right_window = positions <= (end_positions.unsqueeze(1) + window_size)
-        window_mask = left_window & right_window
+        # Enhanced context processing
+        if self.use_context_attention:
+            context_rep = self.context_attention(
+                query=span_reps,
+                context=context_embeddings,
+                attention_mask=context_attention_mask
+            )
+        else:
+            # Mean pooling with attention mask
+            mask = context_attention_mask.unsqueeze(-1)
+            context_rep = (context_embeddings * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1e-9)
         
-        # Apply Gaussian weights within the window
-        # Compute distance to nearest edge of the span
-        dist_to_start = torch.abs(positions - start_positions.unsqueeze(1))
-        dist_to_end = torch.abs(positions - end_positions.unsqueeze(1))
-        min_dist = torch.min(dist_to_start, dist_to_end)
-        
-        # Gaussian weights based on distance to span
-        weights = torch.exp(-0.5 * (min_dist.float() / window_size) ** 2)
-        
-        # Apply combined masks
-        final_mask = valid_mask | window_mask 
-        weights = torch.where(
-            final_mask, 
-            weights, 
-            torch.zeros_like(weights)
-        )
-        
-        # Normalize weights
-        weights = weights / (weights.sum(dim=1, keepdim=True) + 1e-8)
-        
-        # Apply weighted averaging
-        weighted_embeddings = context_embeddings * weights.unsqueeze(-1)
-        context_vectors = weighted_embeddings.sum(dim=1)
-        
-        return self.context_proj(context_vectors)
+        return self.context_proj(context_rep)
         
         
     def forward(self, 
@@ -340,8 +362,16 @@ class SynoViSenseEmbeddingV2(nn.Module):
             context_attention_mask,
             target_spans
         )
-        
+        word_emb_expanded = word_emb.unsqueeze(1)  # [batch, 1, hidden]
+        context_emb_expanded = context_emb.unsqueeze(1)  
         combined = torch.cat([word_emb, context_emb], dim=-1)
-        gate = self.fusion_gate(combined)
-        fused_embed = gate * word_emb + (1 - gate) * context_emb
-        return fused_embed
+        fused_emb, _ = self.fusion_attention(
+            query=word_emb_expanded,
+            key=context_emb_expanded,
+            value=context_emb_expanded
+        )
+        fused_emb = self.fusion_dropout(fused_emb.squeeze(1))
+        fused_emb = self.fusion_norm(fused_emb + word_emb)  
+        output_emb = self.output_proj(fused_emb)
+
+        return output_emb
