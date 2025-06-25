@@ -87,7 +87,7 @@ if __name__=="__main__":
     #             cp_num_layers=config["model"]["cp_num_layers"],
     #             **optional
     #             ).to(device)
-    model = arc.from_pretrained(config["base_model"])
+    model = arc.from_pretrained(config["base_model"]).to(device)
     total_steps = len(train_dataloader) * config["training"]["epochs"] 
     steps_per_epoch = len(train_dataloader)
     print(f"Steps per epoch: {steps_per_epoch}")
