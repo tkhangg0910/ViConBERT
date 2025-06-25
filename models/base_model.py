@@ -195,7 +195,44 @@ class SynoViSenseEmbeddingV1(nn.Module):
         )
         context_rep = outputs.last_hidden_state[:, 0]  
         return self.context_projection(context_rep)
+    
+    def save_pretrained(self, save_directory):
+        """Save pretrained Hugging Face model"""
+        os.makedirs(save_directory, exist_ok=True)
+        
+        torch.save(self.state_dict(), os.path.join(save_directory, "pytorch_model.bin"))
+        
+        with open(os.path.join(save_directory, "config.json"), "w") as f:
+            json.dump(self.config, f, indent=2)
+        
+        if hasattr(self, 'tokenizer'):
+            self.tokenizer.save_pretrained(save_directory)
 
+    @classmethod
+    def from_pretrained(cls, save_directory, tokenizer=None, **kwargs):
+
+        with open(os.path.join(save_directory, "config.json"), "r") as f:
+            config = json.load(f)
+        
+        if tokenizer is None:
+            try:
+                tokenizer = AutoTokenizer.from_pretrained(save_directory)
+            except:
+                raise ValueError("Không tìm thấy tokenizer trong thư mục")
+        
+        model = cls(
+            tokenizer=tokenizer,
+            **config,
+            **kwargs
+        )
+        
+        state_dict = torch.load(
+            os.path.join(save_directory, "pytorch_model.bin"),
+            map_location=torch.device('cpu')
+        )
+        model.load_state_dict(state_dict)
+        return model
+    
 class SynoViSenseEmbeddingV2(nn.Module):
     def __init__(self, 
         tokenizer,

@@ -76,18 +76,18 @@ if __name__=="__main__":
     optional={
         "context_window_size":config["model"]["context_window_size"]
         }if args.model=="v2" else {}
-    model = arc(tokenizer,
-                model_name=config["base_model"],
-                cache_dir=config["base_model_cache_dir"],
-                fusion_hidden_dim=config["model"]["fusion_hidden_dim"],
-                dropout=config["model"]["dropout"],
-                freeze_base=config["model"]["freeze_base"],
-                fusion_num_layers=config["model"]["fusion_num_layers"],
-                wp_num_layers=config["model"]["wp_num_layers"],
-                cp_num_layers=config["model"]["cp_num_layers"],
-                **optional
-                ).to(device)
-
+    # model = arc(tokenizer,
+    #             model_name=config["base_model"],
+    #             cache_dir=config["base_model_cache_dir"],
+    #             fusion_hidden_dim=config["model"]["fusion_hidden_dim"],
+    #             dropout=config["model"]["dropout"],
+    #             freeze_base=config["model"]["freeze_base"],
+    #             fusion_num_layers=config["model"]["fusion_num_layers"],
+    #             wp_num_layers=config["model"]["wp_num_layers"],
+    #             cp_num_layers=config["model"]["cp_num_layers"],
+    #             **optional
+    #             ).to(device)
+    model = arc.from_pretrained(config["base_model"])
     total_steps = len(train_dataloader) * config["training"]["epochs"] 
     steps_per_epoch = len(train_dataloader)
     print(f"Steps per epoch: {steps_per_epoch}")
