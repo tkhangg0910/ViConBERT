@@ -72,9 +72,9 @@ class MLPBlock(nn.Module):
             x = self.activation_fn(x)
             if self.use_residual:
                 x = x + residual
+        x = self.output_layer(x)
         if self.final_activation:
             x = self.final_activation(x)
-        x = self.output_layer(x)
 
         
         return x
