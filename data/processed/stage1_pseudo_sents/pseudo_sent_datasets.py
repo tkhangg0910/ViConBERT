@@ -35,7 +35,7 @@ class PseudoSents_Dataset(Dataset):
 
         # Process samples
         all_synsets = set()
-        for i, sample in enumerate(tqdm(samples, desc="Processing samples")):
+        for i, sample in enumerate(tqdm(samples, desc="Processing samples", ascii=True)):
             normalized_sentence = text_normalize(sample["sentence"])
             normalized_target = sample["target_word"]
             group = self._get_supersense_group(sample["supersense"])
@@ -62,7 +62,7 @@ class PseudoSents_Dataset(Dataset):
         if use_sent_masking:
             print("Precomputing masking sentence...")
             self.masked_sents = []
-            for sample in tqdm(self.all_samples, desc="Computing spans"):
+            for sample in tqdm(self.all_samples, desc="Computing spans",ascii=True):
                 masked_sent, span_idx = self.sent_masking.create_masked_version(
                     sample["sentence"], 
                     sample["target_word"]
@@ -73,7 +73,7 @@ class PseudoSents_Dataset(Dataset):
         else:
             print("Precomputing span indices...")
             self.span_indices = []
-            for sample in tqdm(self.all_samples, desc="Computing spans"):
+            for sample in tqdm(self.all_samples, desc="Computing spans",ascii=True):
                 indices = self.span_extractor.get_span_indices(
                     sample["sentence"], 
                     sample["target_word"]

@@ -65,7 +65,7 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
         # Training loop
         train_pbar = tqdm(train_data_loader, 
                          desc=f"Training Epoch {epoch+1}/{num_epochs}",
-                         position=0, leave=True)
+                         position=0, leave=True, ascii=True)
         
         for batch_idx, batch in enumerate(train_pbar):
             global_step += 1
@@ -277,7 +277,7 @@ def evaluate_model(model, data_loader, loss_fn, device, metric_k_vals=(1, 5, 10)
     all_labels = []
     
     with torch.inference_mode():
-        eval_pbar = tqdm(data_loader, desc="Evaluating", position=0, leave=False)
+        eval_pbar = tqdm(data_loader, desc="Evaluating", position=0, leave=False,ascii=True)
         for batch in eval_pbar:
             word_input_ids=batch["word_input_ids"].to(device)
             word_attention_mask=batch["word_attn_mask"].to(device)

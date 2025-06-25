@@ -197,7 +197,7 @@ def compute_full_metrics_large_scale(embeddings, labels, k_vals, device='cuda'):
     max_k = max(k_vals)
     topk_indices = torch.empty((n, max_k), dtype=torch.long, device='cpu')
     
-    for i in tqdm(range(0, n, chunk_size), desc="Computing similarity"):
+    for i in tqdm(range(0, n, chunk_size), desc="Computing similarity",ascii=True):
         start_i = i
         end_i = min(i + chunk_size, n)
         chunk = embeddings[start_i:end_i].to(device)
@@ -221,7 +221,7 @@ def compute_full_metrics_large_scale(embeddings, labels, k_vals, device='cuda'):
         precision_sum = 0.0
         valid_samples = 0 
         
-        for i in tqdm(range(n), desc=f"Computing metrics@k={k}"):
+        for i in tqdm(range(n), desc=f"Computing metrics@k={k}",ascii=True):
             current_label = labels_cpu[i].item()
             current_count = label_count_dict.get(current_label, 0)
             topk = topk_indices[i, :k]
