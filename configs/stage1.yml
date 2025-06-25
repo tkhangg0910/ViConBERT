@@ -1,6 +1,6 @@
 stage_name: "contrastive_pretraining"
-base_model: "vinai/phobert-base"
-base_model_cache_dir: "embeddings/base_models"
+base_model: "checkpoints/stage1/phobert_base/run_20250625_v1/converted_model"
+base_model_cache_dir: "checkpoints/stage1/phobert_base/run_20250625_v1/converted_model"
 output_dir: "./checkpoints/stage1/phobert_base"
 
 data:

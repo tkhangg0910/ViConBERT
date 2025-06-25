@@ -48,10 +48,9 @@ def convert_checkpoint(base_model,old_checkpoint_path, output_dir, tokenizer_nam
     print(f"Đầu ra được lưu tại: {output_dir}")
 
 if __name__ == "__main__":
-    # Thay đổi các đường dẫn này theo thực tế
     convert_checkpoint(
         base_model=SynoViSenseEmbeddingV2,
         old_checkpoint_path="checkpoints/stage1/phobert_base/run_20250625_v1/best_model.pt",  
-        output_dir="checkpoints/stage1/phobert_base/run_20250625_v1/converted_model",  # Thư mục đầu ra
-        tokenizer_name="vinai/phobert-base"  # Tên tokenizer
+        output_dir="checkpoints/stage1/phobert_base/run_20250625_v1/converted_model",  
+        tokenizer_name="vinai/phobert-base" 
     )

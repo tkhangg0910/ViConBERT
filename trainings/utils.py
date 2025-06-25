@@ -161,34 +161,45 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
         # CHECKPOINTING
         # ======================
         if (epoch + 1) % ckpt_interval == 0:
-            checkpoint_path = os.path.join(run_dir, f"epoch_{epoch+1}.pt")
-            torch.save({
+            checkpoint_dir_path  = os.path.join(run_dir, f"epoch_{epoch+1}")
+            os.makedirs(checkpoint_dir_path, exist_ok=True)
+
+            model.save_pretrained(checkpoint_dir_path)
+
+            training_state = {
                 'epoch': epoch+1,
-                'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'scheduler_state_dict': scheduler.state_dict() if scheduler else None,
                 'train_metrics': train_metrics,
                 'valid_metrics': valid_metrics,
-                'history': history
-            }, checkpoint_path)
-            print(f"Checkpoint saved: {checkpoint_path}")
+                'global_step': global_step
+            }
+            torch.save(training_state, os.path.join(checkpoint_dir_path, "training_state.pt"))
+            print(f"Checkpoint saved to directory: {checkpoint_dir_path}")
+
             
         # ======================
         # EARLY STOPPING & BEST MODEL SAVING
         # ======================
         if valid_metrics['loss'] < best_valid_loss:
             best_valid_loss = valid_metrics['loss']
-            best_model_path = os.path.join(run_dir, "best_model.pt")
+            best_model_dir = os.path.join(run_dir, "best_model")
+            os.makedirs(best_model_dir, exist_ok=True)
+            
+            # Save model using new method
+            model.save_pretrained(best_model_dir)
+            
+            # Save training state
             torch.save({
                 'epoch': epoch+1,
-                'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'scheduler_state_dict': scheduler.state_dict() if scheduler else None,
                 'best_valid_loss': best_valid_loss,
-                'history': history
-            }, best_model_path)
+                'global_step': global_step
+            }, os.path.join(best_model_dir, "training_state.pt"))
+            
             patience_counter = 0
-            print(f"✓ New best model saved! Valid Loss: {best_valid_loss:.4f}")
+            print(f"✓ New best model saved to: {best_model_dir}")
         else:
             patience_counter += 1
         
@@ -232,15 +243,20 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
     # ======================
     # FINAL SAVE
     # ======================
-    final_model_path = os.path.join(run_dir, "final_model.pt")
+    final_model_dir = os.path.join(run_dir, "final_model")
+    os.makedirs(final_model_dir, exist_ok=True)
+
+    # Save model using new method
+    model.save_pretrained(final_model_dir)
+
+    # Save training state
     torch.save({
         'epoch': epoch+1,
-        'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
         'scheduler_state_dict': scheduler.state_dict() if scheduler else None,
         'best_valid_loss': best_valid_loss,
-        'history': history
-    }, final_model_path)
+        'global_step': global_step
+    }, os.path.join(final_model_dir, "training_state.pt"))
     
     history_path = os.path.join(run_dir, "training_history.pt")
     torch.save(history, history_path)
