@@ -17,7 +17,7 @@ class MLPBlock(nn.Module):
                 hidden_dim: int, 
                 output_dim: int,
                 num_layers: int = 2, 
-                dropout: float = 0.1,
+                dropout: float = 0.3,
                 activation: Callable = nn.GELU,
                 use_residual: bool = True,
                 final_activation = None):
