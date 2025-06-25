@@ -1,22 +1,26 @@
 import logging
+import os
+import json
+from transformers import AutoTokenizer
 import torch
 import torch.nn as nn
 from transformers import AutoModel
 from typing import List, Tuple
 from typing import Callable
 
+
 class MLPBlock(nn.Module):
     """Enhanced neural block to combine context and word representations"""
     
     def __init__(self, 
-                 input_dim: int, 
-                 hidden_dim: int, 
-                 output_dim: int,
-                 num_layers: int = 2, 
-                 dropout: float = 0.1,
-                 activation: Callable = nn.GELU,
-                 use_residual: bool = True,
-                 final_activation = None):
+                input_dim: int, 
+                hidden_dim: int, 
+                output_dim: int,
+                num_layers: int = 2, 
+                dropout: float = 0.1,
+                activation: Callable = nn.GELU,
+                use_residual: bool = True,
+                final_activation = None):
         """
         Args:
             input_dim: Dimension of concatenated features
@@ -82,24 +86,24 @@ class SynoViSenseEmbeddingV1(nn.Module):
     """
     
     def __init__(self, 
-                 tokenizer,
-                 model_name: str = "vinai/phobert-base",
-                 cache_dir: str ="embeddings/base_models",
-                 fusion_hidden_dim: int = 512,
-                 wp_num_layers:int=1,
-                 cp_num_layers:int=1,
-                 dropout: float = 0.1,
-                 freeze_base: bool = False,
-                 fusion_num_layers:int=1
-                 ):
+                tokenizer,
+                model_name: str = "vinai/phobert-base",
+                cache_dir: str ="embeddings/base_models",
+                fusion_hidden_dim: int = 512,
+                wp_num_layers:int=1,
+                cp_num_layers:int=1,
+                dropout: float = 0.1,
+                freeze_base: bool = False,
+                fusion_num_layers:int=1
+                ):
         """
         Args:
             model_name: Pre-trained model name
             fusion_hidden_dim: Fusion block hidden dimension
             span_method: Span representation method 
-                         ("diff_sum", "mean", "attentive")
+                        ("diff_sum", "mean", "attentive")
             cls_method: cls representation method 
-                         ("layerwise", "last")
+                        ("layerwise", "last")
             dropout: Dropout rate
             freeze_base: Freeze base model parameters
             layerwise_attn_dim: Attention dim for layerwise pooling
@@ -211,9 +215,9 @@ class SynoViSenseEmbeddingV2(nn.Module):
             model_name: Pre-trained model name
             fusion_hidden_dim: Fusion block hidden dimension
             span_method: Span representation method 
-                         ("diff_sum", "mean", "attentive")
+                        ("diff_sum", "mean", "attentive")
             cls_method: cls representation method 
-                         ("layerwise", "last")
+                        ("layerwise", "last")
             dropout: Dropout rate
             freeze_base: Freeze base model parameters
             layerwise_attn_dim: Attention dim for layerwise pooling
@@ -221,7 +225,7 @@ class SynoViSenseEmbeddingV2(nn.Module):
         self.context_window_size = context_window_size
         self.tokenizer = tokenizer
         self.base_model = AutoModel.from_pretrained(model_name, 
-                                              cache_dir=cache_dir)
+                                            cache_dir=cache_dir)
         self.hidden_size = self.base_model.config.hidden_size
         self.base_model.resize_token_embeddings(len(tokenizer))
         self.fusion_gate = MLPBlock(
@@ -252,7 +256,7 @@ class SynoViSenseEmbeddingV2(nn.Module):
             dropout=dropout,
             num_layers=wp_num_layers
         )
-     
+    
     def _encode_word(self, word_input_ids, word_attention_mask):
         outputs = self.base_model(
             input_ids=word_input_ids,
@@ -319,3 +323,41 @@ class SynoViSenseEmbeddingV2(nn.Module):
         gate = self.fusion_gate(combined)
         fused_embed = gate * word_emb + (1 - gate) * context_emb
         return fused_embed
+    
+    def save_pretrained(self, save_directory):
+        """Save pretrained Hugging Face model"""
+        os.makedirs(save_directory, exist_ok=True)
+        
+        torch.save(self.state_dict(), os.path.join(save_directory, "pytorch_model.bin"))
+        
+        with open(os.path.join(save_directory, "config.json"), "w") as f:
+            json.dump(self.config, f, indent=2)
+        
+        if hasattr(self, 'tokenizer'):
+            self.tokenizer.save_pretrained(save_directory)
+
+    @classmethod
+    def from_pretrained(cls, save_directory, tokenizer=None, **kwargs):
+
+        with open(os.path.join(save_directory, "config.json"), "r") as f:
+            config = json.load(f)
+        
+        if tokenizer is None:
+            try:
+                tokenizer = AutoTokenizer.from_pretrained(save_directory)
+            except:
+                raise ValueError("Không tìm thấy tokenizer trong thư mục")
+        
+        model = cls(
+            tokenizer=tokenizer,
+            **config,
+            **kwargs
+        )
+        
+        state_dict = torch.load(
+            os.path.join(save_directory, "pytorch_model.bin"),
+            map_location=torch.device('cpu')
+        )
+        model.load_state_dict(state_dict)
+        return model
+    
