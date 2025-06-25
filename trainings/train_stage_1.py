@@ -21,7 +21,7 @@ if is_torch_available() and torch.multiprocessing.get_start_method() == "fork":
 def setup_args():
     parser = argparse.ArgumentParser(description="Train a model")
     parser.add_argument("--model", type=str, default="v2", help="Model type")
-    parser.add_argument("--load_ckpts", type=bool, default=0, help="Model type")
+    parser.add_argument("--load_ckpts", type=int, default=0, help="Model type")
     args = parser.parse_args()
     return args 
         
@@ -77,7 +77,7 @@ if __name__=="__main__":
     optional={
         "context_window_size":config["model"]["context_window_size"]
         }if args.model=="v2" else {}
-    
+    print(bool(args.load_ckpts))
     if bool(args.load_ckpts):
         model = arc.from_pretrained(config["base_model"]).to(device)
     else:
