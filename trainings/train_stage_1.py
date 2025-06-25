@@ -27,6 +27,7 @@ def setup_args():
         
 if __name__=="__main__":
     args = setup_args()
+    print(bool(args.load_ckpts))
 
     config = load_config("configs/stage1.yml")
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -77,7 +78,6 @@ if __name__=="__main__":
     optional={
         "context_window_size":config["model"]["context_window_size"]
         }if args.model=="v2" else {}
-    print(bool(args.load_ckpts))
     if bool(args.load_ckpts):
         model = arc.from_pretrained(config["base_model"]).to(device)
     else:
