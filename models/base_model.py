@@ -374,7 +374,7 @@ class SynoViSenseEmbeddingV2(nn.Module):
             self.tokenizer.save_pretrained(save_directory)
 
     @classmethod
-    def from_pretrained(cls, save_directory, tokenizer=None, **kwargs):
+    def from_pretrained(cls, save_directory, tokenizer=None):
 
         with open(os.path.join(save_directory, "config.json"), "r") as f:
             config = json.load(f)
@@ -384,11 +384,18 @@ class SynoViSenseEmbeddingV2(nn.Module):
                 tokenizer = AutoTokenizer.from_pretrained(save_directory)
             except:
                 raise ValueError("Không tìm thấy tokenizer trong thư mục")
-        
+         
         model = cls(
             tokenizer=tokenizer,
-            **config,
-            **kwargs
+            model_name=config["base_model"],
+            cache_dir=config["base_model_cache_dir"],
+            fusion_hidden_dim=config["model"]["fusion_hidden_dim"],
+            dropout=config["model"]["dropout"],
+            freeze_base=config["model"]["freeze_base"],
+            fusion_num_layers=config["model"]["fusion_num_layers"],
+            wp_num_layers=config["model"]["wp_num_layers"],
+            cp_num_layers=config["model"]["cp_num_layers"],
+            context_window_size=config["model"]["context_window_size"]
         )
         
         state_dict = torch.load(
