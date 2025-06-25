@@ -261,6 +261,20 @@ class SynoViSenseEmbeddingV2(nn.Module):
         """
         self.context_window_size = context_window_size
         self.tokenizer = tokenizer
+        self.config = {
+            "base_model": model_name,
+            "base_model_cache_dir": cache_dir,
+            "model": {
+                "fusion_hidden_dim": fusion_hidden_dim,
+                "dropout": dropout,
+                "freeze_base": freeze_base,
+                "fusion_num_layers": fusion_num_layers,
+                "wp_num_layers": wp_num_layers,
+                "cp_num_layers": cp_num_layers,
+                "context_window_size": context_window_size
+            }
+        }
+
         self.base_model = AutoModel.from_pretrained(model_name, 
                                             cache_dir=cache_dir)
         self.hidden_size = self.base_model.config.hidden_size
