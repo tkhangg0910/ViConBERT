@@ -71,7 +71,7 @@ if __name__=="__main__":
                                 supersense_size=config["model"]["supersense_size"],
                                 pred_head_num_layer=config["model"]["pred_head_num_layer"],
                                 prediction_hidden_dim=config["model"]["prediction_hidden_dim"]
-                                )
+                                ).to(device)
     
     total_steps = len(train_dataloader) * config["training"]["epochs"] 
     steps_per_epoch = len(train_dataloader)
