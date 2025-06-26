@@ -11,6 +11,9 @@ class SuperSensePredModel(nn.Module):
                  prediction_hidden_dim: int = 512
                  ):
         super().__init__()
+        self.supersense_size =supersense_size
+        self.pred_head_num_layer= pred_head_num_layer
+        self.prediction_hidden_dim = prediction_hidden_dim
         self.embedding_model = embedding_model
         self.prediction_head = MLPBlock(embedding_model.hidden_size,
                                    prediction_hidden_dim,
@@ -43,9 +46,9 @@ class SuperSensePredModel(nn.Module):
         head_state = {
             'prediction_head': self.prediction_head.state_dict(),
             'config': {
-                'supersense_size': self.prediction_head.output_dim,
-                'pred_head_num_layer': self.prediction_head.num_layers,
-                'fusion_hidden_dim': self.prediction_head.hidden_dim
+                'supersense_size': self.supersense_size,
+                'pred_head_num_layer': self.pred_head_num_layer,
+                'fusion_hidden_dim': self.prediction_hidden_dim
             }
         }
         torch.save(head_state, os.path.join(save_directory, "prediction_head.bin"))

@@ -392,7 +392,7 @@ class SynoViSenseEmbeddingV2(nn.Module):
 
         with open(os.path.join(save_directory, "config.json"), "r") as f:
             config = json.load(f)
-        
+        config.update({"add_pooling_layer": False})
         if tokenizer is None:
             try:
                 tokenizer = AutoTokenizer.from_pretrained(save_directory)
