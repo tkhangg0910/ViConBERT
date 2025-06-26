@@ -160,6 +160,7 @@ class SuperSenseDataset(Dataset):
 
         
         padded_batch = {
+            "target_spans":target_spans,
             "context_input_ids": context_inputs["input_ids"],
             "context_attn_mask": context_inputs["attention_mask"],
             "word_input_ids": word_inputs["input_ids"],
@@ -167,14 +168,5 @@ class SuperSenseDataset(Dataset):
             "synset_ids": torch.tensor(synset_ids, dtype=torch.long),
             "supersense_labels": torch.tensor(supersense_labels, dtype=torch.long)
         }
-        
-        # Xử lý target_spans an toàn hơn
-        if any(span is not None for span in target_spans):
-            padded_batch["target_spans"] = torch.stack(
-                [span if span is not None else torch.tensor([0, 0], dtype=torch.long) 
-                for span in target_spans]
-            )
-        else:
-            padded_batch["target_spans"] = None
         
         return padded_batch
