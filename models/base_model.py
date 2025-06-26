@@ -307,43 +307,92 @@ class SynoViSenseEmbeddingV2(nn.Module):
             dropout=dropout,
             num_layers=wp_num_layers
         )
+        num_layers = self.base_model.config.num_hidden_layers
+        self.word_layer_weights = nn.Parameter(torch.ones(num_layers))
+        self.context_layer_weights = nn.Parameter(torch.ones(num_layers))
+
     
     def _encode_word(self, word_input_ids, word_attention_mask):
         outputs = self.base_model(
             input_ids=word_input_ids,
-            attention_mask=word_attention_mask
+            attention_mask=word_attention_mask,
+            output_hidden_states=True
         )
-        word_rep = outputs.last_hidden_state[:, 0] 
-        return self.word_projection(word_rep)
+
+        all_hidden_states = outputs.hidden_states[1:]
+        norm_weights = torch.softmax(self.word_layer_weights, dim=0)
+        combined_output = torch.zeros_like(all_hidden_states[0])
+        for i, hidden_state in enumerate(all_hidden_states):
+            combined_output += norm_weights[i] * hidden_state
+        input_mask_expanded = word_attention_mask.unsqueeze(-1).expand(combined_output.size()).float()
+        sum_embeddings = torch.sum(combined_output * input_mask_expanded, 1)
+        sum_mask = torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+        word_vector = sum_embeddings / sum_mask
+        
+        return self.word_projection(word_vector)
     
     def _encode_context(self, context_input_ids, context_attention_mask, target_spans):
+        # outputs = self.base_model(
+        #     input_ids=context_input_ids,
+        #     attention_mask=context_attention_mask,
+        #     output_hidden_states=True
+        # )
+
+        # context_embeddings = outputs.last_hidden_state
+        
+        # # More sophisticated span attention
+        # batch_size, seq_len, _ = context_embeddings.shape
+        # positions = torch.arange(seq_len, device=context_embeddings.device).expand(batch_size, -1)
+        
+        # # Create attention weights that focus more on the target word
+        # start_pos = target_spans[:, 0]
+        # end_pos = target_spans[:, 1]
+        
+        # # Distance to target center
+        # center = (start_pos + end_pos) / 2
+        # dist = torch.abs(positions - center.unsqueeze(1))
+        
+        # # Inverse distance weighting
+        # weights = 1.0 / (dist + 1.0)  # +1 to avoid division by zero
+        
+        # # Zero out weights beyond window size
+        # weights = torch.where(dist <= self.context_window_size, 
+        #                     weights, 
+        #                     torch.zeros_like(weights))
+        
+        # # Apply attention mask
+        # weights = weights * context_attention_mask.float()
+        # weights = weights / (weights.sum(dim=1, keepdim=True) + 1e-8)
+        
+        # weighted_emb = context_embeddings * weights.unsqueeze(-1)
+        # context_vectors = weighted_emb.sum(dim=1)
+        
+        # return self.context_proj(context_vectors)
+        
         outputs = self.base_model(
             input_ids=context_input_ids,
-            attention_mask=context_attention_mask
+            attention_mask=context_attention_mask,
+            output_hidden_states=True
         )
-        context_embeddings = outputs.last_hidden_state
         
-        # More sophisticated span attention
+        all_hidden_states = outputs.hidden_states[1:]
+        
+        norm_weights = torch.softmax(self.context_layer_weights, dim=0)
+        
+        context_embeddings = torch.zeros_like(all_hidden_states[0])
+        for i, hidden_state in enumerate(all_hidden_states):
+            context_embeddings += norm_weights[i] * hidden_state
+        
         batch_size, seq_len, _ = context_embeddings.shape
         positions = torch.arange(seq_len, device=context_embeddings.device).expand(batch_size, -1)
         
-        # Create attention weights that focus more on the target word
         start_pos = target_spans[:, 0]
         end_pos = target_spans[:, 1]
-        
-        # Distance to target center
         center = (start_pos + end_pos) / 2
         dist = torch.abs(positions - center.unsqueeze(1))
         
-        # Inverse distance weighting
-        weights = 1.0 / (dist + 1.0)  # +1 to avoid division by zero
-        
-        # Zero out weights beyond window size
-        weights = torch.where(dist <= self.context_window_size, 
-                            weights, 
-                            torch.zeros_like(weights))
-        
-        # Apply attention mask
+        weights = 1.0 / (dist + 1.0)
+        weights = torch.where(dist <= self.context_window_size, weights, torch.zeros_like(weights))
         weights = weights * context_attention_mask.float()
         weights = weights / (weights.sum(dim=1, keepdim=True) + 1e-8)
         
@@ -351,7 +400,6 @@ class SynoViSenseEmbeddingV2(nn.Module):
         context_vectors = weighted_emb.sum(dim=1)
         
         return self.context_proj(context_vectors)
-        
         
     def forward(self, 
                 word_input_ids: torch.Tensor,
