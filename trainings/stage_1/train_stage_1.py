@@ -13,7 +13,7 @@ from models.base_model import SynoViSenseEmbeddingV1, SynoViSenseEmbeddingV2
 from utils.load_config import load_config
 from utils.optimizer import create_optimizer
 from utils.loss_fn import InfoNceLoss
-from trainings.utils import train_model
+from trainings.stage_1.utils import train_model
 
 if is_torch_available() and torch.multiprocessing.get_start_method() == "fork":
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
