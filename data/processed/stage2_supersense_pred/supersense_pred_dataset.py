@@ -116,63 +116,65 @@ class SuperSenseDataset(Dataset):
             item["span_indices"] = self.span_indices[idx]
         
         return item
-    
+
     def collate_fn(self, batch):
         """Custom collate function to process a batch of samples"""
-        contexts = []
-        words = []
-        target_spans = []
-        synset_ids = []
-        supersense_labels = []
+        target_word = [item['target_word'] for item in batch]
+        target_spans = [item['span_indices'] for item in batch ]
+        synset_ids = [item["synset_id"] for item in batch]
+        supersense_labels = [item["supersense_label"] for item in batch]
         
-        for item in batch:
-            sample = item["sample"]
-            contexts.append(item['masked_sent'] if self.use_sent_masking else sample["sentence"])
-            words.append(sample["target_word"])
-            target_spans.append(item['span_indices'] if not self.use_sent_masking else None)
-            synset_ids.append(item["synset_id"])
-            supersense_labels.append(item["supersense_label"])
+        
         
         word_inputs = self.tokenizer(
-            words,
+            target_word,
             padding=True, 
             truncation=True,
             max_length=64,
             return_tensors='pt'
         )
-        
-        context_inputs = self.tokenizer(
-            contexts,
-            padding=True,
-            truncation=True,
-            max_length=128,
-            return_tensors='pt'
-        )
-        
-        # Bước 3: Xử lý target_spans
+            
         if self.use_sent_masking:
-            target_spans_tensor = None
+            masked_sent = [item['masked_sent'] for item in batch]
+            context_inputs = self.tokenizer(
+                masked_sent,
+                padding=True ,
+                truncation=True,
+                max_length=128,
+                return_tensors='pt'
+            )
+            target_spans = None
         else:
-            # Tạo tensor với padding cho spans
-            max_len = max(len(span) for span in target_spans if span is not None)
-            padded_spans = []
-            for span in target_spans:
-                if span is None:
-                    padded_spans.append([-1] * max_len)  # Giá trị đệm
-                else:
-                    padded_span = span + [-1] * (max_len - len(span))
-                    padded_spans.append(padded_span)
-            target_spans_tensor = torch.tensor(padded_spans, dtype=torch.long)
+            sentences = [item["sentence"] for item in batch]
+            context_inputs = self.tokenizer(
+                sentences,
+                padding=True,
+                truncation=True,
+                max_length=128,
+                return_tensors='pt'
+            )
+            target_spans = [item['span_indices'] for item in batch ]
         
-        # Bước 4: Tạo batch cuối cùng
+        
+            
+
+        
         padded_batch = {
             "context_input_ids": context_inputs["input_ids"],
             "context_attn_mask": context_inputs["attention_mask"],
             "word_input_ids": word_inputs["input_ids"],
             "word_attn_mask": word_inputs["attention_mask"],
             "synset_ids": torch.tensor(synset_ids, dtype=torch.long),
-            "supersense_labels": torch.tensor(supersense_labels, dtype=torch.long),
-            "target_spans": target_spans_tensor
+            "supersense_labels": torch.tensor(supersense_labels, dtype=torch.long)
         }
+        
+        # Xử lý target_spans an toàn hơn
+        if any(span is not None for span in target_spans):
+            padded_batch["target_spans"] = torch.stack(
+                [span if span is not None else torch.tensor([0, 0], dtype=torch.long) 
+                for span in target_spans]
+            )
+        else:
+            padded_batch["target_spans"] = None
         
         return padded_batch
