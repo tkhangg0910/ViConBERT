@@ -125,15 +125,14 @@ class SuperSenseDataset(Dataset):
         synset_ids = []
         supersense_labels = []
         
-        # Bước 1: Gom dữ liệu thô
         for item in batch:
+            sample = item["sample"]
             contexts.append(item['masked_sent'] if self.use_sent_masking else sample["sentence"])
             words.append(sample["target_word"])
             target_spans.append(item['span_indices'] if not self.use_sent_masking else None)
             synset_ids.append(item["synset_id"])
             supersense_labels.append(item["supersense_label"])
         
-        # Bước 2: Tokenize hàng loạt với padding
         word_inputs = self.tokenizer(
             words,
             padding=True, 
