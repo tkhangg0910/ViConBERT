@@ -26,6 +26,7 @@ class PseudoSents_Dataset(Dataset):
         self.val_mini_batch_size = val_mini_batch_size
         
         self.synset_groups = defaultdict(list)
+        self.synset_word_groups = defaultdict(set)
         self.synset_to_group = {}
         self.all_samples = []
         self.sample_to_index = {} 
@@ -46,7 +47,7 @@ class PseudoSents_Dataset(Dataset):
                 "synset_id": sample["synset_id"],
                 "group": group
             }
-            
+            self.synset_word_groups[sample["synset_id"]].add(sample["word_id"])
             self.synset_groups[sample["synset_id"]].append(new_sample)
             self.synset_to_group[sample["synset_id"]] = group
             self.all_samples.append(new_sample)
@@ -89,11 +90,14 @@ class PseudoSents_Dataset(Dataset):
                 self.span_indices.append(indices if indices else (0, 0))
         
         # Filter synsets with enough samples
+        # self.valid_synsets = [
+        #     synset_id for synset_id, samples_list in self.synset_groups.items()
+        #     if len(samples_list) > 1  
+        # ]
         self.valid_synsets = [
-            synset_id for synset_id, samples_list in self.synset_groups.items()
+            synset_id for synset_id, samples_list in self.synset_word_groups.items() 
             if len(samples_list) > 1  
         ]
-        
         print(f"Total synsets: {len(self.synset_groups)}")
         print(f"Valid synsets: {len(self.valid_synsets)}")
         print(f"Total samples: {len(self.all_samples)}")
