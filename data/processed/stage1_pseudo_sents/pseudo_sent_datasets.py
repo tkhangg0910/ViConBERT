@@ -91,7 +91,7 @@ class PseudoSents_Dataset(Dataset):
         # Filter synsets with enough samples
         self.valid_synsets = [
             synset_id for synset_id, samples_list in self.synset_groups.items()
-            # if len(samples_list) >= 1  
+            if len(samples_list) > 1  
         ]
         
         print(f"Total synsets: {len(self.synset_groups)}")
