@@ -37,6 +37,8 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
     
     scaler = GradScaler()
     history = {
+        "valid_acc": [],
+        "train_acc": [],
         'train_loss': [],
         'train_metrics': [],
         'valid_loss': [],
@@ -120,6 +122,7 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
         # Update history
         history['train_loss'].append(train_loss)
         history['valid_loss'].append(valid_metrics['loss'])
+        history['valid_acc'].append(valid_metrics['acc'])
         history['epoch_times'].append(epoch_time)
         
         # ======================

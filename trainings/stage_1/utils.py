@@ -141,7 +141,7 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
         print(f"\nValidating epoch {epoch+1}...")
         valid_metrics = evaluate_model(model, valid_data_loader, loss_fn, device, metric_k_vals)
         
-         # ======================
+        # ======================
         # SCHEDULER STEP (EPOCH-LEVEL)
         # ======================
         if scheduler:
