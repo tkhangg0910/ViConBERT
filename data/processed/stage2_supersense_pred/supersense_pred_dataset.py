@@ -8,7 +8,8 @@ from utils.span_extractor import SpanExtractor,SentenceMasking
 
 class SuperSenseDataset(Dataset):
     def __init__(self, samples, tokenizer,
-                 use_sent_masking=False):
+                 use_sent_masking=False,
+                 training=True):
         self.tokenizer = tokenizer
         self.use_sent_masking= use_sent_masking
         if self.tokenizer.pad_token is None:
@@ -17,13 +18,17 @@ class SuperSenseDataset(Dataset):
             self.sent_masking = SentenceMasking(self.tokenizer)
         else:
             self.span_extractor = SpanExtractor(self.tokenizer)
-
+        self.training = training
         self.all_samples = []
         self.sample_to_index = {} 
         self.supersense_groups = defaultdict(list)
         self.global_supersense_to_label = {}
         self.global_label_to_supersense = {}
-
+        if not training:
+            self.global_synset_to_label = {}
+            self.global_label_to_synset = {}
+            all_synsets = set()
+            
         # Process samples
         all_supersense = set()
         for i, sample in enumerate(tqdm(samples, desc="Processing samples", ascii=True)):
@@ -40,6 +45,14 @@ class SuperSenseDataset(Dataset):
             self.all_samples.append(new_sample)
             self.sample_to_index[id(new_sample)] = i
             all_supersense.add(sample["supersense"])
+            if not training:
+                all_synsets.add(sample["synset_id"])
+                
+        if not training:   
+            sorted_synsets = sorted(list(all_synsets))
+            for idx, synset_id in enumerate(sorted_synsets):
+                self.global_synset_to_label[synset_id] = idx
+                self.global_label_to_synset[idx] = synset_id
 
         sorted_supersense = sorted(list(all_supersense))
         for idx, supersense in enumerate(sorted_supersense):
@@ -94,7 +107,7 @@ class SuperSenseDataset(Dataset):
         item = {
             "sample": sample,
             "supersense_label": self.global_supersense_to_label[sample["supersense"]],
-            "synset_id": sample["synset_id"]
+            "synset_id": sample["synset_id"] if self.training else self.global_synset_to_label[sample["synset_id"]]
         }
         
         if self.use_sent_masking:

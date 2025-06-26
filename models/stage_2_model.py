@@ -15,8 +15,7 @@ class SuperSensePredModel(nn.Module):
         self.prediction_head = MLPBlock(embedding_model.hidden_size,
                                    prediction_hidden_dim,
                                    supersense_size,
-                                   pred_head_num_layer,
-                                   final_activation=nn.Softmax
+                                   pred_head_num_layer
                                    )
     def forward(self, 
             word_input_ids: torch.Tensor,

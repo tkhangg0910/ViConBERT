@@ -48,9 +48,10 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
     patience_counter = 0
     global_step = 0  
     
-    print(f"Training started. Checkpoints will be saved to: {run_dir}")
+    int(f"Training started. Checkpoints will be saved to: {run_dir}")
     
     for epoch in range(num_epochs):
+        
         epoch_start_time = datetime.now()
         
         # ======================
@@ -58,11 +59,10 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
         # ======================
         model.train()
         running_loss = 0.0
+        running_acc  =0.0
         num_batches = 0  
         train_metrics_accum = {f'recall@{k}': 0.0 for k in metric_k_vals}
         train_metrics_accum.update({f'precision@{k}': 0.0 for k in metric_k_vals})
-
-        # Training loop
         train_pbar = tqdm(train_data_loader, 
                          desc=f"Training Epoch {epoch+1}/{num_epochs}",
                          position=0, leave=True, ascii=True)
@@ -70,7 +70,6 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
         for batch_idx, batch in enumerate(train_pbar):
             global_step += 1
             num_batches += 1
-            
             word_input_ids=batch["word_input_ids"].to(device)
             word_attention_mask=batch["word_attn_mask"].to(device)
             context_input_ids=batch["context_input_ids"].to(device)
@@ -78,10 +77,9 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
             target_spans = None
             if "target_spans" in batch and batch["target_spans"] is not None:
                 target_spans = batch["target_spans"].to(device)
-            synset_ids=batch["synset_ids"].to(device)
-
+            supersense=batch["supersense_labels"].to(device)    
+            
             optimizer.zero_grad()
-
             with autocast(device_type=device):
                 outputs = model(
                     word_input_ids=word_input_ids,
@@ -90,73 +88,40 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
                     context_attention_mask=context_attention_mask,
                     context_input_ids=context_input_ids
                 )
-                loss = loss_fn(outputs, synset_ids)
-                
+                loss = loss_fn(outputs, supersense)
+            
+            preds = torch.argmax(outputs, dim=1)
+            correct = (preds == supersense).sum().item()   
+            accuracy = correct / supersense.size(0)
+            running_acc += accuracy
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
-                    # Learning rate scheduling
-            
-            # Calculate training metrics
             running_loss += loss.item()
-            
 
-            batch_metrics = compute_step_metrics(outputs, synset_ids, 
-                                               k_vals=metric_k_vals, 
-                                               device=device)
-
-            for k in metric_k_vals:
-                train_metrics_accum[f'recall@{k}'] += batch_metrics[f'recall@{k}']
-                train_metrics_accum[f'precision@{k}'] += batch_metrics[f'precision@{k}']
-
-            # Update progress bar
-            if global_step % metric_log_interval == 0:
-                step_metrics = batch_metrics.copy()
-                step_metrics['step'] = global_step
-                step_metrics['loss'] = loss.item()
-                history['step_metrics'].append(step_metrics)
-                
-                # Hiển thị metrics trong progress bar
-                train_pbar.set_postfix({
-                    'Loss': f'{loss.item():.4f}',
-                    'R@5': f"{step_metrics['recall@5']:.4f}",
-                    'P@5': f"{step_metrics['precision@5']:.4f}"
-                })
-            else:
-                train_pbar.set_postfix({'Loss': f'{loss.item():.4f}'})
-            
-            # if scheduler:
-            #     scheduler.step() 
-                
         train_metrics = {}
-        for k in metric_k_vals:
-            train_metrics[f'recall@{k}'] = train_metrics_accum[f'recall@{k}'] / num_batches
-            train_metrics[f'precision@{k}'] = train_metrics_accum[f'precision@{k}'] / num_batches
-        train_loss = running_loss / num_batches
+        train_loss = running_loss / len(train_data_loader)
+        train_acc = running_acc/ len(train_data_loader)
         train_metrics['loss'] = train_loss
-        history['train_metrics'].append(train_metrics)
-
+        train_metrics['acc'] = train_acc
+        history['train_acc'].append(train_acc)
         # ======================
         # VALIDATION PHASE
         # ======================
         print(f"\nValidating epoch {epoch+1}...")
-        valid_metrics = evaluate_model(model, valid_data_loader, loss_fn, device, metric_k_vals)
+        valid_metrics = evaluate_model(model, valid_data_loader, loss_fn, device, metric_k_vals) 
         
-         # ======================
+        # ======================
         # SCHEDULER STEP (EPOCH-LEVEL)
         # ======================
         if scheduler:
             scheduler.step(valid_metrics['loss'])
-            
-        # Calculate final training metrics
         epoch_time = (datetime.now() - epoch_start_time).total_seconds()
-        train_loss = running_loss / len(train_data_loader)
-
         # Update history
         history['train_loss'].append(train_loss)
         history['valid_loss'].append(valid_metrics['loss'])
         history['epoch_times'].append(epoch_time)
-
+        
         # ======================
         # CHECKPOINTING
         # ======================
@@ -177,7 +142,6 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
             torch.save(training_state, os.path.join(checkpoint_dir_path, "training_state.pt"))
             print(f"Checkpoint saved to directory: {checkpoint_dir_path}")
 
-            
         # ======================
         # EARLY STOPPING & BEST MODEL SAVING
         # ======================
@@ -202,14 +166,7 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
             print(f"✓ New best model saved to: {best_model_dir}")
         else:
             patience_counter += 1
-        
-        # ======================
-        # REGENERATE BATCHES FOR NEXT EPOCH
-        # ======================
-        if hasattr(train_data_loader.dataset, 'on_epoch_end'):
-            print("Regenerating batches for next epoch...")
-            train_data_loader.dataset.on_epoch_end()
-            
+
         # Print epoch summary
         print(f"\n{'='*60}")
         print(f"Epoch {epoch+1}/{num_epochs} Summary:")
@@ -218,12 +175,12 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
         # Training metrics
         print("\n  TRAIN METRICS (avg per batch):")
         print(f"    Loss: {train_loss:.4f}")
-        for k in metric_k_vals:
-            print(f"    Recall@{k}: {train_metrics[f'recall@{k}']:.4f} | Precision@{k}: {train_metrics[f'precision@{k}']:.4f}")
+        print(f"    Accuracy: {train_metrics['acc']:.4f}")
         
         # Validation metrics
         print("\n  VALIDATION METRICS:")
         print(f"    Loss: {valid_metrics['loss']:.4f}")
+        print(f"    Loss: {valid_metrics['acc']:.4f}")
         for k in metric_k_vals:
             print(f"    Recall@{k}: {valid_metrics[f'recall@{k}']:.4f} | Precision@{k}: {valid_metrics[f'precision@{k}']:.4f} | F1@{k}: {valid_metrics[f'f1@{k}']:.4f}")
         # print(f"    NMI: {valid_metrics['nmi']:.4f}")
@@ -239,7 +196,7 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
             print(f"\n🛑 Early stopping triggered after {epoch+1} epochs!")
             print(f"Best validation loss: {best_valid_loss:.4f}")
             break
-
+    
     # ======================
     # FINAL SAVE
     # ======================
@@ -267,12 +224,11 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
     
     return history, model
 
-
 def evaluate_model(model, data_loader, loss_fn, device, metric_k_vals=(1, 5, 10)):
     """Enhanced evaluation with detailed metrics"""
     model.eval()
     running_loss = 0.0
-    
+    running_acc = 0.0
     all_embeddings = []
     all_labels = []
     
@@ -287,6 +243,7 @@ def evaluate_model(model, data_loader, loss_fn, device, metric_k_vals=(1, 5, 10)
             target_spans = batch.get("target_spans")
             if target_spans is not None:
                 target_spans = target_spans.to(device)
+            supersense=batch["supersense_labels"].to(device)    
             with autocast(device_type=device):
                 outputs = model(
                     word_input_ids=word_input_ids,
@@ -295,10 +252,13 @@ def evaluate_model(model, data_loader, loss_fn, device, metric_k_vals=(1, 5, 10)
                     context_attention_mask=context_attention_mask,
                     context_input_ids=context_input_ids
                 )
-                loss = loss_fn(outputs, synset_ids)
+                loss = loss_fn(outputs, supersense)
             
             running_loss += loss.item()
-            
+            preds = torch.argmax(outputs, dim=1)
+            correct = (preds == supersense).sum().item()   
+            accuracy = correct / supersense.size(0)
+            running_acc += accuracy
             all_embeddings.append(outputs)
             all_labels.append(synset_ids)
 
@@ -306,7 +266,7 @@ def evaluate_model(model, data_loader, loss_fn, device, metric_k_vals=(1, 5, 10)
     all_embeddings = torch.cat(all_embeddings, dim=0)
     all_labels = torch.cat(all_labels, dim=0)
     avg_loss = running_loss / len(data_loader)
-        
+    avg_acc = running_acc/ len(data_loader)
     full_metrics = compute_full_metrics_large_scale(
         all_embeddings, 
         all_labels, 
@@ -317,5 +277,6 @@ def evaluate_model(model, data_loader, loss_fn, device, metric_k_vals=(1, 5, 10)
     
     return {
         'loss': avg_loss,
+        'acc':avg_acc,
         **full_metrics
     }
