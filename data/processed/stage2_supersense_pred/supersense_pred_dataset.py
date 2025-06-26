@@ -119,7 +119,7 @@ class SuperSenseDataset(Dataset):
 
     def collate_fn(self, batch):
         """Custom collate function to process a batch of samples"""
-        target_word = [item['target_word'] for item in batch]
+        target_word = [item["sample"]['target_word'] for item in batch]
         target_spans = [item['span_indices'] for item in batch ]
         synset_ids = [item["synset_id"] for item in batch]
         supersense_labels = [item["supersense_label"] for item in batch]
@@ -145,7 +145,7 @@ class SuperSenseDataset(Dataset):
             )
             target_spans = None
         else:
-            sentences = [item["sentence"] for item in batch]
+            sentences = [item["sample"]["sentence"] for item in batch]
             context_inputs = self.tokenizer(
                 sentences,
                 padding=True,
