@@ -22,7 +22,7 @@ training:
   ckpt_interval: 10
   shuffle: False
   batch_size: 1
-  epochs: 50
+  epochs: 100
   learning_rate: 2e-5
   warmup_steps: 1000
   max_seq_length: 128
