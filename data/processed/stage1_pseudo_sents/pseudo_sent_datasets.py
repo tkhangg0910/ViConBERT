@@ -11,7 +11,7 @@ from utils.process_data import text_normalize
 
 class PseudoSents_Dataset(Dataset):
     def __init__(self, samples, tokenizer, num_synsets_per_batch=32, samples_per_synset=8, is_training=True,val_mini_batch_size=768,
-                 use_sent_masking=False):
+                 use_sent_masking=False, only_multiple_el = False):
         self.tokenizer = tokenizer
         self.use_sent_masking= use_sent_masking
         if self.tokenizer.pad_token is None:
@@ -90,14 +90,16 @@ class PseudoSents_Dataset(Dataset):
                 self.span_indices.append(indices if indices else (0, 0))
         
         # Filter synsets with enough samples
-        # self.valid_synsets = [
-        #     synset_id for synset_id, samples_list in self.synset_groups.items()
-        #     if len(samples_list) > 1  
-        # ]
-        self.valid_synsets = [
-            synset_id for synset_id, samples_list in self.synset_word_groups.items() 
-            if len(samples_list) > 1  
-        ]
+        if not only_multiple_el:
+            self.valid_synsets = [
+                synset_id for synset_id, samples_list in self.synset_groups.items()
+                if len(samples_list) > 1  
+            ]
+        else:
+            self.valid_synsets = [
+                synset_id for synset_id, samples_list in self.synset_word_groups.items() 
+                if len(samples_list) > 1  
+            ]
         print(f"Total synsets: {len(self.synset_groups)}")
         print(f"Valid synsets: {len(self.valid_synsets)}")
         print(f"Total samples: {len(self.all_samples)}")

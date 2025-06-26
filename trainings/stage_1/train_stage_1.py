@@ -22,12 +22,14 @@ def setup_args():
     parser = argparse.ArgumentParser(description="Train a model")
     parser.add_argument("--model", type=str, default="v2", help="Model type")
     parser.add_argument("--load_ckpts", type=int, default=0, help="Model type")
+    parser.add_argument("--only_multiple_el", type=int, default=0, help="Model type")
     args = parser.parse_args()
     return args 
         
 if __name__=="__main__":
     args = setup_args()
-    print(bool(args.load_ckpts))
+    print(f"Load From Checkpoint: {bool(args.load_ckpts)}")
+    print(f"only_multiple_el: {bool(args.only_multiple_el)}")
 
     config = load_config("configs/stage1.yml")
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -49,9 +51,9 @@ if __name__=="__main__":
     train_set = PseudoSents_Dataset(train_sample, tokenizer
                                     , is_training=True, 
                                     num_synsets_per_batch=128,samples_per_synset=6,
-                                    use_sent_masking=args.model=="v1")
+                                    use_sent_masking=args.model=="v1",only_multiple_el=bool(args.only_multiple_el))
     valid_set = PseudoSents_Dataset(valid_sample, tokenizer, is_training=False
-                                    ,use_sent_masking=args.model=="v1")
+                                    ,use_sent_masking=args.model=="v1",only_multiple_el=bool(args.only_multiple_el))
     
     # sampler = train_set.get_weighted_sampler()
 
