@@ -1,7 +1,7 @@
 stage_name: "contrastive_pretraining"
-base_model: "vinai/phobert-base-v2"
-base_model_cache_dir: "embedding/phobert-base-v2"
-output_dir: "./checkpoints/stage1/phobert_base-v2"
+base_model: "checkpoints/stage1/phobert_base-v2/run_20250625_v1"
+base_model_cache_dir: "checkpoints/stage1/phobert_base-v2/run_20250625_v1"
+output_dir: "./checkpoints/stage2/phobert_base-v2"
 
 data:
   train_path: "data/processed/stage1_pseudo_sents/train_data_v2.json"

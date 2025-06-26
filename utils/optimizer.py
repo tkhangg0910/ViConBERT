@@ -132,7 +132,7 @@ def optimizer_for_supersense_pred(model,config):
         })
 
     if prediction_head_params:
-        head_lr = float(config["training"]["optimizer"].get("lr_head", 3e-4))  # Mặc định 3e-4
+        head_lr = float(config["training"]["optimizer"].get("lr_head", 3e-4))  
         
         decay_params = [p for (n, p) in prediction_head_params if not any(nd in n for nd in no_decay)]
         no_decay_params = [p for (n, p) in prediction_head_params if any(nd in n for nd in no_decay)]
