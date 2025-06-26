@@ -6,7 +6,7 @@ from collections import defaultdict
 from utils.process_data import text_normalize
 from utils.span_extractor import SpanExtractor,SentenceMasking
 
-class SuperSenseDataset():
+class SuperSenseDataset(Dataset):
     def __init__(self, samples, tokenizer,
                  use_sent_masking=False):
         self.tokenizer = tokenizer
@@ -120,7 +120,7 @@ class SuperSenseDataset():
                 sample["target_word"],
                 padding=True, 
                 truncation=True,
-                max_length=32,
+                max_length=64,
                 return_tensors='pt'
             )
             
