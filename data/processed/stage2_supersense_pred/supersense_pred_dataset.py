@@ -160,7 +160,7 @@ class SuperSenseDataset(Dataset):
 
         
         padded_batch = {
-            "target_spans":target_spans,
+            "target_spans":torch.tensor(target_spans,dtype=torch.long),
             "context_input_ids": context_inputs["input_ids"],
             "context_attn_mask": context_inputs["attention_mask"],
             "word_input_ids": word_inputs["input_ids"],
