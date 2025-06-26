@@ -1,0 +1,36 @@
+stage_name: "contrastive_pretraining"
+base_model: "vinai/phobert-base-v2"
+base_model_cache_dir: "embedding/phobert-base-v2"
+output_dir: "./checkpoints/stage1/phobert_base-v2"
+
+data:
+  train_path: "data/processed/stage1_pseudo_sents/train_data_v2.json"
+  valid_path: "data/processed/stage1_pseudo_sents/valid_data_v2.json"
+  num_workers: 16
+
+model:  
+  supersense_size: 47
+  freeze_base: False
+  prediction_hidden_dim: 512
+  pred_head_num_layer: 1
+
+training:
+  ckpt_interval: 10
+  shuffle: False
+  batch_size: 32
+  epochs: 50
+  learning_rate: 2e-5
+  warmup_steps: 1000
+  max_seq_length: 128
+  early_stopping_patience: 5
+  save_steps: 1000
+  batch_sampler:
+    min_pos: 2
+    pos_ratio: 0.4
+  optimizer:
+    name: "adamw"
+    lr_base: 2e-5        
+    lr_custom: 5e-4 
+    weight_decay: 0.01
+    eps: 1e-6
+    betas: [0.9, 0.999]
