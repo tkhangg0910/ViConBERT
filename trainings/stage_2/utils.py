@@ -48,7 +48,7 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
     patience_counter = 0
     global_step = 0  
     
-    int(f"Training started. Checkpoints will be saved to: {run_dir}")
+    print(f"Training started. Checkpoints will be saved to: {run_dir}")
     
     for epoch in range(num_epochs):
         
