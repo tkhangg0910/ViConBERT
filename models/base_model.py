@@ -2,6 +2,7 @@ import logging
 import os
 import json
 from transformers import AutoTokenizer
+import torch.nn.functional as F
 import torch
 import torch.nn as nn
 from transformers import AutoModel
@@ -79,102 +80,100 @@ class MLPBlock(nn.Module):
         
         return x
     
-class SynoViSenseEmbeddingV2(nn.Module):
+class SynoViSenseEmbedding(nn.Module):
     def __init__(self, 
-        tokenizer,
         model_name: str = "vinai/phobert-base",
         cache_dir: str ="embeddings/base_models",
-        fusion_hidden_dim: int = 512,
-        wp_num_layers:int=1,
-        cp_num_layers:int=1,
+        hidden_dim: int = 512,
+        out_dim:int = 256,
         dropout: float = 0.1,
-        freeze_base: bool = False,
-        fusion_num_layers:int=1,
-        context_window_size:int = 3
+        num_layers:int=1,
+        num_head:int=3,
+        polym = 8,
+        encoder_type:str="attentive",
+        context_window_size:int=3
         ):
         super().__init__()
-        """
-        Args:
-            model_name: Pre-trained model name
-            fusion_hidden_dim: Fusion block hidden dimension
-            span_method: Span representation method 
-                        ("diff_sum", "mean", "attentive")
-            cls_method: cls representation method 
-                        ("layerwise", "last")
-            dropout: Dropout rate
-            freeze_base: Freeze base model parameters
-            layerwise_attn_dim: Attention dim for layerwise pooling
-        """
+
+        self.context_encoder = AutoModel.from_pretrained(model_name,cache_dir=cache_dir)
+        self.context_tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.polym=polym
+        self.context_projection = MLPBlock(
+            self.context_encoder.config.hidden_size,
+            hidden_dim,
+            out_dim,
+            dropout=dropout,
+            num_layers=num_layers
+            
+        )
+        self.encoder_type =encoder_type
+        self.context_attention=nn.MultiheadAttention(
+            self.context_encoder.config.hidden_size,
+            num_heads=num_head,
+            dropout=dropout
+        )
         self.context_window_size = context_window_size
-        self.tokenizer = tokenizer
-        self.config = {
-            "base_model": model_name,
-            "base_model_cache_dir": cache_dir,
-            "model": {
-                "fusion_hidden_dim": fusion_hidden_dim,
-                "dropout": dropout,
-                "freeze_base": freeze_base,
-                "fusion_num_layers": fusion_num_layers,
-                "wp_num_layers": wp_num_layers,
-                "cp_num_layers": cp_num_layers,
-                "context_window_size": context_window_size
-            }
-        }
+        self.context_layer_weights = nn.Parameter(torch.ones(num_layers))
 
-        self.base_model = AutoModel.from_pretrained(model_name, 
-                                            cache_dir=cache_dir)
 
+    def _encode_context_sep(self, text, target_spans):
         
-    def forward(self, 
-                word_input_ids: torch.Tensor,
-                word_attention_mask: torch.Tensor,
-                context_input_ids: torch.Tensor,
-                context_attention_mask: torch.Tensor,
-                target_spans: torch.Tensor):
-    
-        return fused_embed
-    
-    def save_pretrained(self, save_directory):
-        """Save pretrained Hugging Face model"""
-        os.makedirs(save_directory, exist_ok=True)
-        
-        torch.save(self.state_dict(), os.path.join(save_directory, "pytorch_model.bin"))
-        
-        with open(os.path.join(save_directory, "config.json"), "w") as f:
-            json.dump(self.config, f, indent=2)
-        
-        if hasattr(self, 'tokenizer'):
-            self.tokenizer.save_pretrained(save_directory)
-
-    @classmethod
-    def from_pretrained(cls, save_directory, tokenizer=None):
-
-        with open(os.path.join(save_directory, "config.json"), "r") as f:
-            config = json.load(f)
-        config.update({"add_pooling_layer": False})
-        if tokenizer is None:
-            try:
-                tokenizer = AutoTokenizer.from_pretrained(save_directory)
-            except:
-                raise ValueError("Không tìm thấy tokenizer trong thư mục")
-         
-        model = cls(
-            tokenizer=tokenizer,
-            model_name=config["base_model"],
-            cache_dir=config["base_model_cache_dir"],
-            fusion_hidden_dim=config["model"]["fusion_hidden_dim"],
-            dropout=config["model"]["dropout"],
-            freeze_base=config["model"]["freeze_base"],
-            fusion_num_layers=config["model"]["fusion_num_layers"],
-            wp_num_layers=config["model"]["wp_num_layers"],
-            cp_num_layers=config["model"]["cp_num_layers"],
-            context_window_size=config["model"]["context_window_size"]
+        outputs = self.context_encoder(
+            **text,
+            output_hidden_states=True
         )
         
-        state_dict = torch.load(
-            os.path.join(save_directory, "pytorch_model.bin"),
-            map_location=torch.device('cpu')
+        all_hidden_states = outputs.hidden_states[1:]
+        
+        norm_weights = torch.softmax(self.context_layer_weights, dim=0)
+        
+        context_embeddings = torch.zeros_like(all_hidden_states[0])
+        for i, hidden_state in enumerate(all_hidden_states):
+            context_embeddings += norm_weights[i] * hidden_state
+        
+        batch_size, seq_len, _ = context_embeddings.shape
+        positions = torch.arange(seq_len, device=context_embeddings.device).expand(batch_size, -1)
+        
+        start_pos = target_spans[:, 0]
+        end_pos = target_spans[:, 1]
+        center = (start_pos + end_pos) / 2
+        dist = torch.abs(positions - center.unsqueeze(1))
+        
+        weights = 1.0 / (dist + 1.0)
+        weights = torch.where(dist <= self.context_window_size, weights, torch.zeros_like(weights))
+        weights = weights * text["context_attention_mask"].float()
+        weights = weights / (weights.sum(dim=1, keepdim=True) + 1e-8)
+        
+        weighted_emb = context_embeddings * weights.unsqueeze(-1)
+        context_vectors = weighted_emb.sum(dim=1)
+        
+        return self.context_projection(context_vectors)
+
+
+    def _encode_context_attentive(self, text,target_span):
+        outputs = self.context_encoder(**text)
+        start_pos = target_span[:, 0]
+        end_pos = target_span[:, 1]
+        
+        hidden_states = outputs[0]  
+        
+        positions = torch.arange(hidden_states.size(1), device=hidden_states.device)  
+        
+        mask = (positions >= start_pos.unsqueeze(1)) & (positions <= end_pos.unsqueeze(1))  
+        masked_states = hidden_states * mask.unsqueeze(-1) 
+        span_lengths = mask.sum(dim=1, keepdim=True).clamp(min=1)  
+        pooled_embeddings = masked_states.sum(dim=1) / span_lengths
+        
+        Q_value = pooled_embeddings.unsqueeze(1).expand(-1, self.polym,-1)
+        K_value  = hidden_states
+        V_value = hidden_states
+        
+        context_emb = self.context_attention(
+                Q_value, K_value, V_value
         )
-        model.load_state_dict(state_dict)
-        return model
-    
+        
+        return self.context_projection(context_emb)
+        
+    def forward(self, context, target_span ):
+        """Forward pass"""
+        return self._encode_context_attentive(context,target_span) if self.encoder_type=="attentive" else self._encode_context_sep(context,target_span)
