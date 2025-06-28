@@ -9,49 +9,63 @@ class InfoNceLoss(nn.Module):
         self.eps = eps
         self.reduction = reduction
 
-    def forward(self, embeddings, labels):
-        dtype = embeddings.dtype
+    def forward(self, context_emb: torch.Tensor, gloss_emb: torch.Tensor, labels: torch.Tensor):
+        dtype = context_emb.dtype
         
-        embeddings = F.normalize(embeddings, p=2, dim=1)
-        sim_matrix = embeddings @ embeddings.T / self.temperature
+        C = F.normalize(context_emb, p=2, dim=1)    # [N,D]
+        G = F.normalize(gloss_emb, p=2, dim=1)      # [N,D]
+        sim = torch.matmul(C, G.T) / self.temperature  # [N,N]
         
-        batch_size = embeddings.size(0)
-        device = embeddings.device
+        N = sim.size(0)
+        device = sim.device
         
-        pos_mask = torch.zeros(batch_size, batch_size, dtype=torch.bool, device=device)
-        for label in torch.unique(labels):
-            indices = torch.where(labels == label)[0]
-            if len(indices) > 1:
-                for i in range(len(indices)):
-                    for j in range(len(indices)):
-                        if i != j:
-                            pos_mask[indices[i], indices[j]] = True
+        mask_pos = labels.unsqueeze(1).eq(labels.unsqueeze(0))
+        mask_pos.fill_diagonal_(False)
+        exp_sim = torch.exp(sim)
+        sum_pos = (exp_sim * mask_pos.float()).sum(dim=1) + self.eps
         
-        exp_sim = torch.exp(sim_matrix)
-        eps_tensor = torch.tensor(self.eps, device=device, dtype=dtype)
+        sum_all = (exp_sim * (~torch.eye(N, device=device)).float()).sum(dim=1) + self.eps
+        loss = - torch.log(sum_pos / sum_all)
         
-        pos_sum = (exp_sim * pos_mask).sum(dim=1) + eps_tensor
-        
-        diag_mask = torch.eye(batch_size, dtype=torch.bool, device=device)
-        all_sum = (exp_sim * (~diag_mask)).sum(dim=1) + eps_tensor
-        
-        log_pos = torch.log(pos_sum)
-        log_all = torch.log(all_sum)
-        losses = -(log_pos - log_all)
-        
-        no_pos_mask = (pos_mask.sum(dim=1) == 0)
-        if no_pos_mask.any():
-            sim_matrix_no_self = sim_matrix.masked_fill(diag_mask, -float('inf'))
-            max_neg = torch.max(sim_matrix_no_self, dim=1).values
-            max_neg = max_neg.to(dtype=dtype)
-            losses = losses.to(dtype=dtype)
-            
-            losses[no_pos_mask] = -max_neg[no_pos_mask]
+        no_pos = (mask_pos.sum(dim=1) == 0)
+        if no_pos.any():
+            sim_no_diag = sim.masked_fill(torch.eye(N, device=device).bool(), -1e9)
+            max_neg = torch.max(sim_no_diag, dim=1).values
+            loss[no_pos] = - max_neg[no_pos]
 
-            
-        if self.reduction == 'mean':
-            return losses.mean()
-        elif self.reduction == 'sum':
-            return losses.sum()
-        else:
-            return losses
+        return loss.mean() if self.reduction=='mean' else loss.sum()
+    
+    
+class DistillLoss(nn.Module):
+    def __init__(self, reduction: str = 'mean'):
+        super().__init__()
+        self.reduction = reduction
+
+    def forward(self, context_emb: torch.Tensor, gloss_emb: torch.Tensor):
+        # Normalize
+        C = F.normalize(context_emb, p=2, dim=1)   
+        G = F.normalize(gloss_emb, p=2, dim=1)
+        
+        dist_c = 1 - torch.matmul(C, C.T)
+        dist_g = 1 - torch.matmul(G, G.T)
+        return F.mse_loss(dist_c, dist_g, reduction=self.reduction)
+
+class InfonceDistillLoss(nn.Module):
+    def __init__(self,temperature=0.1, eps=1e-8, aux_weight = 0.5,
+                 info_reduction='mean', distill_reduction: str = 'mean'):
+        super().__init__()
+        self.infonce_loss = InfoNceLoss(
+            temperature=temperature,
+            eps=eps,
+            reduction=info_reduction
+        )
+        self.distill_loss = DistillLoss(
+            reduction=distill_reduction
+        )
+        self.aux_weight = aux_weight
+    
+    def forward(self, context_emb: torch.Tensor, gloss_emb: torch.Tensor, labels: torch.Tensor):
+        loss_nce = self.infonce_loss(context_emb, gloss_emb, labels)
+        loss_dist = self.distill_loss(context_emb, gloss_emb)
+        
+        return loss_nce + loss_dist*self.aux_weight
