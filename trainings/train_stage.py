@@ -5,55 +5,76 @@ import argparse
 import torch
 from torch.utils.data import DataLoader
 from transformers.utils import is_torch_available
-from transformers import PreTrainedTokenizerFast, PhobertTokenizerFast
+from transformers import PhobertTokenizerFast
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+from sentence_transformers import SentenceTransformer
+import pandas as pd
 
 from data.processed.stage1_pseudo_sents.pseudo_sent_datasets import PseudoSents_Dataset
-from models.base_model import SynoViSenseEmbeddingV1, SynoViSenseEmbeddingV2
+from models.base_model import ViSynoSenseEmbedding
 from utils.load_config import load_config
 from utils.optimizer import create_optimizer
-from utils.loss_fn import InfoNceLoss
-from trainings.stage_1.utils import train_model
+from utils.loss_fn import InfonceDistillLoss
+from trainings.utils import train_model
 
 if is_torch_available() and torch.multiprocessing.get_start_method() == "fork":
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+import csv
+
+def load_gloss_dict_from_csv(csv_path):
+    gloss_dict = {}
+    with open(csv_path, 'r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            synset_id = int(row['synset_id'])
+            gloss = row['gloss'].strip()
+            if synset_id not in gloss_dict:
+                gloss_dict[synset_id] = gloss
+    return gloss_dict
+
+
 def setup_args():
     parser = argparse.ArgumentParser(description="Train a model")
-    parser.add_argument("--model", type=str, default="v2", help="Model type")
     parser.add_argument("--load_ckpts", type=int, default=0, help="Model type")
     parser.add_argument("--only_multiple_el", type=int, default=0, help="Model type")
     args = parser.parse_args()
     return args 
         
 if __name__=="__main__":
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    
     args = setup_args()
     print(f"Load From Checkpoint: {bool(args.load_ckpts)}")
     print(f"only_multiple_el: {bool(args.only_multiple_el)}")
+    print(f"Device: {device}")
 
-    config = load_config("configs/stage1.yml")
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(device)
+    config = load_config("configs/base.yml")
+    
+    
     with open(config["data"]["train_path"], "r",encoding="utf-8") as f:
         train_sample = json.load(f)
     with open(config["data"]["valid_path"], "r",encoding="utf-8") as f:
         valid_sample = json.load(f)
+        
+    gloss_dict = load_gloss_dict_from_csv(config["data"]["gloss_path"])
     
-    if args.model=="v2":              
-        tokenizer = PreTrainedTokenizerFast.from_pretrained(config["base_model"])
-    else:
-        tokenizer = PhobertTokenizerFast.from_pretrained(config["base_model"])
+    gloss_enc = SentenceTransformer('dangvantuan/vietnamese-embedding')
+    
+    tokenizer = PhobertTokenizerFast.from_pretrained(config["base_model"])
         
     if tokenizer.pad_token is None:
         tokenizer.add_special_tokens({'pad_token': '[PAD]'})
 
     
-    train_set = PseudoSents_Dataset(train_sample, tokenizer
+    train_set = PseudoSents_Dataset(gloss_enc
+                                    ,train_sample, tokenizer,gloss_dict
                                     , is_training=True, 
                                     num_synsets_per_batch=128,samples_per_synset=6,
-                                    use_sent_masking=args.model=="v1",only_multiple_el=bool(args.only_multiple_el))
-    valid_set = PseudoSents_Dataset(valid_sample, tokenizer, is_training=False
-                                    ,use_sent_masking=args.model=="v1",only_multiple_el=bool(args.only_multiple_el))
+                                    only_multiple_el=bool(args.only_multiple_el))
+    
+    valid_set = PseudoSents_Dataset(gloss_enc,valid_sample, tokenizer,gloss_dict, is_training=False
+                                    ,only_multiple_el=bool(args.only_multiple_el))
     
     # sampler = train_set.get_weighted_sampler()
 
@@ -75,25 +96,18 @@ if __name__=="__main__":
                                   num_workers=config["data"]["num_workers"],
                                   pin_memory=True
                                   )
-    
-    arc = SynoViSenseEmbeddingV1 if args.model=="v1" else SynoViSenseEmbeddingV2
-    optional={
-        "context_window_size":config["model"]["context_window_size"]
-        }if args.model=="v2" else {}
+
     if bool(args.load_ckpts):
-        model = arc.from_pretrained(config["base_model"]).to(device)
+        model = ViSynoSenseEmbedding.from_pretrained(config["base_model"]).to(device)
     else:
-        model = arc(tokenizer,
-                model_name=config["base_model"],
-                cache_dir=config["base_model_cache_dir"],
-                fusion_hidden_dim=config["model"]["fusion_hidden_dim"],
-                dropout=config["model"]["dropout"],
-                freeze_base=config["model"]["freeze_base"],
-                fusion_num_layers=config["model"]["fusion_num_layers"],
-                wp_num_layers=config["model"]["wp_num_layers"],
-                cp_num_layers=config["model"]["cp_num_layers"],
-                **optional
-                ).to(device)
+        model = ViSynoSenseEmbedding(
+            tokenizer,
+            model_name=config["base_model"],
+            cache_dir=config["base_model_cache_dir"],
+            hidden_dim=config["model"]["fusion_hidden_dim"],
+            out_dim=config["model"]["out_dim"],
+            dropout=config["model"]["dropout"]
+            ).to(device)
     
     total_steps = len(train_dataloader) * config["training"]["epochs"] 
     steps_per_epoch = len(train_dataloader)
@@ -117,7 +131,7 @@ if __name__=="__main__":
     )
 
     
-    loss_fn = InfoNceLoss()
+    loss_fn = InfonceDistillLoss()
 
     history, trained_model = train_model(
         num_epochs=config["training"]["epochs"],

@@ -241,22 +241,11 @@ class PseudoSents_Dataset(Dataset):
             return_offsets_mapping=True
         )
 
-        # Tokenize target word
-        target_words = [s["target_word"] for s in all_samples]
-        word_inputs = self.tokenizer(
-            target_words,
-            padding=True,
-            truncation=True,
-            max_length=64,
-            return_tensors="pt",
-            return_attention_mask=True,
-        )
+        # Tokenize target wor
         
         return {
             "context_input_ids": context_inputs["input_ids"],
             "context_attn_mask": context_inputs["attention_mask"],
-            "word_input_ids": word_inputs["input_ids"],
-            "word_attn_mask": word_inputs["attention_mask"],
             "target_spans": torch.tensor(all_span_indices, dtype=torch.long) if not self.use_sent_masking else None,
             "synset_ids": torch.tensor(all_synset_labels, dtype=torch.long),
             "gloss_embd":gloss_embeddings

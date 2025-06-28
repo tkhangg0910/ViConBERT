@@ -80,8 +80,8 @@ class MLPBlock(nn.Module):
         
         return x
     
-class SynoViSenseEmbedding(nn.Module):
-    def __init__(self, 
+class ViSynoSenseEmbedding(nn.Module):
+    def __init__(self, tokenizer,
         model_name: str = "vinai/phobert-base",
         cache_dir: str ="embeddings/base_models",
         hidden_dim: int = 512,
@@ -91,12 +91,12 @@ class SynoViSenseEmbedding(nn.Module):
         num_head:int=3,
         polym = 8,
         encoder_type:str="attentive",
-        context_window_size:int=3
+        context_window_size:int=3,
+        use_proj:bool=True
         ):
         super().__init__()
-
+        self.use_proj=use_proj
         self.context_encoder = AutoModel.from_pretrained(model_name,cache_dir=cache_dir)
-        self.context_tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.polym=polym
         self.context_projection = MLPBlock(
             self.context_encoder.config.hidden_size,
@@ -147,9 +147,8 @@ class SynoViSenseEmbedding(nn.Module):
         weighted_emb = context_embeddings * weights.unsqueeze(-1)
         context_vectors = weighted_emb.sum(dim=1)
         
-        return self.context_projection(context_vectors)
-
-
+        return context_vectors
+    
     def _encode_context_attentive(self, text,target_span):
         outputs = self.context_encoder(**text)
         start_pos = target_span[:, 0]
@@ -172,8 +171,16 @@ class SynoViSenseEmbedding(nn.Module):
                 Q_value, K_value, V_value
         )
         
-        return self.context_projection(context_emb)
+        return context_emb
         
     def forward(self, context, target_span):
         """Forward pass"""
-        return self._encode_context_attentive(context,target_span) if self.encoder_type=="attentive" else self._encode_context_sep(context,target_span)
+        context_emb=  self._encode_context_attentive(context,target_span) if self.encoder_type=="attentive" else self._encode_context_sep(context,target_span)
+        
+        if self.use_proj:
+            return self.context_projection(context_emb)
+    
+        return context_emb
+
+
+

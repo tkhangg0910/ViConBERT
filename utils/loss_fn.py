@@ -51,7 +51,7 @@ class DistillLoss(nn.Module):
         return F.mse_loss(dist_c, dist_g, reduction=self.reduction)
 
 class InfonceDistillLoss(nn.Module):
-    def __init__(self,temperature=0.1, eps=1e-8, aux_weight = 0.5,
+    def __init__(self,temperature=0.2, eps=1e-8, aux_weight = 0.5,
                  info_reduction='mean', distill_reduction: str = 'mean'):
         super().__init__()
         self.infonce_loss = InfoNceLoss(
