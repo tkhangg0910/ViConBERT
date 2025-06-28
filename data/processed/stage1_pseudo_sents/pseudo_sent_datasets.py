@@ -10,8 +10,11 @@ from utils.span_extractor import SpanExtractor,SentenceMasking
 from utils.process_data import text_normalize
 
 class PseudoSents_Dataset(Dataset):
-    def __init__(self, samples, tokenizer, num_synsets_per_batch=32, samples_per_synset=8, is_training=True,val_mini_batch_size=768,
-                 use_sent_masking=False, only_multiple_el = False):
+    def __init__(self,gloss_encoder, samples, tokenizer, gloss_dict,
+                 num_synsets_per_batch=32, samples_per_synset=8, is_training=True,
+                 val_mini_batch_size=768,use_sent_masking=False, only_multiple_el = False,
+                 ):
+        self.gloss_encoder =gloss_encoder
         self.tokenizer = tokenizer
         self.use_sent_masking= use_sent_masking
         if self.tokenizer.pad_token is None:
@@ -39,17 +42,15 @@ class PseudoSents_Dataset(Dataset):
         for i, sample in enumerate(tqdm(samples, desc="Processing samples", ascii=True)):
             normalized_sentence = text_normalize(sample["sentence"])
             normalized_target = sample["target_word"]
-            group = self._get_supersense_group(sample["supersense"])
             
             new_sample = {
                 "sentence": normalized_sentence,
                 "target_word": normalized_target,
                 "synset_id": sample["synset_id"],
-                "group": group
+                "gloss": gloss_dict[sample["synset_id"]]
             }
             self.synset_word_groups[sample["synset_id"]].add(sample["word_id"])
             self.synset_groups[sample["synset_id"]].append(new_sample)
-            self.synset_to_group[sample["synset_id"]] = group
             self.all_samples.append(new_sample)
             self.sample_to_index[id(new_sample)] = i
             all_synsets.add(sample["synset_id"])
@@ -88,21 +89,26 @@ class PseudoSents_Dataset(Dataset):
                         print(f"pred: {pred}")
 
                 self.span_indices.append(indices if indices else (0, 0))
+                
+        print("Precomputing Gloss Vector...")
+        self.gloss_embeddings = {}
+        with torch.no_grad():
+            for synset_id, gloss in tqdm(gloss_dict.items(),desc="Computing gloss vector",ascii=True):
+                embedding = self.gloss_encoder.encode(gloss)
+                tensor_emb = torch.tensor(embedding, dtype=torch.float32)
+                self.gloss_embeddings[synset_id] = tensor_emb
         
         # Filter synsets with enough samples
-        if not only_multiple_el:
-            self.valid_synsets = [
-                synset_id for synset_id, samples_list in self.synset_groups.items()
-                if len(samples_list) > 1  
-            ]
-        else:
-            self.valid_synsets = [
-                synset_id for synset_id, samples_list in self.synset_word_groups.items() 
-                if len(samples_list) > 1  
-            ]
+    
+        self.valid_synsets = [
+            synset_id for synset_id, samples_list in self.synset_groups.items()
+            if len(samples_list) >= 1  
+        ]
+
         print(f"Total synsets: {len(self.synset_groups)}")
         print(f"Valid synsets: {len(self.valid_synsets)}")
         print(f"Total samples: {len(self.all_samples)}")
+        print(f"Total Gloss: {len(self.gloss_embeddings)}")
         print(f"Global label count: {len(self.global_synset_to_label)}")
 
         # Generate batches for current epoch
@@ -175,17 +181,6 @@ class PseudoSents_Dataset(Dataset):
     def __len__(self):
         return len(self.batches)
     
-    def _get_supersense_group(self, supersense: str):
-        """Map supersense to group"""
-        if supersense.startswith(('adj.', 'adv.')):
-            return 1
-        elif supersense.startswith('noun.'):
-            return 2
-        elif supersense.startswith('verb.'):
-            return 3
-        else:
-            return 4
-    
     def __getitem__(self, idx):
         """Return a single batch"""
         samples, synset_labels = self.batches[idx]
@@ -232,6 +227,10 @@ class PseudoSents_Dataset(Dataset):
             # Tokenize sentences
             sentences = [s["sentence"] for s in all_samples]
             
+        gloss_embeddings = torch.stack([
+            self.gloss_embeddings[s["synset_id"]].clone() for s in all_samples
+        ])
+
         context_inputs = self.tokenizer(
             sentences, 
             padding=True, 
@@ -259,5 +258,6 @@ class PseudoSents_Dataset(Dataset):
             "word_input_ids": word_inputs["input_ids"],
             "word_attn_mask": word_inputs["attention_mask"],
             "target_spans": torch.tensor(all_span_indices, dtype=torch.long) if not self.use_sent_masking else None,
-            "synset_ids": torch.tensor(all_synset_labels, dtype=torch.long)
+            "synset_ids": torch.tensor(all_synset_labels, dtype=torch.long),
+            "gloss_embd":gloss_embeddings
         }

@@ -174,6 +174,6 @@ class SynoViSenseEmbedding(nn.Module):
         
         return self.context_projection(context_emb)
         
-    def forward(self, context, target_span ):
+    def forward(self, context, target_span):
         """Forward pass"""
         return self._encode_context_attentive(context,target_span) if self.encoder_type=="attentive" else self._encode_context_sep(context,target_span)
