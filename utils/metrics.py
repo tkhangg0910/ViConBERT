@@ -3,6 +3,7 @@ import numpy as np
 from sklearn.metrics import normalized_mutual_info_score
 from sklearn.cluster import KMeans
 from tqdm import tqdm
+import torch.nn.functional as F
 
 def normalize_embeddings(embeddings):
     """Normalize embeddings for efficient cosine similarity computation"""
@@ -81,6 +82,49 @@ def compute_step_metrics(embeddings, labels, k_vals=(1, 5, 10), device='cuda'):
         metrics[f'precision@{k}'] = precision_at_k_batch(embeddings, labels, k, device=device)
     
     return metrics
+
+
+def soft_step_metrics(embeddings: torch.Tensor,
+                      labels: torch.Tensor,
+                      k_vals=(1,5,10),
+                      theta: float = 0.5,
+                      device='cuda'):
+    """
+    embeddings: [B, D], labels: [B]
+    Trả về dict với các keys: soft_recall@k, soft_precision@k
+    """
+    B, D = embeddings.shape
+    emb = embeddings.to(device)
+    lbl = labels.to(device)
+    emb = F.normalize(emb, p=2, dim=1)
+
+    # compute sim matrix within batch
+    sim = torch.mm(emb, emb.t())                   # [B,B]
+    diag = torch.eye(B, dtype=torch.bool, device=device)
+    sim.masked_fill_(diag, -1e9)
+
+    metrics = {}
+    for k in k_vals:
+        # top-k indices
+        _, topk = sim.topk(k, dim=1)               # [B,k]
+
+        soft_rec, soft_prec = 0.0, 0.0
+        for i in range(B):
+            neigh = topk[i]                        # k neighbor idx
+            # get cosine sims to each neighbor
+            sims = sim[i, neigh]
+            # soft hits mask
+            hits = sims >= theta                   # bool[k]
+            # recall: có ít nhất 1 hit?
+            soft_rec += hits.any().float().item()
+            # precision: tỉ lệ hits
+            soft_prec += hits.float().sum().item() / k
+
+        metrics[f'soft_recall@{k}']    = soft_rec / B
+        metrics[f'soft_precision@{k}'] = soft_prec / B
+
+    return metrics
+
 
 def recall_at_k_full(embeddings, labels, k=5, batch_size=1000, device='cuda'):
     """Compute Recall@K over the full dataset with batch processing"""
@@ -247,4 +291,48 @@ def compute_full_metrics_large_scale(embeddings, labels, k_vals, device='cuda'):
             f1 = 0.0
         metrics[f'f1@{k}'] = f1
      
+    return metrics
+
+def soft_full_metrics(embeddings: torch.Tensor,
+                      labels: torch.Tensor,
+                      k_vals=(1,5,10),
+                      theta: float = 0.5,
+                      batch_size: int = 1000,
+                      device='cuda'):
+    """
+    embeddings: [N, D], labels: [N]
+    Trả về dict soft_recall@k, soft_precision@k trên toàn bộ tập
+    """
+    N, D = embeddings.shape
+    emb = F.normalize(embeddings.to(device), p=2, dim=1)
+    lbl = labels.to(device)
+
+    metrics = {}
+    for k in k_vals:
+        soft_rec, soft_prec = 0.0, 0.0
+        for start in range(0, N, batch_size):
+            end = min(start + batch_size, N)
+            batch_emb = emb[start:end]                # [B,D]
+            # sim batch vs full
+            sim = torch.mm(batch_emb, emb.t())       # [B,N]
+            # mask self
+            idxs = torch.arange(start, end, device=device)
+            sim[torch.arange(end-start), idxs] = -1e9
+
+            # top-k (we still need top-k positions for thresholding)
+            _, topk = sim.topk(k, dim=1)            # [B,k]
+
+            # soft stats
+            for i in range(end-start):
+                q_idx = start + i
+                neigh = topk[i]
+                sims = sim[i, neigh]
+                hits = sims >= theta
+                soft_rec  += hits.any().float().item()
+                soft_prec += hits.sum().item() / k
+
+        # normalize
+        metrics[f'soft_recall@{k}']    = soft_rec  / N
+        metrics[f'soft_precision@{k}'] = soft_prec / N
+
     return metrics
