@@ -225,7 +225,7 @@ class PseudoSents_Dataset(Dataset):
             sentences = [s["sentence"] for s in all_samples]
             
         gloss_embeddings = torch.stack([
-            self.gloss_embeddings[s["synset_id"]].clone() for s in all_samples
+            self.gloss_embeddings[self.global_label_to_synset[s["synset_id"]]].clone() for s in all_samples
         ])
 
         context_inputs = self.tokenizer(
