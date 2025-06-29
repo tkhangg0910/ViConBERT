@@ -310,7 +310,7 @@ def soft_full_metrics(embeddings: torch.Tensor,
         lbl = labels.to(device)
 
         metrics = {}
-        for k in tqdm(k_valsdesc=f"Computing metrics@k",ascii=True):
+        for k in tqdm(k_vals,desc=f"Computing metrics@k",ascii=True):
             soft_rec, soft_prec = 0.0, 0.0
             for start in range(0, N, batch_size):
                 end = min(start + batch_size, N)
