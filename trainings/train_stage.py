@@ -59,7 +59,8 @@ if __name__=="__main__":
         
     gloss_dict = load_gloss_dict_from_csv(config["data"]["gloss_path"])
     
-    gloss_enc = SentenceTransformer('dangvantuan/vietnamese-embedding')
+    gloss_enc = SentenceTransformer('dangvantuan/vietnamese-embedding'
+                                    ,cache_folder="embeddings/vietnamese_embedding")
     
     tokenizer = PhobertTokenizerFast.from_pretrained(config["base_model"])
         
