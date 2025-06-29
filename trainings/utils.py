@@ -91,6 +91,13 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
                     target_span=target_spans
 
                 )
+                if model.encoder_type == "attentive":
+                    gloss_embd = gloss_embd.repeat(outputs.size(0), 1, 1)
+                    P, B, D = gloss_embd.size()
+                    
+                    gloss_embd = gloss_embd.permute(1,0,2).reshape(B, P * D)
+                    
+                    outputs = outputs.permute(1,0,2).reshape(B, P * D)
                 loss = loss_fn(outputs,gloss_embd, synset_ids)
                 
             scaler.scale(loss).backward()
@@ -320,7 +327,16 @@ def evaluate_model(model, data_loader, loss_fn, device, metric_k_vals=(1, 5, 10)
                     },
                     target_span=target_spans
                 )
+                if model.encoder_type == "attentive":
+                    gloss_embd = gloss_embd.repeat(outputs.size(0), 1, 1)
+                    P, B, D = gloss_embd.size()
+                    
+                    gloss_embd = gloss_embd.permute(1,0,2).reshape(B, P * D)
+                    
+                    outputs = outputs.permute(1,0,2).reshape(B, P * D)
+                
                 loss = loss_fn(outputs, gloss_embd, synset_ids)
+            
             
             running_loss += loss.item()
             

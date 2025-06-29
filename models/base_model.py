@@ -222,7 +222,6 @@ class ViSynoSenseEmbedding(nn.Module):
             polym=config["polym"],
             encoder_type=config["encoder_type"],
             context_window_size=config["context_window_size"],
-            use_proj=config["use_proj"]
         )
 
         state_dict = torch.load(
