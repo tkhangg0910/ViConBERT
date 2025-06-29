@@ -101,7 +101,7 @@ def soft_step_metrics(embeddings: torch.Tensor,
     # compute sim matrix within batch
     sim = torch.mm(emb, emb.t())                   # [B,B]
     diag = torch.eye(B, dtype=torch.bool, device=device)
-    sim.masked_fill_(diag, -1e9)
+    sim.masked_fill_(diag,  -float('inf'))
 
     metrics = {}
     for k in k_vals:
@@ -317,7 +317,7 @@ def soft_full_metrics(embeddings: torch.Tensor,
             sim = torch.mm(batch_emb, emb.t())       # [B,N]
             # mask self
             idxs = torch.arange(start, end, device=device)
-            sim[torch.arange(end-start), idxs] = -1e9
+            sim[torch.arange(end-start), idxs] =  -float('inf')
 
             # top-k (we still need top-k positions for thresholding)
             _, topk = sim.topk(k, dim=1)            # [B,k]
