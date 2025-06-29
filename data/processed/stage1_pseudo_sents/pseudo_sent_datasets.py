@@ -46,7 +46,7 @@ class PseudoSents_Dataset(Dataset):
         for i, sample in enumerate(tqdm(samples, desc="Processing samples", ascii=True)):
             normalized_sentence = text_normalize(sample["sentence"])
             normalized_target = sample["target_word"]
-            
+            print(type(sample["synset_id"]))
             new_sample = {
                 "sentence": normalized_sentence,
                 "target_word": normalized_target,
@@ -225,7 +225,7 @@ class PseudoSents_Dataset(Dataset):
             sentences = [s["sentence"] for s in all_samples]
             
         gloss_embeddings = torch.stack([
-            self.gloss_embeddings[self.global_label_to_synset[s["synset_id"]]].clone() for s in all_samples
+            self.gloss_embeddings[s["synset_id"]].clone() for s in all_samples
         ])
 
         context_inputs = self.tokenizer(
