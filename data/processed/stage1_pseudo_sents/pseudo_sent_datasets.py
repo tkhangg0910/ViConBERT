@@ -10,9 +10,13 @@ from utils.span_extractor import SpanExtractor,SentenceMasking
 from utils.process_data import text_normalize
 
 class PseudoSents_Dataset(Dataset):
-    def __init__(self,gloss_encoder, samples, tokenizer, gloss_dict,
+    def __init__(self,gloss_embeddings_path,
+                 gloss_encoder, 
+                 samples, 
+                 tokenizer, 
                  num_synsets_per_batch=32, samples_per_synset=8, is_training=True,
                  val_mini_batch_size=768,use_sent_masking=False, only_multiple_el = False,
+                 
                  ):
         self.gloss_encoder =gloss_encoder
         self.tokenizer = tokenizer
@@ -46,8 +50,7 @@ class PseudoSents_Dataset(Dataset):
             new_sample = {
                 "sentence": normalized_sentence,
                 "target_word": normalized_target,
-                "synset_id": sample["synset_id"],
-                "gloss": gloss_dict[sample["synset_id"]]
+                "synset_id": sample["synset_id"]
             }
             self.synset_word_groups[sample["synset_id"]].add(sample["word_id"])
             self.synset_groups[sample["synset_id"]].append(new_sample)
@@ -90,14 +93,8 @@ class PseudoSents_Dataset(Dataset):
 
                 self.span_indices.append(indices if indices else (0, 0))
                 
-        print("Precomputing Gloss Vector...")
-        self.gloss_embeddings = {}
-        with torch.no_grad():
-            for synset_id, gloss in tqdm(gloss_dict.items(),desc="Computing gloss vector",ascii=True):
-                embedding = self.gloss_encoder.encode(gloss)
-                tensor_emb = torch.tensor(embedding, dtype=torch.float32)
-                self.gloss_embeddings[synset_id] = tensor_emb
-        
+        print("Loading precomputed gloss embeddings...")
+        self.gloss_embeddings = torch.load(gloss_embeddings_path)  
         # Filter synsets with enough samples
     
         self.valid_synsets = [

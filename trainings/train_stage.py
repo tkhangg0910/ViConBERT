@@ -20,20 +20,6 @@ from trainings.utils import train_model
 if is_torch_available() and torch.multiprocessing.get_start_method() == "fork":
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-import csv
-
-def load_gloss_dict_from_csv(csv_path):
-    gloss_dict = {}
-    with open(csv_path, 'r', encoding='utf-8') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            synset_id = int(row['synset_id'])
-            gloss = row['gloss'].strip()
-            if synset_id not in gloss_dict:
-                gloss_dict[synset_id] = gloss
-    return gloss_dict
-
-
 def setup_args():
     parser = argparse.ArgumentParser(description="Train a model")
     parser.add_argument("--load_ckpts", type=int, default=0, help="Model type")
@@ -56,9 +42,7 @@ if __name__=="__main__":
         train_sample = json.load(f)
     with open(config["data"]["valid_path"], "r",encoding="utf-8") as f:
         valid_sample = json.load(f)
-        
-    gloss_dict = load_gloss_dict_from_csv(config["data"]["gloss_path"])
-    
+            
     gloss_enc = SentenceTransformer('dangvantuan/vietnamese-embedding'
                                     ,cache_folder="embeddings/vietnamese_embedding")
     
@@ -68,13 +52,13 @@ if __name__=="__main__":
         tokenizer.add_special_tokens({'pad_token': '[PAD]'})
 
     
-    train_set = PseudoSents_Dataset(gloss_enc
-                                    ,train_sample, tokenizer,gloss_dict
+    train_set = PseudoSents_Dataset(config["data"]["emd_path"],gloss_enc
+                                    ,train_sample, tokenizer
                                     , is_training=True, 
                                     num_synsets_per_batch=128,samples_per_synset=6,
                                     only_multiple_el=bool(args.only_multiple_el))
     
-    valid_set = PseudoSents_Dataset(gloss_enc,valid_sample, tokenizer,gloss_dict, is_training=False
+    valid_set = PseudoSents_Dataset(config["data"]["emd_path"],gloss_enc,valid_sample, tokenizer, is_training=False
                                     ,only_multiple_el=bool(args.only_multiple_el))
     
     # sampler = train_set.get_weighted_sampler()

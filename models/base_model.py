@@ -163,7 +163,7 @@ class ViSynoSenseEmbedding(nn.Module):
         
         return context_vectors
     
-    def _encode_context_attentive(self, text,target_span):
+    def _encode_context_attentive(self, text, target_span):
         outputs = self.context_encoder(**text)
         start_pos = target_span[:, 0]
         end_pos = target_span[:, 1]

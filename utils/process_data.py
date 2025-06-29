@@ -5,6 +5,9 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from underthesea.pipeline.text_normalize import token_normalize
 from utils.custom_uts_tokenize import tokenize
+import torch
+from tqdm import tqdm
+
 
 def split_contrastive_stage1_data(pseudo_sent_path, word_synsets_path, output_dir):
     word_synsets = pd.read_csv(word_synsets_path)
@@ -55,3 +58,31 @@ def text_normalize(text, tokenizer='underthesea'):
       normalized_tokens = [token_normalize(token) for token in tokens]
       normalized_text = " ".join(normalized_tokens)
       return normalized_text
+
+
+def precompute_and_save(gloss_dict_path, save_path, gloss_encoder):
+    """
+    gloss_dict_path: đường dẫn tới file JSON hoặc CSV chứa mapping synset_id→gloss text
+    save_path: file .pt sẽ lưu dict {synset_id: tensor_embedding}
+    gloss_encoder: object có method .encode(text) → numpy array
+    """
+    with open(gloss_dict_path, 'r', encoding='utf-8') as f:
+        gloss_dict = json.load(f)   
+
+    embeddings = {}
+    for syn_id, gloss in tqdm(gloss_dict.items(), desc="Precomputing gloss embs"):
+        vec = gloss_encoder.encode(gloss)          
+        embeddings[syn_id] = torch.tensor(vec)      
+
+    torch.save(embeddings, save_path)
+    print(f"Saved {len(embeddings)} gloss embeddings to {save_path}")
+
+if __name__ == "__main__":
+    from sentence_transformers import SentenceTransformer
+    gloss_enc = SentenceTransformer('dangvantuan/vietnamese-embedding'
+                                    ,cache_folder="embeddings/vietnamese_embedding")   
+    precompute_and_save(
+        gloss_dict_path="data/raw/stage_1_pseudo_sents/word_synsets_with_pos_with_gloss.csv",
+        save_path="data/processed/stage1_pseudo_sents/gloss_embeddings.pt",
+        gloss_encoder=gloss_enc
+    )

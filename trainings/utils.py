@@ -88,7 +88,7 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
                     "attention_mask":context_attention_mask,
                     "input_ids":context_input_ids
                     },
-                    target_spans=target_spans
+                    target_span=target_spans
 
                 )
                 loss = loss_fn(outputs,gloss_embd, synset_ids)
@@ -318,7 +318,7 @@ def evaluate_model(model, data_loader, loss_fn, device, metric_k_vals=(1, 5, 10)
                     "attention_mask":context_attention_mask,
                     "input_ids":context_input_ids
                     },
-                    target_spans=target_spans
+                    target_span=target_spans
                 )
                 loss = loss_fn(outputs, gloss_embd, synset_ids)
             
