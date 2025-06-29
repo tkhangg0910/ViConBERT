@@ -85,7 +85,7 @@ class ViSynoSenseEmbedding(nn.Module):
         model_name: str = "vinai/phobert-base",
         cache_dir: str ="embeddings/base_models",
         hidden_dim: int = 512,
-        out_dim:int = 256,
+        out_dim:int = 768,
         dropout: float = 0.1,
         num_layers:int=1,
         num_head:int=3,
@@ -106,10 +106,8 @@ class ViSynoSenseEmbedding(nn.Module):
             "polym": polym,
             "encoder_type": encoder_type,
             "context_window_size": context_window_size,
-            "use_proj": use_proj
         }
         self.tokenizer =tokenizer
-        self.use_proj=use_proj
         self.context_encoder = AutoModel.from_pretrained(model_name,cache_dir=cache_dir)
         self.context_encoder.resize_token_embeddings(len(tokenizer))
         self.polym=polym
@@ -183,18 +181,14 @@ class ViSynoSenseEmbedding(nn.Module):
         context_emb, _ = self.context_attention(
                 Q_value, KV_value, KV_value
         )
-        print(context_emb.size())
         return context_emb
         
     def forward(self, context, target_span):
         """Forward pass"""
         context_emb=  self._encode_context_attentive(context,target_span) if self.encoder_type=="attentive" else self._encode_context_sep(context,target_span)
         
-        if self.use_proj:
-            return self.context_projection(context_emb)
+        return self.context_projection(context_emb)
     
-        return context_emb
-
     def save_pretrained(self, save_directory):
         os.makedirs(save_directory, exist_ok=True)
         torch.save(self.state_dict(), os.path.join(save_directory, "pytorch_model.bin"))
@@ -236,5 +230,6 @@ class ViSynoSenseEmbedding(nn.Module):
             os.path.join(save_directory, "pytorch_model.bin"),
             map_location=torch.device('cpu')
         )
+        
         model.load_state_dict(state_dict)
         return model
