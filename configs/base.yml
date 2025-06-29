@@ -18,10 +18,9 @@ model:
   temperature: 0.3
   hidden_dim: 512
   dropout: 0.3
-  out_dim: 256
+  out_dim: 768
   num_layers: 1
   context_window_size: 3
-  use_proj: False
   polym: 8
   encoder_type: attentive
 

@@ -92,7 +92,6 @@ class ViSynoSenseEmbedding(nn.Module):
         polym = 8,
         encoder_type:str="attentive",
         context_window_size:int=3,
-        use_proj:bool=True
         ):
         super().__init__()
         self.config = {

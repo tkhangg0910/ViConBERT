@@ -97,7 +97,6 @@ if __name__=="__main__":
             dropout=config["model"]["dropout"],
             num_layers=config["model"]["num_layers"],
             context_window_size=config["model"]["context_window_size"],
-            use_proj=config["model"]["use_proj"],
             polym = config["model"]["polym"],
             encoder_type = config["model"]["encoder_type"],
             ).to(device)
