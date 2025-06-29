@@ -52,9 +52,7 @@ def create_optimizer(model, config):
             "lr": lr_base,
             "weight_decay": 0.0
         },
-    ]
-    if custom_decay and custom_no_decay:
-        optimizer_groups+=[        {
+        {
             "params": custom_decay,
             "lr": lr_custom,
             "weight_decay": weight_decay_val
@@ -64,7 +62,8 @@ def create_optimizer(model, config):
             "lr": lr_custom,
             "weight_decay": 0.0
         }
-        ]
+    ]
+
     
     # Filter out empty parameter groups
     optimizer_groups = [group for group in optimizer_groups if len(group["params"]) > 0]

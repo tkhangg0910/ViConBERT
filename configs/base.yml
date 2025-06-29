@@ -33,7 +33,7 @@ training:
   save_steps: 1000
   optimizer:
     name: "adamw"
-    lr_base: 2e-4        
+    lr_base: 5e-5
     lr_custom: 4e-4 
     weight_decay: 0.01
     eps: 1e-6
