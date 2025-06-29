@@ -1,5 +1,6 @@
 import json
 import os
+import csv
 from collections import defaultdict
 import pandas as pd
 from sklearn.model_selection import train_test_split
@@ -66,8 +67,15 @@ def precompute_and_save(gloss_dict_path, save_path, gloss_encoder):
     save_path: file .pt sẽ lưu dict {synset_id: tensor_embedding}
     gloss_encoder: object có method .encode(text) → numpy array
     """
+    gloss_dict = {}
     with open(gloss_dict_path, 'r', encoding='utf-8') as f:
-        gloss_dict = json.load(f)   
+        reader = csv.DictReader(f)
+        for row in reader:
+            syn_id = row['synset_id']
+            gloss = row['gloss']
+            if syn_id not in gloss_dict:
+                gloss_dict[syn_id] = gloss
+
 
     embeddings = {}
     for syn_id, gloss in tqdm(gloss_dict.items(), desc="Precomputing gloss embs"):
