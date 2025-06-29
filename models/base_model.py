@@ -111,6 +111,7 @@ class ViSynoSenseEmbedding(nn.Module):
         self.tokenizer =tokenizer
         self.use_proj=use_proj
         self.context_encoder = AutoModel.from_pretrained(model_name,cache_dir=cache_dir)
+        self.context_encoder.resize_token_embeddings(len(tokenizer))
         self.polym=polym
         self.context_projection = MLPBlock(
             self.context_encoder.config.hidden_size,
