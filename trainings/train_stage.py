@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 from transformers.utils import is_torch_available
 from transformers import PreTrainedTokenizerFast, PhobertTokenizerFast
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from sentence_transformers import SentenceTransformer
+# from sentence_transformers import SentenceTransformer
 import pandas as pd
 
 from data.processed.stage1_pseudo_sents.pseudo_sent_datasets import PseudoSents_Dataset
