@@ -10,25 +10,28 @@ class InfoNceLoss(nn.Module):
         self.reduction = reduction
 
     def forward(self, context_emb: torch.Tensor, gloss_emb: torch.Tensor, labels: torch.Tensor):        
-        C = F.normalize(context_emb, p=2, dim=1)    # [P,N,D]
-        G = F.normalize(gloss_emb, p=2, dim=1)      # [P,N,D]
+        dtype = context_emb.dtype
+
+        C = F.normalize(context_emb, p=2, dim=1)    # [N, PXD]
+        G = F.normalize(gloss_emb, p=2, dim=1)      # [N,PXD]
         sim = torch.matmul(C, G.T) / self.temperature  # [N,N]
+        sim = sim.to(dtype)  
         N = sim.size(1)
         device = sim.device
         
         mask_pos = labels.unsqueeze(1).eq(labels.unsqueeze(0))
         mask_pos.fill_diagonal_(False)
         exp_sim = torch.exp(sim)
-        sum_pos = (exp_sim * mask_pos.float()).sum(dim=1) + self.eps
-        
-        sum_all = (exp_sim * (~torch.eye(N, device=device).bool()).float()).sum(dim=1) + self.eps
+        sum_pos = (exp_sim * mask_pos.to(dtype)).sum(dim=1) + self.eps
+        sum_all = (exp_sim * (~torch.eye(N, device=device).bool()).to(dtype)).sum(dim=1) + self.eps
+
         loss = - torch.log(sum_pos / sum_all)
         
         no_pos = (mask_pos.sum(dim=1) == 0)
         if no_pos.any():
             sim_no_diag = sim.masked_fill(torch.eye(N, device=device).bool(), -float("inf"))
             max_neg = torch.max(sim_no_diag, dim=1).values
-            loss[no_pos] = - max_neg[no_pos]
+            loss[no_pos] = (-max_neg[no_pos]).to(loss.dtype)  
 
         return loss.mean() if self.reduction=='mean' else loss.sum()
     
@@ -39,10 +42,11 @@ class DistillLoss(nn.Module):
         self.reduction = reduction
 
     def forward(self, context_emb: torch.Tensor, gloss_emb: torch.Tensor):
-        # Normalize
-        C = F.normalize(context_emb, p=2, dim=1)   
-        G = F.normalize(gloss_emb, p=2, dim=1)
-        
+        dtype = context_emb.dtype
+
+        C = F.normalize(context_emb, p=2, dim=1).to(dtype)
+        G = F.normalize(gloss_emb, p=2, dim=1).to(dtype)
+
         dist_c = 1 - torch.matmul(C, C.T)
         dist_g = 1 - torch.matmul(G, G.T)
         return F.mse_loss(dist_c, dist_g, reduction=self.reduction)
