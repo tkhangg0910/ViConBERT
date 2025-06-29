@@ -5,7 +5,7 @@ import argparse
 import torch
 from torch.utils.data import DataLoader
 from transformers.utils import is_torch_available
-from transformers import PreTrainedTokenizerFast
+from transformers import PreTrainedTokenizerFast, PhobertTokenizerFast
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from sentence_transformers import SentenceTransformer
 import pandas as pd
@@ -43,22 +43,25 @@ if __name__=="__main__":
     with open(config["data"]["valid_path"], "r",encoding="utf-8") as f:
         valid_sample = json.load(f)
             
-    gloss_enc = SentenceTransformer('dangvantuan/vietnamese-embedding'
-                                    ,cache_folder="embeddings/vietnamese_embedding")
+    # gloss_enc = SentenceTransformer('dangvantuan/vietnamese-embedding'
+                                    # ,cache_folder="embeddings/vietnamese_embedding")
     
-    tokenizer = PreTrainedTokenizerFast.from_pretrained(config["base_model"])
+    tokenizer = PhobertTokenizerFast.from_pretrained(config["base_model"])
         
     if tokenizer.pad_token is None:
         tokenizer.add_special_tokens({'pad_token': '[PAD]'})
 
     
-    train_set = PseudoSents_Dataset(config["data"]["emd_path"],gloss_enc
-                                    ,train_sample, tokenizer
+    train_set = PseudoSents_Dataset(config["data"]["emd_path"],
+                                    # gloss_enc,
+                                    train_sample, tokenizer
                                     , is_training=True, 
                                     num_synsets_per_batch=128,samples_per_synset=6,
                                     only_multiple_el=bool(args.only_multiple_el))
     
-    valid_set = PseudoSents_Dataset(config["data"]["emd_path"],gloss_enc,valid_sample, tokenizer, is_training=False
+    valid_set = PseudoSents_Dataset(config["data"]["emd_path"],
+                                    # gloss_enc,
+                                    valid_sample, tokenizer, is_training=False
                                     ,only_multiple_el=bool(args.only_multiple_el))
     
     # sampler = train_set.get_weighted_sampler()
@@ -95,7 +98,7 @@ if __name__=="__main__":
             num_layers=config["model"]["num_layers"],
             context_window_size=config["model"]["context_window_size"],
             use_proj=config["model"]["use_proj"],
-            polym = config["model"]["use_proj"],
+            polym = config["model"]["polym"],
             encoder_type = config["model"]["encoder_type"],
             ).to(device)
     

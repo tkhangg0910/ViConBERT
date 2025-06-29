@@ -11,14 +11,14 @@ from utils.process_data import text_normalize
 
 class PseudoSents_Dataset(Dataset):
     def __init__(self,gloss_embeddings_path,
-                 gloss_encoder, 
+                #  gloss_encoder, 
                  samples, 
                  tokenizer, 
                  num_synsets_per_batch=32, samples_per_synset=8, is_training=True,
                  val_mini_batch_size=768,use_sent_masking=False, only_multiple_el = False,
                  
                  ):
-        self.gloss_encoder =gloss_encoder
+        # self.gloss_encoder =gloss_encoder
         self.tokenizer = tokenizer
         self.use_sent_masking= use_sent_masking
         if self.tokenizer.pad_token is None:
