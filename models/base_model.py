@@ -178,12 +178,10 @@ class ViSynoSenseEmbedding(nn.Module):
         span_lengths = mask.sum(dim=1, keepdim=True).clamp(min=1)  
         pooled_embeddings = masked_states.sum(dim=1) / span_lengths
         
-        Q_value = pooled_embeddings.unsqueeze(1).expand(-1, self.polym,-1)
-        K_value  = hidden_states
-        V_value = hidden_states
-        
+        Q_value = pooled_embeddings.unsqueeze(0).expand(self.polym,-1, -1)
+        KV_value = hidden_states.permute(1, 0, 2)  
         context_emb = self.context_attention(
-                Q_value, K_value, V_value
+                Q_value, KV_value, KV_value
         )
         
         return context_emb
