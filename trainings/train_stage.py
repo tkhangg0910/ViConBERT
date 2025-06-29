@@ -29,7 +29,7 @@ def setup_args():
         
 if __name__=="__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    
+    torch.manual_seed(42) 
     args = setup_args()
     print(f"Load From Checkpoint: {bool(args.load_ckpts)}")
     print(f"only_multiple_el: {bool(args.only_multiple_el)}")
