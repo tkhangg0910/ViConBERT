@@ -13,7 +13,6 @@ class InfoNceLoss(nn.Module):
         C = F.normalize(context_emb, p=2, dim=1)    # [P,N,D]
         G = F.normalize(gloss_emb, p=2, dim=1)      # [P,N,D]
         sim = torch.matmul(C, G.T) / self.temperature  # [N,N]
-        
         N = sim.size(1)
         device = sim.device
         
@@ -63,6 +62,9 @@ class InfonceDistillLoss(nn.Module):
         self.aux_weight = aux_weight
     
     def forward(self, context_emb: torch.Tensor, gloss_emb: torch.Tensor, labels: torch.Tensor):
+        print(context_emb.size())
+        print(gloss_emb.size())
+        print(labels.size())
         loss_nce = self.infonce_loss(context_emb, gloss_emb, labels)
         loss_dist = self.distill_loss(context_emb, gloss_emb)
         
