@@ -62,9 +62,6 @@ class InfonceDistillLoss(nn.Module):
         self.aux_weight = aux_weight
     
     def forward(self, context_emb: torch.Tensor, gloss_emb: torch.Tensor, labels: torch.Tensor):
-        print(context_emb.size())
-        print(gloss_emb.size())
-        print(labels.size())
         loss_nce = self.infonce_loss(context_emb, gloss_emb, labels)
         loss_dist = self.distill_loss(context_emb, gloss_emb)
         
