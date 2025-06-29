@@ -3,7 +3,7 @@ import torch
 from tqdm import tqdm
 from torch.amp import GradScaler, autocast
 from datetime import datetime
-from utils.metrics import compute_step_metrics, compute_full_metrics_large_scale
+from utils.metrics import compute_step_metrics, compute_full_metrics_large_scale, soft_full_metrics, soft_step_metrics
 
 def train_model(num_epochs, train_data_loader, valid_data_loader, 
                 loss_fn, optimizer, model, device, 
@@ -39,6 +39,7 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
     history = {
         'train_loss': [],
         'train_metrics': [],
+        'train_soft_metrics': [],
         'valid_loss': [],
         'epoch_times': [],
         'step_metrics': []
@@ -58,9 +59,10 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
         # ======================
         model.train()
         running_loss = 0.0
-        num_batches = 0  
         train_metrics_accum = {f'recall@{k}': 0.0 for k in metric_k_vals}
         train_metrics_accum.update({f'precision@{k}': 0.0 for k in metric_k_vals})
+        train_soft_accum   = {f'soft_recall@{k}': 0.0 for k in metric_k_vals}
+        train_soft_accum.update({f'soft_precision@{k}': 0.0 for k in metric_k_vals})
 
         # Training loop
         train_pbar = tqdm(train_data_loader, 
@@ -69,7 +71,6 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
         
         for batch_idx, batch in enumerate(train_pbar):
             global_step += 1
-            num_batches += 1
             
             gloss_embd = batch["gloss_embd"].to(device)
             context_input_ids=batch["context_input_ids"].to(device)
@@ -103,10 +104,14 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
             batch_metrics = compute_step_metrics(outputs, synset_ids, 
                                                k_vals=metric_k_vals, 
                                                device=device)
+            soft_metrics  = soft_step_metrics(outputs, synset_ids, metric_k_vals, theta=0.6, device=device)
 
             for k in metric_k_vals:
-                train_metrics_accum[f'recall@{k}'] += batch_metrics[f'recall@{k}']
+                train_metrics_accum[f'recall@{k}']    += batch_metrics[f'recall@{k}']
                 train_metrics_accum[f'precision@{k}'] += batch_metrics[f'precision@{k}']
+                train_soft_accum[f'soft_recall@{k}']    += soft_metrics[f'soft_recall@{k}']
+                train_soft_accum[f'soft_precision@{k}'] += soft_metrics[f'soft_precision@{k}']
+
 
             # Update progress bar
             if global_step % metric_log_interval == 0:
@@ -128,12 +133,22 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
             #     scheduler.step() 
                 
         train_metrics = {}
-        for k in metric_k_vals:
-            train_metrics[f'recall@{k}'] = train_metrics_accum[f'recall@{k}'] / num_batches
-            train_metrics[f'precision@{k}'] = train_metrics_accum[f'precision@{k}'] / num_batches
+        num_batches = len(train_data_loader)
+        train_metrics      = {f'recall@{k}': train_metrics_accum[f'recall@{k}'] / num_batches
+                              for k in metric_k_vals}
+        train_metrics.update({f'precision@{k}': train_metrics_accum[f'precision@{k}'] / num_batches
+                              for k in metric_k_vals})
+        train_soft_metrics = {f'soft_recall@{k}': train_soft_accum[f'soft_recall@{k}'] / num_batches
+                              for k in metric_k_vals}
+        train_soft_metrics.update({f'soft_precision@{k}': train_soft_accum[f'soft_precision@{k}'] / num_batches
+                              for k in metric_k_vals})
+
         train_loss = running_loss / num_batches
         train_metrics['loss'] = train_loss
         history['train_metrics'].append(train_metrics)
+        
+        history['train_metrics'].append(train_metrics)
+        history['train_soft_metrics'].append(train_soft_metrics)
 
         # ======================
         # VALIDATION PHASE
@@ -213,19 +228,30 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
         print(f"\n{'='*60}")
         print(f"Epoch {epoch+1}/{num_epochs} Summary:")
         print(f"  Time: {epoch_time:.2f}s")
-        
+
         # Training metrics
         print("\n  TRAIN METRICS (avg per batch):")
         print(f"    Loss: {train_loss:.4f}")
         for k in metric_k_vals:
-            print(f"    Recall@{k}: {train_metrics[f'recall@{k}']:.4f} | Precision@{k}: {train_metrics[f'precision@{k}']:.4f}")
-        
+            print(
+                f"    Recall@{k}:     {train_metrics[f'recall@{k}']:.4f} | "
+                f"Precision@{k}:  {train_metrics[f'precision@{k}']:.4f} | "
+                f"SoftR@{k}:      {train_soft_metrics[f'soft_recall@{k}']:.4f} | "
+                f"SoftP@{k}:      {train_soft_metrics[f'soft_precision@{k}']:.4f}"
+            )
+
         # Validation metrics
         print("\n  VALIDATION METRICS:")
         print(f"    Loss: {valid_metrics['loss']:.4f}")
         for k in metric_k_vals:
-            print(f"    Recall@{k}: {valid_metrics[f'recall@{k}']:.4f} | Precision@{k}: {valid_metrics[f'precision@{k}']:.4f} | F1@{k}: {valid_metrics[f'f1@{k}']:.4f}")
-        # print(f"    NMI: {valid_metrics['nmi']:.4f}")
+            print(
+                f"    Recall@{k}:     {valid_metrics[f'recall@{k}']:.4f} | "
+                f"Precision@{k}:  {valid_metrics[f'precision@{k}']:.4f} | "
+                f"F1@{k}:         {valid_metrics[f'f1@{k}']:.4f} | "
+                f"SoftR@{k}:      {valid_metrics[f'soft_recall@{k}']:.4f} | "
+                f"SoftP@{k}:      {valid_metrics[f'soft_precision@{k}']:.4f}"
+            )
+
         
         print(f"\n  Early stopping: {patience_counter}/{early_stopping_patience}")
         
@@ -306,15 +332,35 @@ def evaluate_model(model, data_loader, loss_fn, device, metric_k_vals=(1, 5, 10)
     all_labels = torch.cat(all_labels, dim=0)
     avg_loss = running_loss / len(data_loader)
         
-    full_metrics = compute_full_metrics_large_scale(
+    hard  = compute_full_metrics_large_scale(
         all_embeddings, 
         all_labels, 
         k_vals=metric_k_vals, 
+        device=device
+    )
+    N, D = all_embeddings.shape
+    if device.startswith('cuda'):
+        total_mem = torch.cuda.get_device_properties(device).total_memory
+        used_mem  = torch.cuda.memory_allocated(device)
+        free_mem  = total_mem - used_mem
+        # mỗi row sim uses 4 bytes * D entries
+        mem_per_row = 4 * D * N
+        chunk_size = max(1, int(free_mem / mem_per_row))
+        chunk_size = min(chunk_size, 5000)  # giới hạn trên nếu cần
+    else:
+        chunk_size = 1000
+
+    soft_metrics = soft_full_metrics(
+        all_embeddings, all_labels,
+        k_vals=metric_k_vals,
+        theta=0.6,
+        batch_size=chunk_size,
         device=device
     )
 
     
     return {
         'loss': avg_loss,
-        **full_metrics
+        **hard,
+         **soft_metrics
     }
