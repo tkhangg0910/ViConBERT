@@ -74,7 +74,7 @@ def precompute_and_save(gloss_dict_path, save_path, gloss_encoder):
             syn_id = row['synset_id']
             gloss = row['gloss']
             if syn_id not in gloss_dict:
-                gloss_dict[syn_id] = gloss
+                gloss_dict[int(syn_id)] = gloss
 
 
     embeddings = {}

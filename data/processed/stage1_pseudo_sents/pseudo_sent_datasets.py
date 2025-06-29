@@ -46,7 +46,6 @@ class PseudoSents_Dataset(Dataset):
         for i, sample in enumerate(tqdm(samples, desc="Processing samples", ascii=True)):
             normalized_sentence = text_normalize(sample["sentence"])
             normalized_target = sample["target_word"]
-            print(type(sample["synset_id"]))
             new_sample = {
                 "sentence": normalized_sentence,
                 "target_word": normalized_target,
