@@ -295,44 +295,37 @@ def compute_full_metrics_large_scale(embeddings, labels, k_vals, device='cuda'):
 
 def soft_full_metrics(embeddings: torch.Tensor,
                       labels: torch.Tensor,
-                      k_vals=(1,5,10),
+                      k_vals=(1, 5, 10),
                       theta: float = 0.5,
                       batch_size: int = 1000,
                       device='cuda'):
     """
     embeddings: [N, D], labels: [N]
-    Trả về dict soft_recall@k, soft_precision@k trên toàn bộ tập
+    Return: dict of soft_recall@k and soft_precision@k over full set
     """
-    N, D = embeddings.shape
-    emb = F.normalize(embeddings.to(device), p=2, dim=1)
-    lbl = labels.to(device)
+    with torch.no_grad():
+        N, D = embeddings.shape
+        emb = F.normalize(embeddings.to(device), p=2, dim=1)
+        emb_T = emb.t()
+        lbl = labels.to(device)
 
-    metrics = {}
-    for k in k_vals:
-        soft_rec, soft_prec = 0.0, 0.0
-        for start in range(0, N, batch_size):
-            end = min(start + batch_size, N)
-            batch_emb = emb[start:end]                # [B,D]
-            # sim batch vs full
-            sim = torch.mm(batch_emb, emb.t())       # [B,N]
-            # mask self
-            idxs = torch.arange(start, end, device=device)
-            sim[torch.arange(end-start), idxs] =  -float('inf')
+        metrics = {}
+        for k in tqdm(k_valsdesc=f"Computing metrics@k",ascii=True):
+            soft_rec, soft_prec = 0.0, 0.0
+            for start in range(0, N, batch_size):
+                end = min(start + batch_size, N)
+                batch_emb = emb[start:end]  # [B,D]
+                sim = batch_emb @ emb_T     # [B,N]
+                sim[:, start:end].fill_diagonal_(-float('inf'))  # mask self
 
-            # top-k (we still need top-k positions for thresholding)
-            _, topk = sim.topk(k, dim=1)            # [B,k]
+                _, topk = sim.topk(k, dim=1)  # [B,k]
+                sims = torch.gather(sim, 1, topk)  # [B,k]
 
-            # soft stats
-            for i in range(end-start):
-                q_idx = start + i
-                neigh = topk[i]
-                sims = sim[i, neigh]
-                hits = sims >= theta
-                soft_rec  += hits.any().float().item()
-                soft_prec += hits.sum().item() / k
+                hits = sims >= theta  # [B,k]
+                soft_rec += hits.any(dim=1).float().sum()
+                soft_prec += hits.sum() / k
 
-        # normalize
-        metrics[f'soft_recall@{k}']    = soft_rec  / N
-        metrics[f'soft_precision@{k}'] = soft_prec / N
+            metrics[f'soft_recall@{k}'] = (soft_rec / N).item()
+            metrics[f'soft_precision@{k}'] = (soft_prec / N).item()
 
-    return metrics
+        return metrics
