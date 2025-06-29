@@ -183,7 +183,7 @@ class ViSynoSenseEmbedding(nn.Module):
         context_emb, _ = self.context_attention(
                 Q_value, KV_value, KV_value
         )
-        
+        print(context_emb.size())
         return context_emb
         
     def forward(self, context, target_span):

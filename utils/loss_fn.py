@@ -10,11 +10,11 @@ class InfoNceLoss(nn.Module):
         self.reduction = reduction
 
     def forward(self, context_emb: torch.Tensor, gloss_emb: torch.Tensor, labels: torch.Tensor):        
-        C = F.normalize(context_emb, p=2, dim=1)    # [N,D]
-        G = F.normalize(gloss_emb, p=2, dim=1)      # [N,D]
+        C = F.normalize(context_emb, p=2, dim=1)    # [P,N,D]
+        G = F.normalize(gloss_emb, p=2, dim=1)      # [P,N,D]
         sim = torch.matmul(C, G.T) / self.temperature  # [N,N]
         
-        N = sim.size(0)
+        N = sim.size(1)
         device = sim.device
         
         mask_pos = labels.unsqueeze(1).eq(labels.unsqueeze(0))
