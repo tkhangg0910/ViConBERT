@@ -5,7 +5,7 @@ import argparse
 import torch
 from torch.utils.data import DataLoader
 from transformers.utils import is_torch_available
-from transformers import PhobertTokenizerFast
+from transformers import PreTrainedTokenizerFast
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from sentence_transformers import SentenceTransformer
 import pandas as pd
@@ -62,7 +62,7 @@ if __name__=="__main__":
     gloss_enc = SentenceTransformer('dangvantuan/vietnamese-embedding'
                                     ,cache_folder="embeddings/vietnamese_embedding")
     
-    tokenizer = PhobertTokenizerFast.from_pretrained(config["base_model"])
+    tokenizer = PreTrainedTokenizerFast.from_pretrained(config["base_model"])
         
     if tokenizer.pad_token is None:
         tokenizer.add_special_tokens({'pad_token': '[PAD]'})
