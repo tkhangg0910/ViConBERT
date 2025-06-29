@@ -22,7 +22,7 @@ class InfoNceLoss(nn.Module):
         exp_sim = torch.exp(sim)
         sum_pos = (exp_sim * mask_pos.float()).sum(dim=1) + self.eps
         
-        sum_all = (exp_sim * (~torch.eye(N, device=device)).float()).sum(dim=1) + self.eps
+        sum_all = (exp_sim * (~torch.eye(N, device=device).bool()).float()).sum(dim=1) + self.eps
         loss = - torch.log(sum_pos / sum_all)
         
         no_pos = (mask_pos.sum(dim=1) == 0)
