@@ -26,7 +26,7 @@ class InfoNceLoss(nn.Module):
         
         no_pos = (mask_pos.sum(dim=1) == 0)
         if no_pos.any():
-            sim_no_diag = sim.masked_fill(torch.eye(N, device=device).bool(), -1e9)
+            sim_no_diag = sim.masked_fill(torch.eye(N, device=device).bool(), -float("inf"))
             max_neg = torch.max(sim_no_diag, dim=1).values
             loss[no_pos] = - max_neg[no_pos]
 
