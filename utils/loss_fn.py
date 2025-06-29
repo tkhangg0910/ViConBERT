@@ -9,9 +9,7 @@ class InfoNceLoss(nn.Module):
         self.eps = eps
         self.reduction = reduction
 
-    def forward(self, context_emb: torch.Tensor, gloss_emb: torch.Tensor, labels: torch.Tensor):
-        dtype = context_emb.dtype
-        
+    def forward(self, context_emb: torch.Tensor, gloss_emb: torch.Tensor, labels: torch.Tensor):        
         C = F.normalize(context_emb, p=2, dim=1)    # [N,D]
         G = F.normalize(gloss_emb, p=2, dim=1)      # [N,D]
         sim = torch.matmul(C, G.T) / self.temperature  # [N,N]
