@@ -180,7 +180,7 @@ class ViSynoSenseEmbedding(nn.Module):
         
         Q_value = pooled_embeddings.unsqueeze(0).expand(self.polym,-1, -1)
         KV_value = hidden_states.permute(1, 0, 2)  
-        context_emb = self.context_attention(
+        context_emb, _ = self.context_attention(
                 Q_value, KV_value, KV_value
         )
         
