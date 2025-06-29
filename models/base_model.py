@@ -95,6 +95,20 @@ class ViSynoSenseEmbedding(nn.Module):
         use_proj:bool=True
         ):
         super().__init__()
+        self.config = {
+            "base_model": model_name,
+            "base_model_cache_dir": cache_dir,
+            "hidden_dim": hidden_dim,
+            "out_dim": out_dim,
+            "dropout": dropout,
+            "num_layers": num_layers,
+            "num_head": num_head,
+            "polym": polym,
+            "encoder_type": encoder_type,
+            "context_window_size": context_window_size,
+            "use_proj": use_proj
+        }
+        self.tokenizer =tokenizer
         self.use_proj=use_proj
         self.context_encoder = AutoModel.from_pretrained(model_name,cache_dir=cache_dir)
         self.polym=polym
@@ -182,5 +196,46 @@ class ViSynoSenseEmbedding(nn.Module):
     
         return context_emb
 
+    def save_pretrained(self, save_directory):
+        os.makedirs(save_directory, exist_ok=True)
+        torch.save(self.state_dict(), os.path.join(save_directory, "pytorch_model.bin"))
+
+        with open(os.path.join(save_directory, "config.json"), "w") as f:
+            json.dump(self.config, f, indent=2)
+
+        if hasattr(self, 'tokenizer'):
+            self.tokenizer.save_pretrained(save_directory)
 
 
+    @classmethod
+    def from_pretrained(cls, save_directory, tokenizer=None):
+        with open(os.path.join(save_directory, "config.json"), "r") as f:
+            config = json.load(f)
+
+        if tokenizer is None:
+            try:
+                tokenizer = AutoTokenizer.from_pretrained(save_directory)
+            except:
+                raise ValueError("Không tìm thấy tokenizer trong thư mục")
+
+        model = cls(
+            tokenizer=tokenizer,
+            model_name=config["base_model"],
+            cache_dir=config["base_model_cache_dir"],
+            hidden_dim=config["hidden_dim"],
+            out_dim=config["out_dim"],
+            dropout=config["dropout"],
+            num_layers=config["num_layers"],
+            num_head=config["num_head"],
+            polym=config["polym"],
+            encoder_type=config["encoder_type"],
+            context_window_size=config["context_window_size"],
+            use_proj=config["use_proj"]
+        )
+
+        state_dict = torch.load(
+            os.path.join(save_directory, "pytorch_model.bin"),
+            map_location=torch.device('cpu')
+        )
+        model.load_state_dict(state_dict)
+        return model

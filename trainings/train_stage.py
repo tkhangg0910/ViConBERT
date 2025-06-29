@@ -104,9 +104,14 @@ if __name__=="__main__":
             tokenizer,
             model_name=config["base_model"],
             cache_dir=config["base_model_cache_dir"],
-            hidden_dim=config["model"]["fusion_hidden_dim"],
+            hidden_dim=config["model"]["hidden_dim"],
             out_dim=config["model"]["out_dim"],
-            dropout=config["model"]["dropout"]
+            dropout=config["model"]["dropout"],
+            num_layers=config["model"]["num_layers"],
+            context_window_size=config["model"]["context_window_size"],
+            use_proj=config["model"]["use_proj"],
+            polym = config["model"]["use_proj"],
+            encoder_type = config["model"]["encoder_type"],
             ).to(device)
     
     total_steps = len(train_dataloader) * config["training"]["epochs"] 

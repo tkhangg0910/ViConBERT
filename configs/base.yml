@@ -2,20 +2,11 @@ project:
   name: "vietnamese_wordnet_embedding"
   language: "vi"
   seed: 42
-  
-hardware:
-  device: "cuda"  
-  fp16: True  
-  gradient_accumulation: 2
-
-monitoring:
-  wandb_project: "vn_wordnet"
-  log_interval: 100
 
 stage_name: "contrastive_pretraining"
-base_model: "checkpoints/stage1/phobert_base-v2-elmo/run_20250626_163220/best_model"
-base_model_cache_dir: "checkpoints/stage1/phobert_base-v2-elmo/run_20250626_163220/best_model"
-output_dir: "./checkpoints/stage1/phobert_base-v2-elmo"
+base_model: "vinai/phobert-base"
+base_model_cache_dir: "embeddings/phobert-base"
+output_dir: "./checkpoints/phobert_base"
 
 data:
   train_path: "data/processed/stage1_pseudo_sents/train_data_v2.json"
@@ -24,30 +15,25 @@ data:
 
 model:  
   temperature: 0.3
-  freeze_base: False
-  fusion_hidden_dim: 512
+  hidden_dim: 512
   dropout: 0.3
-  wp_num_layers: 1
-  cp_num_layers: 1
-  fusion_num_layers: 1
+  out_dim: 256
+  num_layers: 1
   context_window_size: 3
+  use_proj: False
+  polym: 8
+  encoder_type: attentive
 
 training:
   ckpt_interval: 10
   shuffle: False
   batch_size: 1
   epochs: 100
-  learning_rate: 2e-5
-  warmup_steps: 1000
-  max_seq_length: 128
   early_stopping_patience: 5
   save_steps: 1000
-  batch_sampler:
-    min_pos: 2
-    pos_ratio: 0.4
   optimizer:
     name: "adamw"
-    lr_base: 2e-5        
+    lr_base: 2e-4        
     lr_custom: 5e-4 
     weight_decay: 0.01
     eps: 1e-6
