@@ -25,7 +25,7 @@ def create_optimizer(model, config):
             continue
             
         # Check if parameter belongs to base model (PhoBERT)
-        if "base_model" in name:
+        if "context_encoder" in name:
             if any(nd in name for nd in no_decay):
                 base_model_no_decay.append(param)
             else:
