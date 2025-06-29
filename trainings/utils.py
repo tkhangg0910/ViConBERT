@@ -320,7 +320,7 @@ def evaluate_model(model, data_loader, loss_fn, device, metric_k_vals=(1, 5, 10)
                     },
                     target_spans=target_spans
                 )
-                loss = loss_fn(outputs, synset_ids)
+                loss = loss_fn(outputs, gloss_embd, synset_ids)
             
             running_loss += loss.item()
             
