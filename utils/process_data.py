@@ -78,7 +78,7 @@ def precompute_and_save(gloss_dict_path, save_path, gloss_encoder):
 
 
     embeddings = {}
-    for syn_id, gloss in tqdm(gloss_dict.items(), desc="Precomputing gloss embs"):
+    for syn_id, gloss in tqdm(gloss_dict.items(), desc="Precomputing gloss embs", ascii=True):
         vec = gloss_encoder.encode(gloss)          
         embeddings[syn_id] = torch.tensor(vec)      
 
