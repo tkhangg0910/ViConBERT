@@ -231,13 +231,12 @@ class PseudoSents_Dataset(Dataset):
             sentences, 
             padding=True, 
             truncation=True, 
-            max_length=128,
+            max_length=256,
             return_tensors="pt",
             return_attention_mask=True,
             return_offsets_mapping=True
         )
 
-        # Tokenize target wor
         
         return {
             "context_input_ids": context_inputs["input_ids"],

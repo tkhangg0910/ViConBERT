@@ -35,7 +35,7 @@ class SpanExtractor:
             text,
             return_offsets_mapping=True,
             truncation=True,
-            max_length=258 ,
+            max_length=256 ,
             add_special_tokens=True
         )
 
