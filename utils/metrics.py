@@ -4,6 +4,8 @@ from sklearn.metrics import normalized_mutual_info_score
 from sklearn.cluster import KMeans
 from tqdm import tqdm
 import torch.nn.functional as F
+import faiss
+from sklearn.metrics import ndcg_score
 
 def normalize_embeddings(embeddings):
     """Normalize embeddings for efficient cosine similarity computation"""
@@ -84,47 +86,33 @@ def compute_step_metrics(embeddings, labels, k_vals=(1, 5, 10), device='cuda'):
     return metrics
 
 
-def soft_step_metrics(embeddings: torch.Tensor,
+def ndcg_step_metrics(context_emb: torch.Tensor,
+                      gloss_embs: torch.Tensor,
                       labels: torch.Tensor,
                       k_vals=(1,5,10),
-                      theta: float = 0.5,
                       device='cuda'):
     """
-    embeddings: [B, D], labels: [B]
-    Trả về dict với các keys: soft_recall@k, soft_precision@k
+    context_emb: [B, D]     – embeddings câu
+    gloss_embs:  [S, D]     – embeddings toàn bộ S gloss (33k+)
+    labels:      [B]        – synset index (0..S-1) cho từng câu
     """
-    B, D = embeddings.shape
-    emb = embeddings.to(device)
-    lbl = labels.to(device)
-    emb = F.normalize(emb, p=2, dim=1)
-
-    # compute sim matrix within batch
-    sim = torch.mm(emb, emb.t())                   # [B,B]
-    diag = torch.eye(B, dtype=torch.bool, device=device)
-    sim.masked_fill_(diag,  -float('inf'))
+    # Normalize
+    C = F.normalize(context_emb.to(device), dim=1)      # [B,D]
+    G = F.normalize(gloss_embs.to(device), dim=1)       # [S,D]
+    # Cosine sim: [B, S]
+    scores = torch.mm(C, G.t()).cpu().numpy()
+    true_rels = torch.zeros_like(scores)
+    # Set relevance = 1 for true label, 0 else
+    for i, lbl in enumerate(labels.cpu().tolist()):
+        true_rels[i, lbl] = 1.0
 
     metrics = {}
     for k in k_vals:
-        # top-k indices
-        _, topk = sim.topk(k, dim=1)               # [B,k]
-
-        soft_rec, soft_prec = 0.0, 0.0
-        for i in range(B):
-            neigh = topk[i]                        # k neighbor idx
-            # get cosine sims to each neighbor
-            sims = sim[i, neigh]
-            # soft hits mask
-            hits = sims >= theta                   # bool[k]
-            # recall: có ít nhất 1 hit?
-            soft_rec += hits.any().float().item()
-            # precision: tỉ lệ hits
-            soft_prec += hits.float().sum().item() / k
-
-        metrics[f'soft_recall@{k}']    = soft_rec / B
-        metrics[f'soft_precision@{k}'] = soft_prec / B
-
+        # sklearn expects shape (n_samples, n_labels)
+        # ndcg_score(y_true, y_score, k=k)
+        ndcg = ndcg_score(true_rels, scores, k=k)
+        metrics[f'ndcg@{k}'] = ndcg
     return metrics
-
 
 def recall_at_k_full(embeddings, labels, k=5, batch_size=1000, device='cuda'):
     """Compute Recall@K over the full dataset with batch processing"""
@@ -293,39 +281,51 @@ def compute_full_metrics_large_scale(embeddings, labels, k_vals, device='cuda'):
      
     return metrics
 
-def soft_full_metrics(embeddings: torch.Tensor,
+def ndcg_full_metrics(context_emb: torch.Tensor,
                       labels: torch.Tensor,
-                      k_vals=(1, 5, 10),
-                      theta: float = 0.5,
-                      batch_size: int = 1000,
+                      k_vals=(1,5,10),
+                      faiss_index: faiss.Index = None,
+                      batch_size: int = 1024,
                       device='cuda'):
     """
-    embeddings: [N, D], labels: [N]
-    Return: dict of soft_recall@k and soft_precision@k over full set
+    context_emb: [N, D]
+    labels:      [N]
+    faiss_index: đã build trên gloss_embs (normalized) bên ngoài
+    Returns dict {'ndcg@k': value, ...}
     """
-    with torch.no_grad():
-        N, D = embeddings.shape
-        emb = F.normalize(embeddings.to(device), p=2, dim=1)
-        emb_T = emb.t()
-        lbl = labels.to(device)
+    import numpy as np
+    from sklearn.metrics import ndcg_score
 
-        metrics = {}
-        for k in k_vals:
-            soft_rec, soft_prec = 0.0, 0.0
-            for start in tqdm(range(0, N, batch_size),desc=f"Computing metrics@k={k}",ascii=True):
-                end = min(start + batch_size, N)
-                batch_emb = emb[start:end]  # [B,D]
-                sim = batch_emb @ emb_T     # [B,N]
-                sim[:, start:end].fill_diagonal_(-float('inf'))  # mask self
+    # 1) Normalize context, to numpy
+    C = torch.nn.functional.normalize(context_emb.to(device), dim=1).cpu().numpy().astype('float32')
+    N, D = C.shape
 
-                _, topk = sim.topk(k, dim=1)  # [B,k]
-                sims = torch.gather(sim, 1, topk)  # [B,k]
+    # 2) Build index nếu cần (nếu faiss_index is None)
+    if faiss_index is None:
+        raise ValueError("faiss_index must be provided")
 
-                hits = sims >= theta  # [B,k]
-                soft_rec += hits.any(dim=1).float().sum()
-                soft_prec += hits.sum() / k
+    # 3) Search in chunks
+    metrics = {f'ndcg@{k}': 0.0 for k in k_vals}
+    num_chunks = (N + batch_size - 1) // batch_size
 
-            metrics[f'soft_recall@{k}'] = (soft_rec / N).item()
-            metrics[f'soft_precision@{k}'] = (soft_prec / N).item()
+    for i in range(num_chunks):
+        st = i * batch_size
+        ed = min((i+1)*batch_size, N)
+        Cb = C[st:ed]  # [B, D]
+        # top‐max_k for each
+        max_k = max(k_vals)
+        D_scores, I_idxs = faiss_index.search(Cb, max_k)  # [B, max_k]
 
-        return metrics
+        # compute per‐query nDCG
+        for j in range(ed-st):
+            true_label = int(labels[st + j].item())
+            scores = D_scores[j]       # [max_k]
+            rels   = (I_idxs[j] == true_label).astype('float32')  # 1 where correct
+            for k in k_vals:
+                metrics[f'ndcg@{k}'] += ndcg_score([rels[:k]], [scores[:k]], k=k)
+
+    # 4) average
+    for k in k_vals:
+        metrics[f'ndcg@{k}'] /= N
+
+    return metrics
