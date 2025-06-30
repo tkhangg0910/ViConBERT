@@ -80,7 +80,7 @@ class SpanExtractor:
         max_token_idx = len(offsets) - 1
 
         for start_char, end_char in matches:
-            # print(f"Debug - Trying match at chars {start_char}-{end_char}: '{text[start_char:end_char]}'")
+            print(f"Debug - Trying match at chars {start_char}-{end_char}: '{text[start_char:end_char]}'")
 
             start_idx, end_idx = None, None
 
@@ -103,8 +103,8 @@ class SpanExtractor:
             max_length = self.tokenizer.model_max_length - 2  
             
             if start_idx is not None and end_idx is not None:
-                # print(f"Debug - Found token range: {start_idx}-{end_idx}")
-                # print(f"Debug - Corresponding tokens: {tokens[start_idx:end_idx+1]}")
+                print(f"Debug - Found token range: {start_idx}-{end_idx}")
+                print(f"Debug - Corresponding tokens: {tokens[start_idx:end_idx+1]}")
                 start_idx = min(start_idx, max_length)
                 end_idx = min(end_idx, max_length)
                 end_idx = max(start_idx, end_idx)
