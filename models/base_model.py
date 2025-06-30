@@ -183,7 +183,7 @@ class ViSynoSenseEmbedding(nn.Module):
         """Forward pass"""
         context_emb=  self._encode_context_attentive(context,target_span) if self.encoder_type=="attentive" else self._encode_context_sep(context,target_span)
         
-        return self.context_projection(context_emb)
+        return self.context_projection(context_emb.squeeze(0))
     
     def save_pretrained(self, save_directory):
         os.makedirs(save_directory, exist_ok=True)
