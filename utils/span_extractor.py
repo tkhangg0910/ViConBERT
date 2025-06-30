@@ -40,11 +40,11 @@ class SpanExtractor:
         )
 
         # Debug: print tokenization details
-        # tokens = self.tokenizer.convert_ids_to_tokens(encoding['input_ids'])
-        # print(f"Debug - Text: {text}")
-        # print(f"Debug - Target: {target_phrase}")
-        # print(f"Debug - Tokens: {tokens}")
-        # print(f"Debug - Offsets: {encoding['offset_mapping']}")
+        tokens = self.tokenizer.convert_ids_to_tokens(encoding['input_ids'])
+        print(f"Debug - Text: {text}")
+        print(f"Debug - Target: {target_phrase}")
+        print(f"Debug - Tokens: {tokens}")
+        print(f"Debug - Offsets: {encoding['offset_mapping']}")
 
         # Use case-insensitive search for character positions
         normalized_text = text.lower()
