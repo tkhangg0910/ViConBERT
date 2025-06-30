@@ -10,7 +10,9 @@ class SpanExtractor:
         self.tokenizer = tokenizer
         self.logger = logging.getLogger(__name__)
       
-    def get_span_indices(self, text: str, target_phrase: str) -> Optional[Tuple[int, int]]:
+    def get_span_indices(self, text: str,
+                         target_phrase: str,
+                         debug: bool=False) -> Optional[Tuple[int, int]]:
         """
         Finds start and end token indices for target phrase
         Handles Vietnamese subword tokenization with case-insensitive matching
@@ -41,10 +43,11 @@ class SpanExtractor:
 
         # Debug: print tokenization details
         tokens = self.tokenizer.convert_ids_to_tokens(encoding['input_ids'])
-        print(f"Debug - Text: {text}")
-        print(f"Debug - Target: {target_phrase}")
-        print(f"Debug - Tokens: {tokens}")
-        print(f"Debug - Offsets: {encoding['offset_mapping']}")
+        if debug:
+            print(f"Debug - Text: {text}")
+            print(f"Debug - Target: {target_phrase}")
+            print(f"Debug - Tokens: {tokens}")
+            print(f"Debug - Offsets: {encoding['offset_mapping']}")
 
         # Use case-insensitive search for character positions
         normalized_text = text.lower()
@@ -80,7 +83,8 @@ class SpanExtractor:
         max_token_idx = len(offsets) - 1
 
         for start_char, end_char in matches:
-            print(f"Debug - Trying match at chars {start_char}-{end_char}: '{text[start_char:end_char]}'")
+            if debug:
+                print(f"Debug - Trying match at chars {start_char}-{end_char}: '{text[start_char:end_char]}'")
 
             start_idx, end_idx = None, None
 
@@ -103,8 +107,9 @@ class SpanExtractor:
             max_length = self.tokenizer.model_max_length - 2  
             
             if start_idx is not None and end_idx is not None:
-                print(f"Debug - Found token range: {start_idx}-{end_idx}")
-                print(f"Debug - Corresponding tokens: {tokens[start_idx:end_idx+1]}")
+                if debug:
+                    print(f"Debug - Found token range: {start_idx}-{end_idx}")
+                    print(f"Debug - Corresponding tokens: {tokens[start_idx:end_idx+1]}")
                 start_idx = min(start_idx, max_length)
                 end_idx = min(end_idx, max_length)
                 end_idx = max(start_idx, end_idx)

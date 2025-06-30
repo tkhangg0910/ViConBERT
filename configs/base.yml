@@ -21,7 +21,6 @@ model:
   out_dim: 768
   num_layers: 1
   context_window_size: 3
-  polym: 8
   encoder_type: attentive
 
 training:

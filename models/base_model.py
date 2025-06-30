@@ -89,7 +89,6 @@ class ViSynoSenseEmbedding(nn.Module):
         dropout: float = 0.1,
         num_layers:int=1,
         num_head:int=3,
-        polym = 8,
         encoder_type:str="attentive",
         context_window_size:int=3,
         ):
@@ -102,14 +101,12 @@ class ViSynoSenseEmbedding(nn.Module):
             "dropout": dropout,
             "num_layers": num_layers,
             "num_head": num_head,
-            "polym": polym,
             "encoder_type": encoder_type,
             "context_window_size": context_window_size,
         }
         self.tokenizer =tokenizer
         self.context_encoder = AutoModel.from_pretrained(model_name,cache_dir=cache_dir)
         self.context_encoder.resize_token_embeddings(len(tokenizer))
-        self.polym=polym
         self.context_projection = MLPBlock(
             self.context_encoder.config.hidden_size,
             hidden_dim,
@@ -175,7 +172,7 @@ class ViSynoSenseEmbedding(nn.Module):
         span_lengths = mask.sum(dim=1, keepdim=True).clamp(min=1)  
         pooled_embeddings = masked_states.sum(dim=1) / span_lengths
         
-        Q_value = pooled_embeddings.unsqueeze(0).expand(self.polym,-1, -1)
+        Q_value = pooled_embeddings.unsqueeze(0)  
         KV_value = hidden_states.permute(1, 0, 2)  
         context_emb, _ = self.context_attention(
                 Q_value, KV_value, KV_value
@@ -219,7 +216,6 @@ class ViSynoSenseEmbedding(nn.Module):
             dropout=config["dropout"],
             num_layers=config["num_layers"],
             num_head=config["num_head"],
-            polym=config["polym"],
             encoder_type=config["encoder_type"],
             context_window_size=config["context_window_size"],
         )
