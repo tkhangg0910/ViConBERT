@@ -3,7 +3,7 @@ import torch
 from tqdm import tqdm
 from torch.amp import GradScaler, autocast
 from datetime import datetime
-from utils.metrics import compute_step_metrics, compute_full_metrics_large_scale, soft_full_metrics, soft_step_metrics
+from utils.metrics import compute_step_metrics, compute_full_metrics_large_scale, compute_ndcg_from_faiss
 
 def train_model(num_epochs, train_data_loader, valid_data_loader, 
                 loss_fn, optimizer, model, device, 
@@ -39,7 +39,6 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
     history = {
         'train_loss': [],
         'train_metrics': [],
-        'train_soft_metrics': [],
         'valid_loss': [],
         'epoch_times': [],
         'step_metrics': []
@@ -61,8 +60,7 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
         running_loss = 0.0
         train_metrics_accum = {f'recall@{k}': 0.0 for k in metric_k_vals}
         train_metrics_accum.update({f'precision@{k}': 0.0 for k in metric_k_vals})
-        train_soft_accum   = {f'soft_recall@{k}': 0.0 for k in metric_k_vals}
-        train_soft_accum.update({f'soft_precision@{k}': 0.0 for k in metric_k_vals})
+        train_metrics_accum.update({f'ndcg@{k}': 0.0 for k in metric_k_vals})
 
         # Training loop
         train_pbar = tqdm(train_data_loader, 
@@ -111,13 +109,12 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
             batch_metrics = compute_step_metrics(outputs, synset_ids, 
                                                k_vals=metric_k_vals, 
                                                device=device)
-            soft_metrics  = soft_step_metrics(outputs, synset_ids, metric_k_vals, theta=0.6, device=device)
+            
 
             for k in metric_k_vals:
                 train_metrics_accum[f'recall@{k}']    += batch_metrics[f'recall@{k}']
                 train_metrics_accum[f'precision@{k}'] += batch_metrics[f'precision@{k}']
-                train_soft_accum[f'soft_recall@{k}']    += soft_metrics[f'soft_recall@{k}']
-                train_soft_accum[f'soft_precision@{k}'] += soft_metrics[f'soft_precision@{k}']
+                train_metrics_accum[f'ndcg@{k}']    += batch_metrics[f'ndcg@{k}']
 
 
             # Update progress bar
@@ -141,22 +138,18 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
                 
         train_metrics = {}
         num_batches = len(train_data_loader)
-        train_metrics      = {f'recall@{k}': train_metrics_accum[f'recall@{k}'] / num_batches
-                              for k in metric_k_vals}
+        train_metrics = {f'recall@{k}': train_metrics_accum[f'recall@{k}'] / num_batches
+                 for k in metric_k_vals}
         train_metrics.update({f'precision@{k}': train_metrics_accum[f'precision@{k}'] / num_batches
-                              for k in metric_k_vals})
-        train_soft_metrics = {f'soft_recall@{k}': train_soft_accum[f'soft_recall@{k}'] / num_batches
-                              for k in metric_k_vals}
-        train_soft_metrics.update({f'soft_precision@{k}': train_soft_accum[f'soft_precision@{k}'] / num_batches
-                              for k in metric_k_vals})
+                            for k in metric_k_vals})
+        train_metrics.update({f'ndcg@{k}': train_metrics_accum[f'ndcg@{k}'] / num_batches
+                            for k in metric_k_vals})
+
 
         train_loss = running_loss / num_batches
         train_metrics['loss'] = train_loss
         history['train_metrics'].append(train_metrics)
         
-        history['train_metrics'].append(train_metrics)
-        history['train_soft_metrics'].append(train_soft_metrics)
-
         # ======================
         # VALIDATION PHASE
         # ======================
@@ -243,8 +236,7 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
             print(
                 f"    Recall@{k}:     {train_metrics[f'recall@{k}']:.4f} | "
                 f"Precision@{k}:  {train_metrics[f'precision@{k}']:.4f} | "
-                f"SoftR@{k}:      {train_soft_metrics[f'soft_recall@{k}']:.4f} | "
-                f"SoftP@{k}:      {train_soft_metrics[f'soft_precision@{k}']:.4f}"
+                f"ndcg@{k}:      {train_metrics[f'ndcg@{k}']:.4f} | "
             )
 
         # Validation metrics
@@ -255,8 +247,7 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
                 f"    Recall@{k}:     {valid_metrics[f'recall@{k}']:.4f} | "
                 f"Precision@{k}:  {valid_metrics[f'precision@{k}']:.4f} | "
                 f"F1@{k}:         {valid_metrics[f'f1@{k}']:.4f} | "
-                f"SoftR@{k}:      {valid_metrics[f'soft_recall@{k}']:.4f} | "
-                f"SoftP@{k}:      {valid_metrics[f'soft_precision@{k}']:.4f}"
+                f"ndcg@{k}:      {valid_metrics[f'ndcg@{k}']:.4f} | "
             )
 
         
@@ -366,17 +357,21 @@ def evaluate_model(model, data_loader, loss_fn, device, metric_k_vals=(1, 5, 10)
     else:
         chunk_size = 1000
 
-    soft_metrics = soft_full_metrics(
-        all_embeddings, all_labels,
-        k_vals=metric_k_vals,
-        theta=0.6,
-        batch_size=chunk_size,
-        device=device
+        # label → raw synset_id
+    label_to_synset_map = data_loader.dataset.global_label_to_synset 
+
+    ndcg = compute_ndcg_from_faiss(
+        context_embd=all_embeddings,
+        true_synset_labels=all_labels,
+        faiss_index_path="data/processed/gloss_faiss.index",
+        synset_id_map_path="data/processed/synset_ids.pt",
+        label_to_synset_map=label_to_synset_map,
+        k_vals=(1, 5, 10)
     )
 
     
     return {
         'loss': avg_loss,
         **hard,
-         **soft_metrics
+         **ndcg
     }

@@ -4,6 +4,7 @@ from sklearn.metrics import normalized_mutual_info_score
 from sklearn.cluster import KMeans
 from tqdm import tqdm
 import torch.nn.functional as F
+import faiss
 
 def normalize_embeddings(embeddings):
     """Normalize embeddings for efficient cosine similarity computation"""
@@ -76,54 +77,14 @@ def compute_step_metrics(embeddings, labels, k_vals=(1, 5, 10), device='cuda'):
     Returns a dictionary of computed metrics
     """
     metrics = {}
-    
+
     for k in k_vals:
         metrics[f'recall@{k}'] = recall_at_k_batch(embeddings, labels, k, device=device)
         metrics[f'precision@{k}'] = precision_at_k_batch(embeddings, labels, k, device=device)
+        metrics[f'ndcg@{k}'] = ndcg_at_k_batch(embeddings, labels, k, device=device)
     
     return metrics
 
-
-def soft_step_metrics(embeddings: torch.Tensor,
-                      labels: torch.Tensor,
-                      k_vals=(1,5,10),
-                      theta: float = 0.5,
-                      device='cuda'):
-    """
-    embeddings: [B, D], labels: [B]
-    Trả về dict với các keys: soft_recall@k, soft_precision@k
-    """
-    B, D = embeddings.shape
-    emb = embeddings.to(device)
-    lbl = labels.to(device)
-    emb = F.normalize(emb, p=2, dim=1)
-
-    # compute sim matrix within batch
-    sim = torch.mm(emb, emb.t())                   # [B,B]
-    diag = torch.eye(B, dtype=torch.bool, device=device)
-    sim.masked_fill_(diag,  -float('inf'))
-
-    metrics = {}
-    for k in k_vals:
-        # top-k indices
-        _, topk = sim.topk(k, dim=1)               # [B,k]
-
-        soft_rec, soft_prec = 0.0, 0.0
-        for i in range(B):
-            neigh = topk[i]                        # k neighbor idx
-            # get cosine sims to each neighbor
-            sims = sim[i, neigh]
-            # soft hits mask
-            hits = sims >= theta                   # bool[k]
-            # recall: có ít nhất 1 hit?
-            soft_rec += hits.any().float().item()
-            # precision: tỉ lệ hits
-            soft_prec += hits.float().sum().item() / k
-
-        metrics[f'soft_recall@{k}']    = soft_rec / B
-        metrics[f'soft_precision@{k}'] = soft_prec / B
-
-    return metrics
 
 
 def recall_at_k_full(embeddings, labels, k=5, batch_size=1000, device='cuda'):
@@ -293,39 +254,106 @@ def compute_full_metrics_large_scale(embeddings, labels, k_vals, device='cuda'):
      
     return metrics
 
-def soft_full_metrics(embeddings: torch.Tensor,
-                      labels: torch.Tensor,
-                      k_vals=(1, 5, 10),
-                      theta: float = 0.5,
-                      batch_size: int = 1000,
-                      device='cuda'):
+def ndcg_at_k_batch(preds: torch.Tensor, labels: torch.Tensor, k: int, device='cuda'):
+    """
+    preds: [B, D] - predicted embeddings
+    labels: [B]   - true labels
+    Return: average nDCG@k over the batch
+    """
+    B = preds.size(0)
+    preds = F.normalize(preds, p=2, dim=1).to(device)
+    labels = labels.to(device)
+    
+    sim = torch.matmul(preds, preds.T)          # [B, B]
+    diag = torch.eye(B, dtype=torch.bool, device=device)
+    sim.masked_fill_(diag, -float('inf'))       # remove self-similarity
+
+    _, topk_indices = sim.topk(k, dim=1)        # [B, k]
+    gains = torch.zeros((B, k), device=device)
+
+    for i in range(B):
+        hits = (labels[topk_indices[i]] == labels[i]).float()
+        gains[i] = hits / torch.log2(torch.arange(2, k + 2, device=device).float())
+
+    dcg = gains.sum(dim=1)
+    ideal_gains = torch.ones_like(gains)
+    ideal_dcg = ideal_gains / torch.log2(torch.arange(2, k + 2, device=device).float())
+    idcg = ideal_dcg.sum(dim=1)
+
+    ndcg = dcg / idcg
+    return ndcg.mean().item()
+
+def compute_full_ndcg_large_scale(embeddings, labels, k_vals=(1, 5, 10), device='cuda'):
     """
     embeddings: [N, D], labels: [N]
-    Return: dict of soft_recall@k and soft_precision@k over full set
     """
-    with torch.no_grad():
-        N, D = embeddings.shape
-        emb = F.normalize(embeddings.to(device), p=2, dim=1)
-        emb_T = emb.t()
-        lbl = labels.to(device)
+    embeddings = F.normalize(embeddings.to(device), p=2, dim=1)
+    labels = labels.to(device)
+    N = embeddings.size(0)
+    ndcg_scores = {f'ndcg@{k}': 0.0 for k in k_vals}
+    
+    for i in tqdm(range(N), desc="Computing full nDCG", ascii=True):
+        query = embeddings[i].unsqueeze(0)           # [1, D]
+        sim = torch.matmul(query, embeddings.T).squeeze(0)  # [N]
+        sim[i] = -float('inf')                        # mask self
 
-        metrics = {}
+        sorted_indices = torch.topk(sim, k=max(k_vals)).indices  # [max_k]
         for k in k_vals:
-            soft_rec, soft_prec = 0.0, 0.0
-            for start in tqdm(range(0, N, batch_size),desc=f"Computing metrics@k={k}",ascii=True):
-                end = min(start + batch_size, N)
-                batch_emb = emb[start:end]  # [B,D]
-                sim = batch_emb @ emb_T     # [B,N]
-                sim[:, start:end].fill_diagonal_(-float('inf'))  # mask self
+            topk = sorted_indices[:k]
+            hits = (labels[topk] == labels[i]).float()
+            gain = hits / torch.log2(torch.arange(2, k + 2, device=device).float())
+            dcg = gain.sum()
+            ideal_gain = torch.ones_like(hits) / torch.log2(torch.arange(2, k + 2, device=device).float())
+            idcg = ideal_gain.sum()
+            ndcg_scores[f'ndcg@{k}'] += (dcg / idcg).item()
 
-                _, topk = sim.topk(k, dim=1)  # [B,k]
-                sims = torch.gather(sim, 1, topk)  # [B,k]
+    return {k: v / N for k, v in ndcg_scores.items()}
 
-                hits = sims >= theta  # [B,k]
-                soft_rec += hits.any(dim=1).float().sum()
-                soft_prec += hits.sum() / k
 
-            metrics[f'soft_recall@{k}'] = (soft_rec / N).item()
-            metrics[f'soft_precision@{k}'] = (soft_prec / N).item()
 
-        return metrics
+
+def compute_ndcg_from_faiss(
+    context_embd: torch.Tensor,
+    true_synset_labels: torch.Tensor, 
+    faiss_index_path: str,
+    synset_id_map_path: str, 
+    label_to_synset_map: dict, 
+    k_vals=(1, 5, 10)
+):
+    """
+    context_embd: [N, D] tensor (can be on GPU or CPU)
+    true_synset_labels: [N] tensor, int labels
+    faiss_index_path: path to .index file
+    synset_id_map_path: path to FAISS index → raw synset id mapping
+    label_to_synset_map: maps true label (int) → raw synset_id (str)
+
+    Returns:
+        dict: { 'ndcg@1': ..., 'ndcg@5': ..., 'ndcg@10': ... }
+    """
+    context_embd = F.normalize(context_embd, p=2, dim=1).cpu().numpy()
+    true_synset_labels = true_synset_labels.cpu().numpy()
+
+    # Load FAISS index and index → raw synset ID mapping
+    index = faiss.read_index(faiss_index_path)
+    synset_id_map = torch.load(synset_id_map_path)  # dict: faiss_idx → raw_synset_id (str)
+
+    max_k = max(k_vals)
+    sim, indices = index.search(context_embd, max_k)
+
+    ndcg_scores = {f'ndcg@{k}': 0.0 for k in k_vals}
+    N = len(context_embd)
+
+    for i in range(N):
+        true_synset_id = label_to_synset_map[true_synset_labels[i]]
+        retrieved_synset_ids = [synset_id_map[j] for j in indices[i]]
+
+        for k in k_vals:
+            topk_ids = retrieved_synset_ids[:k]
+            hits = np.array([1.0 if sid == true_synset_id else 0.0 for sid in topk_ids], dtype=np.float32)
+            gains = hits / np.log2(np.arange(2, k + 2))
+            dcg = gains.sum()
+            idcg = (np.ones(int(hits.sum())) / np.log2(np.arange(2, int(hits.sum()) + 2))).sum() if hits.sum() > 0 else 1.0
+            ndcg = dcg / idcg
+            ndcg_scores[f'ndcg@{k}'] += ndcg
+
+    return {k: v / N for k, v in ndcg_scores.items()}

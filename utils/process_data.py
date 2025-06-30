@@ -85,55 +85,60 @@ def precompute_and_save(gloss_dict_path, save_path, gloss_encoder):
 
     torch.save(embeddings, save_path)
     print(f"Saved {len(embeddings)} gloss embeddings to {save_path}")
-
-import csv
-import json
+    
+import torch
 import faiss
+import argparse
+import os
 import numpy as np
-from sentence_transformers import SentenceTransformer
+
+def load_gloss_embeddings(path: str):
+    print(f"🔹 Loading gloss embeddings from: {path}")
+    data = torch.load(path, map_location='cpu')  # dict: synset_id -> tensor
+    synset_ids = list(data.keys())
+    embeddings = torch.stack([data[sid] for sid in synset_ids])
+    return embeddings, synset_ids
+
+def index_embeddings(embeddings: torch.Tensor, use_gpu=False):
+    """
+    Input: embeddings [N, D], torch.Tensor
+    Output: FAISS index
+    """
+    embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
+    embeddings_np = embeddings.cpu().numpy().astype('float32')
+    dim = embeddings_np.shape[1]
+
+    if use_gpu:
+        print("🚀 Using GPU FAISS index...")
+        res = faiss.StandardGpuResources()
+        index_flat = faiss.IndexFlatIP(dim)
+        index = faiss.GpuIndexFlatIP(res, index_flat)
+    else:
+        print("🧠 Using CPU FAISS index...")
+        index = faiss.IndexFlatIP(dim)
+
+    index.add(embeddings_np)
+    print(f"✅ Indexed {index.ntotal} vectors of dim {dim}")
+    return index
+
+def save_index(index, path: str):
+    faiss.write_index(index, path)
+    print(f"💾 Saved FAISS index to: {path}")
+
+def save_synset_ids(synset_ids, path: str):
+    torch.save(synset_ids, path)
+    print(f"💾 Saved synset_id mapping to: {path}")
 
 if __name__ == "__main__":
-    # 1. Load gloss encoder
-    gloss_enc = SentenceTransformer(
-        'dangvantuan/vietnamese-embedding',
-        cache_folder="embeddings/vietnamese_embedding"
-    )
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--gloss_path", type=str, required=True, help="Path to gloss_embeddings.pt")
+    parser.add_argument("--index_out", type=str, default="gloss_faiss.index", help="FAISS index output file")
+    parser.add_argument("--id_out", type=str, default="synset_ids.pt", help="Synset ID output file")
+    parser.add_argument("--use_gpu", action="store_true", help="Use GPU for indexing")
 
-    # 2. Load gloss CSV → mapping synset_id → gloss_text
-    gloss_dict = {}
-    with open('data/raw/stage_1_pseudo_sents/word_synsets_with_pos_with_gloss.csv', newline='', encoding='utf-8') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            sid = int(row['synset_id'])
-            if sid not in gloss_dict:
-                gloss_dict[sid] = row['gloss']
+    args = parser.parse_args()
 
-    # 3. Encode glosses
-    synset_ids = sorted(gloss_dict.keys())
-    gloss_texts = [gloss_dict[sid] for sid in synset_ids]
-
-    print(f"Encoding {len(gloss_texts)} glosses...")
-    embs = gloss_enc.encode(gloss_texts, batch_size=64, show_progress_bar=True)
-    embs = np.array(embs).astype('float32')  # [N, D]
-
-    # 4. Normalize vectors (for cosine similarity)
-    norms = np.linalg.norm(embs, axis=1, keepdims=True)
-    embs = embs / (norms + 1e-8)
-
-    # 5. Build FAISS index (IndexFlatIP for cosine sim)
-    D = embs.shape[1]
-    index = faiss.IndexFlatIP(D)
-    index.add(embs)  # add all gloss vectors
-
-    # 6. Save index
-    faiss.write_index(index, 'data/processed/gloss_index_flatip.ivf')
-    print(f"Saved FAISS index to data/gloss_index_flatip.ivf")
-
-    # 7. Save mapping from FAISS index positions → synset_id
-    with open('data/processed/index_to_synset.json', 'w', encoding='utf-8') as f:
-        json.dump(synset_ids, f, ensure_ascii=False, indent=2)
-    print(f"Saved synset ID mapping to data/index_to_synset.json")
-
-    print(f"Done. FAISS index built with {embs.shape[0]} glosses of dimension {D}")
-
-
+    embd, synset_ids = load_gloss_embeddings(args.gloss_path)
+    index = index_embeddings(embd, use_gpu=args.use_gpu)
+    save_index(index, args.index_out)
+    save_synset_ids(synset_ids, args.id_out)
