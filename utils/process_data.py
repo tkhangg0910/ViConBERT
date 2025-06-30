@@ -86,12 +86,54 @@ def precompute_and_save(gloss_dict_path, save_path, gloss_encoder):
     torch.save(embeddings, save_path)
     print(f"Saved {len(embeddings)} gloss embeddings to {save_path}")
 
+import csv
+import json
+import faiss
+import numpy as np
+from sentence_transformers import SentenceTransformer
+
 if __name__ == "__main__":
-    from sentence_transformers import SentenceTransformer
-    gloss_enc = SentenceTransformer('dangvantuan/vietnamese-embedding'
-                                    ,cache_folder="embeddings/vietnamese_embedding")   
-    precompute_and_save(
-        gloss_dict_path="data/raw/stage_1_pseudo_sents/word_synsets_with_pos_with_gloss.csv",
-        save_path="data/processed/stage1_pseudo_sents/gloss_embeddings.pt",
-        gloss_encoder=gloss_enc
+    # 1. Load gloss encoder
+    gloss_enc = SentenceTransformer(
+        'dangvantuan/vietnamese-embedding',
+        cache_folder="embeddings/vietnamese_embedding"
     )
+
+    # 2. Load gloss CSV → mapping synset_id → gloss_text
+    gloss_dict = {}
+    with open('data/raw/stage_1_pseudo_sents/word_synsets_with_pos_with_gloss.csv', newline='', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            sid = int(row['synset_id'])
+            if sid not in gloss_dict:
+                gloss_dict[sid] = row['gloss']
+
+    # 3. Encode glosses
+    synset_ids = sorted(gloss_dict.keys())
+    gloss_texts = [gloss_dict[sid] for sid in synset_ids]
+
+    print(f"Encoding {len(gloss_texts)} glosses...")
+    embs = gloss_enc.encode(gloss_texts, batch_size=64, show_progress_bar=True)
+    embs = np.array(embs).astype('float32')  # [N, D]
+
+    # 4. Normalize vectors (for cosine similarity)
+    norms = np.linalg.norm(embs, axis=1, keepdims=True)
+    embs = embs / (norms + 1e-8)
+
+    # 5. Build FAISS index (IndexFlatIP for cosine sim)
+    D = embs.shape[1]
+    index = faiss.IndexFlatIP(D)
+    index.add(embs)  # add all gloss vectors
+
+    # 6. Save index
+    faiss.write_index(index, 'data/processed/gloss_index_flatip.ivf')
+    print(f"Saved FAISS index to data/gloss_index_flatip.ivf")
+
+    # 7. Save mapping from FAISS index positions → synset_id
+    with open('data/processed/index_to_synset.json', 'w', encoding='utf-8') as f:
+        json.dump(synset_ids, f, ensure_ascii=False, indent=2)
+    print(f"Saved synset ID mapping to data/index_to_synset.json")
+
+    print(f"Done. FAISS index built with {embs.shape[0]} glosses of dimension {D}")
+
+

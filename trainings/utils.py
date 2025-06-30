@@ -3,7 +3,7 @@ import torch
 from tqdm import tqdm
 from torch.amp import GradScaler, autocast
 from datetime import datetime
-from utils.metrics import compute_step_metrics, compute_full_metrics_large_scale, ndcg_step_metrics, ndcg_full_metrics
+from utils.metrics import compute_step_metrics, compute_full_metrics_large_scale, soft_full_metrics, soft_step_metrics
 
 def train_model(num_epochs, train_data_loader, valid_data_loader, 
                 loss_fn, optimizer, model, device, 
@@ -111,12 +111,13 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
             batch_metrics = compute_step_metrics(outputs, synset_ids, 
                                                k_vals=metric_k_vals, 
                                                device=device)
-            soft_metrics  = ndcg_step_metrics(outputs,gloss_embd, synset_ids, metric_k_vals, device=device)
+            soft_metrics  = soft_step_metrics(outputs, synset_ids, metric_k_vals, theta=0.6, device=device)
 
             for k in metric_k_vals:
                 train_metrics_accum[f'recall@{k}']    += batch_metrics[f'recall@{k}']
                 train_metrics_accum[f'precision@{k}'] += batch_metrics[f'precision@{k}']
-                train_soft_accum[f'ndcg@{k}']    += soft_metrics[f'ndcg@{k}']
+                train_soft_accum[f'soft_recall@{k}']    += soft_metrics[f'soft_recall@{k}']
+                train_soft_accum[f'soft_precision@{k}'] += soft_metrics[f'soft_precision@{k}']
 
 
             # Update progress bar
@@ -144,9 +145,9 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
                               for k in metric_k_vals}
         train_metrics.update({f'precision@{k}': train_metrics_accum[f'precision@{k}'] / num_batches
                               for k in metric_k_vals})
-        train_soft_metrics = {f'ndcg@{k}': train_soft_accum[f'ndcg@{k}'] / num_batches
+        train_soft_metrics = {f'soft_recall@{k}': train_soft_accum[f'soft_recall@{k}'] / num_batches
                               for k in metric_k_vals}
-        train_soft_metrics.update({f'ndcg@{k}': train_soft_accum[f'ndcg@{k}'] / num_batches
+        train_soft_metrics.update({f'soft_precision@{k}': train_soft_accum[f'soft_precision@{k}'] / num_batches
                               for k in metric_k_vals})
 
         train_loss = running_loss / num_batches
@@ -299,82 +300,83 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
     return history, model
 
 
-def evaluate_model(model, data_loader, loss_fn, device, metric_k_vals=(1,5,10)):
+def evaluate_model(model, data_loader, loss_fn, device, metric_k_vals=(1, 5, 10)):
+    """Enhanced evaluation with detailed metrics"""
     model.eval()
     running_loss = 0.0
-    all_embs = []
+    
+    all_embeddings = []
     all_labels = []
-
-    # 1) Lấy full gloss embeddings và build FAISS index
-    ds = data_loader.dataset
-    # Giả sử ds.global_label_to_synset (label→synset_id) và ds.gloss_embeddings (synset_id→tensor)
-    S = len(ds.global_label_to_synset)
-    D = next(iter(ds.gloss_embeddings.values())).size(0)
-    # Tạo matrix [S, D] theo thứ tự label 0..S-1
-    G = torch.stack([
-        ds.gloss_embeddings[ ds.global_label_to_synset[i] ]
-        for i in range(S)
-    ]).to(device)  # [S, D]
-    # normalize và đưa qua FAISS
-    import faiss
-    G_np = torch.nn.functional.normalize(G, dim=1).cpu().numpy().astype('float32')
-    index = faiss.IndexFlatIP(D)
-    index.add(G_np)
-
+    
     with torch.inference_mode():
-        for batch in tqdm(data_loader, desc="Evaluating", leave=False, ascii=True):
+        eval_pbar = tqdm(data_loader, desc="Evaluating", position=0, leave=False,ascii=True)
+        for batch in eval_pbar:
             gloss_embd = batch["gloss_embd"].to(device)
-            cid = batch["context_input_ids"].to(device)
-            cam = batch["context_attn_mask"].to(device)
-            spans = batch.get("target_spans", None)
-            if spans is not None:
-                spans = spans.to(device)
-            labels = batch["synset_ids"].to(device)
-
+            context_input_ids=batch["context_input_ids"].to(device)
+            context_attention_mask=batch["context_attn_mask"].to(device)
+            target_spans = None
+            if "target_spans" in batch and batch["target_spans"] is not None:
+                target_spans = batch["target_spans"].to(device)
+            synset_ids=batch["synset_ids"].to(device)
+            
             with autocast(device_type=device):
-                out = model({"input_ids": cid, "attention_mask": cam}, target_span=spans)
-                # Nếu attentive encoder: flatten polym dim
+                outputs = model(
+                    {
+                    "attention_mask":context_attention_mask,
+                    "input_ids":context_input_ids
+                    },
+                    target_span=target_spans
+                )
                 if model.encoder_type == "attentive":
-                    P, B, d = gloss_embd.size()
-                    gloss_embd = gloss_embd.permute(1,0,2).reshape(B, P*d)
-                    out = out.permute(1,0,2).reshape(B, P*d)
-
-                loss = loss_fn(out, gloss_embd, labels)
-
+                    gloss_embd = gloss_embd.repeat(outputs.size(0), 1, 1)
+                    P, B, D = gloss_embd.size()
+                    
+                    gloss_embd = gloss_embd.permute(1,0,2).reshape(B, P * D)
+                    
+                    outputs = outputs.permute(1,0,2).reshape(B, P * D)
+                
+                loss = loss_fn(outputs, gloss_embd, synset_ids)
+            
+            
             running_loss += loss.item()
-            all_embs.append(out.cpu())
-            all_labels.append(labels.cpu())
+            
+            all_embeddings.append(outputs)
+            all_labels.append(synset_ids)
 
-    # 2) Concatenate
-    C_all = torch.cat(all_embs, dim=0)     # [N, D]
-    L_all = torch.cat(all_labels, dim=0)   # [N]
+    
+    all_embeddings = torch.cat(all_embeddings, dim=0)
+    all_labels = torch.cat(all_labels, dim=0)
     avg_loss = running_loss / len(data_loader)
-
-    # 3) Hard metrics (recall/precision/F1) – nếu vẫn cần
-    hard = compute_full_metrics_large_scale(C_all, L_all, k_vals=metric_k_vals, device=device)
-
-    # 4) nDCG metrics
-    # Tính chunk_size tự động như trước
-    N = C_all.size(0)
+        
+    hard  = compute_full_metrics_large_scale(
+        all_embeddings, 
+        all_labels, 
+        k_vals=metric_k_vals, 
+        device=device
+    )
+    N, D = all_embeddings.shape
     if device.startswith('cuda'):
         total_mem = torch.cuda.get_device_properties(device).total_memory
-        free_mem  = total_mem - torch.cuda.memory_allocated(device)
+        used_mem  = torch.cuda.memory_allocated(device)
+        free_mem  = total_mem - used_mem
+        # mỗi row sim uses 4 bytes * D entries
         mem_per_row = 4 * D * N
-        chunk_size = max(1, min(int(free_mem / mem_per_row), 5000))
+        chunk_size = max(1, int(free_mem / mem_per_row))
+        chunk_size = min(chunk_size, 5000)  # giới hạn trên nếu cần
     else:
         chunk_size = 1000
 
-    ndcg = ndcg_full_metrics(
-        context_emb=C_all,
-        labels=L_all,
+    soft_metrics = soft_full_metrics(
+        all_embeddings, all_labels,
         k_vals=metric_k_vals,
-        faiss_index=index,
+        theta=0.6,
         batch_size=chunk_size,
         device=device
     )
 
+    
     return {
         'loss': avg_loss,
         **hard,
-        **ndcg
+         **soft_metrics
     }
