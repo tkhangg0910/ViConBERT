@@ -21,7 +21,7 @@ model:
   out_dim: 768
   num_layers: 1
   context_window_size: 3
-  encoder_type: attentive
+  encoder_type: other
 
 training:
   ckpt_interval: 10
