@@ -122,8 +122,7 @@ class ViSynoSenseEmbedding(nn.Module):
             dropout=dropout
         )
         self.context_window_size = context_window_size
-        self.context_layer_weights = nn.Parameter(torch.ones(num_layers))
-
+        self.context_layer_weights = nn.Parameter(torch.ones(self.context_encoder.config.num_hidden_layers))
 
     def _encode_context_sep(self, text, target_spans):
         
