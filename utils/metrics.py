@@ -71,7 +71,7 @@ def precision_at_k_batch(embeddings, labels, k=5, device='cuda'):
         
     return precision_sum / batch_size
 
-def compute_step_metrics(embeddings, labels, k_vals=(1, 5, 10), device='cuda'):
+def compute_step_metrics(embeddings, labels, k_vals=(1, 5, 10), device='cuda',ndcg=True ):
     """
     Quickly compute evaluation metrics for a training step
     Returns a dictionary of computed metrics
@@ -81,7 +81,8 @@ def compute_step_metrics(embeddings, labels, k_vals=(1, 5, 10), device='cuda'):
     for k in k_vals:
         metrics[f'recall@{k}'] = recall_at_k_batch(embeddings, labels, k, device=device)
         metrics[f'precision@{k}'] = precision_at_k_batch(embeddings, labels, k, device=device)
-        metrics[f'ndcg@{k}'] = ndcg_at_k_batch(embeddings, labels, k, device=device)
+        if ndcg:
+            metrics[f'ndcg@{k}'] = ndcg_at_k_batch(embeddings, labels, k, device=device)
     
     return metrics
 
@@ -343,7 +344,7 @@ def compute_ndcg_from_faiss(
     ndcg_scores = {f'ndcg@{k}': 0.0 for k in k_vals}
     N = len(context_embd)
 
-    for i in range(N):
+    for i in tqdm(range(N),desc="Computing nDCG", ascii=True):
         true_synset_id = label_to_synset_map[true_synset_labels[i]]
         retrieved_synset_ids = [synset_id_map[j] for j in indices[i]]
 
