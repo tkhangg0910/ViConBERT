@@ -149,7 +149,7 @@ class ViSynoSenseEmbedding(nn.Module):
         
         weights = 1.0 / (dist + 1.0)
         weights = torch.where(dist <= self.context_window_size, weights, torch.zeros_like(weights))
-        weights = weights * text["context_attention_mask"].float()
+        weights = weights * text["attention_mask"].float()
         weights = weights / (weights.sum(dim=1, keepdim=True) + 1e-8)
         
         weighted_emb = context_embeddings * weights.unsqueeze(-1)
