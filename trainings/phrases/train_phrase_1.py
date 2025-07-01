@@ -10,7 +10,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 # from sentence_transformers import SentenceTransformer
 import pandas as pd
 
-from data.processed.stage1_pseudo_sents.pseudo_sent_datasets import PseudoSents_Dataset
+from data.processed.stage1_pseudo_sents.pseudo_sent_datasets import PseudoSentsFlatDataset
 from models.base_model import ViSynoSenseEmbedding
 from utils.load_config import load_config
 from utils.optimizer import create_optimizer
@@ -52,17 +52,14 @@ if __name__=="__main__":
         tokenizer.add_special_tokens({'pad_token': '[PAD]'})
 
     
-    train_set = PseudoSents_Dataset(config["data"]["emd_path"],
+    train_set = PseudoSentsFlatDataset(config["data"]["emd_path"],
                                     # gloss_enc,
-                                    train_sample, tokenizer
-                                    , is_training=True, 
-                                    num_synsets_per_batch=128,samples_per_synset=6,
-                                    only_multiple_el=bool(args.only_multiple_el))
+                                    train_sample, tokenizer 
+                                    )
     
-    valid_set = PseudoSents_Dataset(config["data"]["emd_path"],
+    valid_set = PseudoSentsFlatDataset(config["data"]["emd_path"],
                                     # gloss_enc,
-                                    valid_sample, tokenizer, is_training=False
-                                    ,only_multiple_el=bool(args.only_multiple_el))
+                                    valid_sample, tokenizer)
     
     # sampler = train_set.get_weighted_sampler()
 
@@ -73,14 +70,14 @@ if __name__=="__main__":
     train_dataloader = DataLoader(train_set,
                                   config["training"]["batch_size"],
                                   shuffle=False,
-                                  collate_fn=train_set.custom_collate_fn,
+                                  collate_fn=train_set.collate_fn,
                                   num_workers=config["data"]["num_workers"],
                                   pin_memory=True
                                   )
     valid_dataloader = DataLoader(valid_set,
                                   config["training"]["batch_size"],
                                   shuffle=False,
-                                  collate_fn=valid_set.custom_collate_fn,
+                                  collate_fn=valid_set.collate_fn,
                                   num_workers=config["data"]["num_workers"],
                                   pin_memory=True
                                   )
@@ -97,7 +94,6 @@ if __name__=="__main__":
             dropout=config["model"]["dropout"],
             num_layers=config["model"]["num_layers"],
             context_window_size=config["model"]["context_window_size"],
-            polym = config["model"]["polym"],
             encoder_type = config["model"]["encoder_type"],
             ).to(device)
     

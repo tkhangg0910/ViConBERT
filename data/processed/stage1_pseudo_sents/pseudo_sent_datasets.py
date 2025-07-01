@@ -245,3 +245,96 @@ class PseudoSents_Dataset(Dataset):
             "synset_ids": torch.tensor(all_synset_labels, dtype=torch.long),
             "gloss_embd":gloss_embeddings
         }
+
+
+class PseudoSentsFlatDataset(Dataset):
+    def __init__(self, gloss_embeddings_path, samples, tokenizer, use_sent_masking=False):
+        self.tokenizer = tokenizer
+        self.use_sent_masking = use_sent_masking
+
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+
+        self.span_extractor = SpanExtractor(tokenizer)
+        self.sent_masking = SentenceMasking(tokenizer) if use_sent_masking else None
+
+        self.all_samples = []
+        self.span_indices = []
+
+        self.global_synset_to_label = {}
+        self.global_label_to_synset = {}
+
+        synset_set = set()
+        print("Processing samples and computing spans...")
+        for i, sample in enumerate(tqdm(samples, desc="Init")):
+            sent = text_normalize(sample["sentence"])
+            target = sample["target_word"]
+            synset_id = sample["synset_id"]
+
+            self.all_samples.append({
+                "sentence": sent,
+                "target_word": target,
+                "synset_id": synset_id,
+            })
+
+            synset_set.add(synset_id)
+
+            if use_sent_masking:
+                masked_sent, _ = self.sent_masking.create_masked_version(sent, target)
+                self.span_indices.append(masked_sent)
+            else:
+                indices = self.span_extractor.get_span_indices(sent, target)
+                self.span_indices.append(indices if indices else (0, 0))
+
+        for idx, sid in enumerate(sorted(list(synset_set))):
+            self.global_synset_to_label[sid] = idx
+            self.global_label_to_synset[idx] = sid
+
+        print("Loading gloss embeddings...")
+        self.gloss_embeddings = torch.load(gloss_embeddings_path)
+
+    def __len__(self):
+        return len(self.all_samples)
+
+    def __getitem__(self, idx):
+        sample = self.all_samples[idx]
+        synset_id = sample["synset_id"]
+        label = self.global_synset_to_label[synset_id]
+
+        if self.use_sent_masking:
+            text = self.span_indices[idx]
+            span_idx = None
+        else:
+            text = sample["sentence"]
+            span_idx = self.span_indices[idx]
+
+        return {
+            "sentence": text,
+            "target_span": span_idx,
+            "synset_label": label,
+            "gloss_embd": self.gloss_embeddings[synset_id]
+        }
+
+    def collate_fn(self, batch):
+        sentences = [item["sentence"] for item in batch]
+        labels = [item["synset_label"] for item in batch]
+        gloss_embds = torch.stack([item["gloss_embd"] for item in batch])
+        target_spans = [item["target_span"] for item in batch] if not self.use_sent_masking else None
+
+        tokenized = self.tokenizer(
+            sentences,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=256,
+            return_attention_mask=True,
+            return_offsets_mapping=True
+        )
+
+        return {
+            "context_input_ids": tokenized["input_ids"],
+            "context_attn_mask": tokenized["attention_mask"],
+            "target_spans": torch.tensor(target_spans, dtype=torch.long) if target_spans else None,
+            "synset_ids": torch.tensor(labels, dtype=torch.long),
+            "gloss_embd": gloss_embds
+        }
