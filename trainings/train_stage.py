@@ -122,7 +122,7 @@ if __name__=="__main__":
     )
 
     
-    loss_fn = InfonceDistillLoss()
+    loss_fn = InfonceDistillLoss(aux_weight=1)
 
     history, trained_model = train_model(
         num_epochs=config["training"]["epochs"],
