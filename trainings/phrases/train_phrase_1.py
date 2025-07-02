@@ -61,7 +61,7 @@ if __name__=="__main__":
                                     # gloss_enc,
                                     valid_sample, tokenizer)
     batch_size = config["training"]["batch_size"]
-    labels = [ train_set[i]["label"] for i in range(len(train_set)) ]
+    labels = [ train_set[i]["synset_ids"] for i in range(len(train_set)) ]
 
     sampler = SynsetBatchSampler(labels, batch_size, num_pos=4, shuffle=True)
 
