@@ -44,55 +44,35 @@ class InfoNceLossV2(nn.Module):
         self.eps = eps
         self.reduction = reduction
 
-    def forward(self, context_emb: torch.Tensor,
-                      gloss_emb: torch.Tensor,
-                      labels: torch.Tensor):
-        # normalize
-        C = F.normalize(context_emb, p=2, dim=1)
-        G = F.normalize(gloss_emb,  p=2, dim=1)
-        # [N,N] similarity
-        sim = (C @ G.t()) / self.temperature
+    def forward(self, context_emb: torch.Tensor, gloss_emb: torch.Tensor, labels: torch.Tensor):        
+        dtype = context_emb.dtype
 
-        N = sim.size(0)
+        C = F.normalize(context_emb, p=2, dim=1)
+        G = F.normalize(gloss_emb, p=2, dim=1)
+        sim = torch.matmul(C, G.T) / self.temperature
+        sim = sim.to(dtype)
+        N = sim.size(1)
         device = sim.device
 
-        # exp
-        exp_sim = torch.exp(sim)
+        mask_pos = labels.unsqueeze(1).eq(labels.unsqueeze(0))
+        mask_pos = mask_pos.clone() 
+        mask_pos.fill_diagonal_(False)
 
-        # mask out self‐similarities on the diagonal
-        mask_eye = torch.eye(N, dtype=torch.bool, device=device)
-        exp_sim.masked_fill_(mask_eye, 0.0)
+        exp_sim = torch.exp(sim.clone())  
 
-        # positive mask: same label but not self
-        mask_pos = labels.unsqueeze(1) == labels.unsqueeze(0)
-        mask_pos = mask_pos & (~mask_eye)
+        sum_pos = (exp_sim * mask_pos.to(dtype)).sum(dim=1) + self.eps
+        sum_all = (exp_sim * (~torch.eye(N, device=device).bool()).to(dtype)).sum(dim=1) + self.eps
 
-        # sum of positives, sum of all (=> positives + negatives)
-        sum_pos = (exp_sim * mask_pos).sum(dim=1)         # [N]
-        sum_all = exp_sim.sum(dim=1)                     # [N]
+        frac = (sum_pos / sum_all).clamp(min=self.eps, max=1.0)
+        loss = - torch.log(frac)
 
-        # frac in [0,1]
-        frac = sum_pos / (sum_all + self.eps)
-        # clamp for numeric safety
-        frac = frac.clamp(min=self.eps, max=1.0)
-
-        # loss = - log(frac)
-        loss = -torch.log(frac)
-
-        # for samples with no positives: fallback to hardest negative
         no_pos = (mask_pos.sum(dim=1) == 0)
         if no_pos.any():
-            # set their loss = max_neg_score * (-1)
-            sim_neg = sim.masked_fill(mask_eye, -float('inf'))
-            hardest_neg = torch.max(sim_neg, dim=1).values
+            sim_no_diag = sim.masked_fill(torch.eye(N, device=device).bool(), -float("inf"))
+            hardest_neg = sim_no_diag.max(dim=1).values
             loss[no_pos] = (-hardest_neg[no_pos]).clamp(min=0).to(loss.dtype)
 
-        if self.reduction == 'mean':
-            return loss.mean()
-        elif self.reduction == 'sum':
-            return loss.sum()
-        else:
-            return loss
+        return loss.mean() if self.reduction=='mean' else loss.sum()
 
     
 class DistillLoss(nn.Module):
