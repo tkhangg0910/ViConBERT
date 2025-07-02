@@ -63,7 +63,7 @@ if __name__=="__main__":
     batch_size = config["training"]["batch_size"]
     labels = [ train_set[i]["synset_ids"] for i in range(len(train_set)) ]
 
-    sampler = SynsetBatchSampler(labels, batch_size, num_pos=4, shuffle=True)
+    sampler = SynsetBatchSampler(labels, batch_size,shuffle=True)
 
     train_loader = DataLoader(
         train_set,
