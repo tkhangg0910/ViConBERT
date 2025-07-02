@@ -80,19 +80,25 @@ class InfoNceLossV2(nn.Module):
         # 5) exponential
         exp_logits = torch.exp(logits)  # [N,N]
 
-        # 6) sum over positives và sum over tất cả neg (i!=i)
-        sum_pos = (exp_logits * pos_mask.to(dtype)).sum(dim=1) + self.eps
+        # 6) sum over positives và tất cả negatives
+        sum_pos = (exp_logits * pos_mask.to(dtype)).sum(dim=1)
         sum_all = (exp_logits * (~diag_mask).to(dtype)).sum(dim=1) + self.eps
 
-        # 7) loss per sample và tổng hợp
-        loss = - torch.log(sum_pos / sum_all)
+        # 7) mask các sample không có positive
+        valid_mask = (pos_mask.sum(dim=1) > 0)  # [N], True nếu sample có ít nhất 1 positive
 
+        # 8) loss per valid sample
+        loss = torch.zeros_like(sum_pos)
+        loss[valid_mask] = - torch.log((sum_pos[valid_mask] + self.eps) / sum_all[valid_mask])
+
+        # 9) tổng hợp
         if self.reduction == 'mean':
-            return loss.mean()
+            return loss[valid_mask].mean() if valid_mask.any() else torch.tensor(0.0, device=logits.device)
         elif self.reduction == 'sum':
-            return loss.sum()
+            return loss[valid_mask].sum()
         else:
-            return loss  # none
+            return loss  # trả về loss từng sample, trong đó các sample không có positive = 0
+
 
     
 class DistillLoss(nn.Module):
