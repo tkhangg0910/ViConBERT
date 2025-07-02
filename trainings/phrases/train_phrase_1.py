@@ -10,7 +10,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 # from sentence_transformers import SentenceTransformer
 import torch.nn as nn
 
-from data.processed.stage1_pseudo_sents.pseudo_sent_datasets import PseudoSentsFlatDataset
+from data.processed.stage1_pseudo_sents.pseudo_sent_datasets import PseudoSentsFlatDataset, SynsetBatchSampler
 from models.base_model import ViSynoSenseEmbedding
 from utils.load_config import load_config
 from utils.optimizer import create_optimizer
@@ -60,27 +60,26 @@ if __name__=="__main__":
     valid_set = PseudoSentsFlatDataset(config["data"]["emd_path"],
                                     # gloss_enc,
                                     valid_sample, tokenizer)
-    
-    # sampler = train_set.get_weighted_sampler()
+    batch_size = config["training"]["batch_size"]
+    labels = [ train_set[i]["label"] for i in range(len(train_set)) ]
 
-    # custom_batch_sampler = CustomSynsetAwareBatchSampler(
-    #     train_set, sampler=sampler, batch_size=config["training"]["batch_size"], drop_last=False
-    # )   
+    sampler = SynsetBatchSampler(labels, batch_size, num_pos=4, shuffle=True)
 
-    train_dataloader = DataLoader(train_set,
-                                  config["training"]["batch_size"],
-                                  shuffle=True,
-                                  collate_fn=train_set.collate_fn,
-                                  num_workers=config["data"]["num_workers"],
-                                  pin_memory=True
-                                  )
-    valid_dataloader = DataLoader(valid_set,
-                                  config["training"]["batch_size"],
-                                  shuffle=False,
-                                  collate_fn=valid_set.collate_fn,
-                                  num_workers=config["data"]["num_workers"],
-                                  pin_memory=True
-                                  )
+    train_loader = DataLoader(
+        train_set,
+        batch_sampler=sampler,
+        collate_fn=train_set.collate_fn,
+        num_workers=config["data"]["num_workers"],
+        pin_memory=True
+    )
+    valid_loader = DataLoader(
+        valid_set,
+        batch_size=batch_size,
+        shuffle=False,
+        collate_fn=valid_set.collate_fn,
+        num_workers=config["data"]["num_workers"],
+        pin_memory=True
+    )
 
     if bool(args.load_ckpts):
         model = ViSynoSenseEmbedding.from_pretrained(config["base_model"]).to(device)
