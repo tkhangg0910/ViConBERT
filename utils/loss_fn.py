@@ -37,22 +37,62 @@ class InfoNceLoss(nn.Module):
 
         return loss.mean() if self.reduction=='mean' else loss.sum()
 class InfoNceLossV2(nn.Module):
-    def __init__(self, temperature: float = 0.1, reduction: str = 'mean'):
+    def __init__(self, temperature: float = 0.1, eps: float = 1e-8, reduction: str = 'mean'):
+        """
+        Multi-positive InfoNCE loss: cho phép mỗi query có nhiều positives trong batch.
+        
+        Args:
+            temperature: hệ số chia logits để điều chỉnh độ sắc nét.
+            eps: tránh chia 0.
+            reduction: 'mean' hoặc 'sum'.
+        """
         super().__init__()
         self.temperature = temperature
+        self.eps = eps
         self.reduction = reduction
 
-    def forward(self, context_emb: torch.Tensor, gloss_emb: torch.Tensor):
-        # context_emb, gloss_emb : [N, D]
-        # normalize
+    def forward(self, context_emb: torch.Tensor, gloss_emb: torch.Tensor, labels: torch.Tensor):
+        """
+        Args:
+            context_emb: Tensor [N, D]
+            gloss_emb:    Tensor [N, D]  (thứ tự gloss tương ứng với context)
+            labels:       LongTensor [N], nhãn synset cho mỗi cặp
+        """
+        # 1) Chuẩn hoá L2
         C = F.normalize(context_emb, p=2, dim=1)
         G = F.normalize(gloss_emb,    p=2, dim=1)
-        # cosine logits: [N, N]
+
+        # 2) Ma trận cosine logits [N,N]
         logits = torch.matmul(C, G.t()) / self.temperature
-        # labels: vị trí dương là ở diagonal
-        labels = torch.arange(logits.size(0), device=logits.device)
-        # cross‐entropy đảm bảo loss >= 0
-        return F.cross_entropy(logits, labels, reduction=self.reduction)
+
+        N = logits.size(0)
+        device = logits.device
+        dtype = logits.dtype
+
+        # 3) Tạo mask để exclude chính nó
+        diag_mask = torch.eye(N, device=device, dtype=torch.bool)
+
+        # 4) Tạo mask positives: P[i,j]=True nếu labels[i]==labels[j] và i!=j
+        labels_i = labels.unsqueeze(1)          # [N,1]
+        labels_j = labels.unsqueeze(0)          # [1,N]
+        pos_mask = (labels_i == labels_j) & (~diag_mask)  # [N,N]
+
+        # 5) exponential
+        exp_logits = torch.exp(logits)  # [N,N]
+
+        # 6) sum over positives và sum over tất cả neg (i!=i)
+        sum_pos = (exp_logits * pos_mask.to(dtype)).sum(dim=1) + self.eps
+        sum_all = (exp_logits * (~diag_mask).to(dtype)).sum(dim=1) + self.eps
+
+        # 7) loss per sample và tổng hợp
+        loss = - torch.log(sum_pos / sum_all)
+
+        if self.reduction == 'mean':
+            return loss.mean()
+        elif self.reduction == 'sum':
+            return loss.sum()
+        else:
+            return loss  # none
 
     
 class DistillLoss(nn.Module):
