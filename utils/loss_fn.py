@@ -85,7 +85,7 @@ class InfoNceLossV2(nn.Module):
             # set their loss = max_neg_score * (-1)
             sim_neg = sim.masked_fill(mask_eye, -float('inf'))
             hardest_neg = torch.max(sim_neg, dim=1).values
-            loss[no_pos] = (-hardest_neg[no_pos]).clamp(min=0)
+            loss[no_pos] = (-hardest_neg[no_pos]).clamp(min=0).to(loss.dtype)
 
         if self.reduction == 'mean':
             return loss.mean()
