@@ -37,43 +37,22 @@ class InfoNceLoss(nn.Module):
 
         return loss.mean() if self.reduction=='mean' else loss.sum()
 class InfoNceLossV2(nn.Module):
-    def __init__(self, temperature=0.1, eps=1e-8, reduction='mean'):
+    def __init__(self, temperature: float = 0.1, reduction: str = 'mean'):
         super().__init__()
         self.temperature = temperature
-        self.eps = eps
         self.reduction = reduction
 
-    def forward(self, context_emb: torch.Tensor, gloss_emb: torch.Tensor, labels: torch.Tensor):        
-        dtype = context_emb.dtype
-
+    def forward(self, context_emb: torch.Tensor, gloss_emb: torch.Tensor):
+        # context_emb, gloss_emb : [N, D]
+        # normalize
         C = F.normalize(context_emb, p=2, dim=1)
-        G = F.normalize(gloss_emb, p=2, dim=1)
-        sim = torch.matmul(C, G.T) / self.temperature
-        sim = sim.to(dtype)
-        N = sim.size(1)
-        device = sim.device
-
-        mask_pos = labels.unsqueeze(1).eq(labels.unsqueeze(0))
-        mask_pos = mask_pos.clone()
-        mask_pos.fill_diagonal_(False)
-
-        exp_sim = torch.exp(sim.clone())  # clone để tránh bị inplace
-
-        sum_pos = (exp_sim * mask_pos.to(dtype)).sum(dim=1) + self.eps
-        sum_all = (exp_sim * (~torch.eye(N, device=device).bool()).to(dtype)).sum(dim=1) + self.eps
-
-        frac = (sum_pos / sum_all).clamp(min=self.eps, max=1.0)
-        loss = - torch.log(frac)
-
-        # Avoid in-place assignment
-        no_pos = (mask_pos.sum(dim=1) == 0)
-        if no_pos.any():
-            sim_no_diag = sim.masked_fill(torch.eye(N, device=device).bool(), -float("inf"))
-            hardest_neg = sim_no_diag.max(dim=1).values
-            loss = loss.clone()
-            loss[no_pos] = (-hardest_neg[no_pos].clamp(min=0)).to(loss.dtype)
-
-        return loss.mean() if self.reduction == 'mean' else loss.sum()
+        G = F.normalize(gloss_emb,    p=2, dim=1)
+        # cosine logits: [N, N]
+        logits = torch.matmul(C, G.t()) / self.temperature
+        # labels: vị trí dương là ở diagonal
+        labels = torch.arange(logits.size(0), device=logits.device)
+        # cross‐entropy đảm bảo loss >= 0
+        return F.cross_entropy(logits, labels, reduction=self.reduction)
 
     
 class DistillLoss(nn.Module):
