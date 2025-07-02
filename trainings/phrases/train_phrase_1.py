@@ -14,7 +14,7 @@ from data.processed.stage1_pseudo_sents.pseudo_sent_datasets import PseudoSentsF
 from models.base_model import ViSynoSenseEmbedding
 from utils.load_config import load_config
 from utils.optimizer import create_optimizer
-from utils.loss_fn import InfoNceLoss
+from utils.loss_fn import InfoNceLoss, InfoNceLossV2
 from trainings.phrases.utils import train_model
 
 if is_torch_available() and torch.multiprocessing.get_start_method() == "fork":
@@ -118,7 +118,7 @@ if __name__=="__main__":
     )
 
     
-    loss_fn = InfoNceLoss()
+    loss_fn =InfoNceLossV2()
 
     history, trained_model = train_model(
         phrase = 1,
