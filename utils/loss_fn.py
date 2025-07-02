@@ -72,3 +72,20 @@ class InfonceDistillLoss(nn.Module):
         loss_dist = self.distill_loss(context_emb, gloss_emb)
         
         return loss_nce + loss_dist*self.aux_weight
+    
+
+class CosinMarginDistillLoss(nn.Module):
+    def __init__(self,margin= 0.5, aux_weight = 0.5,
+                 cosin_reduction='mean', distill_reduction: str = 'mean'):
+        super().__init__()
+        self.cosine_loss = nn.CosineEmbeddingLoss(margin=margin, reduction=cosin_reduction)
+        self.distill_loss = DistillLoss(
+            reduction=distill_reduction
+        )
+        self.aux_weight = aux_weight
+    
+    def forward(self, context_emb: torch.Tensor, gloss_emb: torch.Tensor, labels: torch.Tensor):
+        loss_nce = self.cosine_loss(context_emb, gloss_emb, labels)
+        loss_dist = self.distill_loss(context_emb, gloss_emb)
+        
+        return loss_nce + loss_dist*self.aux_weight

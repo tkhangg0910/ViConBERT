@@ -8,7 +8,7 @@ from transformers.utils import is_torch_available
 from transformers import PreTrainedTokenizerFast, PhobertTokenizerFast
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 # from sentence_transformers import SentenceTransformer
-import pandas as pd
+import torch.nn as nn
 
 from data.processed.stage1_pseudo_sents.pseudo_sent_datasets import PseudoSentsFlatDataset
 from models.base_model import ViSynoSenseEmbedding
@@ -119,7 +119,7 @@ if __name__=="__main__":
     )
 
     
-    loss_fn = InfoNceLoss()
+    loss_fn = nn.CosineEmbeddingLoss()
 
     history, trained_model = train_model(
         phrase = 1,
