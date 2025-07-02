@@ -36,7 +36,6 @@ class InfoNceLoss(nn.Module):
             loss[no_pos] = (-max_neg[no_pos]).to(loss.dtype)  
 
         return loss.mean() if self.reduction=='mean' else loss.sum()
-
 class InfoNceLossV2(nn.Module):
     def __init__(self, temperature=0.1, eps=1e-8, reduction='mean'):
         super().__init__()
@@ -55,10 +54,10 @@ class InfoNceLossV2(nn.Module):
         device = sim.device
 
         mask_pos = labels.unsqueeze(1).eq(labels.unsqueeze(0))
-        mask_pos = mask_pos.clone() 
+        mask_pos = mask_pos.clone()
         mask_pos.fill_diagonal_(False)
 
-        exp_sim = torch.exp(sim.clone())  
+        exp_sim = torch.exp(sim.clone())  # clone để tránh bị inplace
 
         sum_pos = (exp_sim * mask_pos.to(dtype)).sum(dim=1) + self.eps
         sum_all = (exp_sim * (~torch.eye(N, device=device).bool()).to(dtype)).sum(dim=1) + self.eps
@@ -66,13 +65,15 @@ class InfoNceLossV2(nn.Module):
         frac = (sum_pos / sum_all).clamp(min=self.eps, max=1.0)
         loss = - torch.log(frac)
 
+        # Avoid in-place assignment
         no_pos = (mask_pos.sum(dim=1) == 0)
         if no_pos.any():
             sim_no_diag = sim.masked_fill(torch.eye(N, device=device).bool(), -float("inf"))
             hardest_neg = sim_no_diag.max(dim=1).values
-            loss[no_pos] = (-hardest_neg[no_pos]).clamp(min=0).to(loss.dtype)
+            loss = loss.clone()
+            loss[no_pos] = (-hardest_neg[no_pos].clamp(min=0)).to(loss.dtype)
 
-        return loss.mean() if self.reduction=='mean' else loss.sum()
+        return loss.mean() if self.reduction == 'mean' else loss.sum()
 
     
 class DistillLoss(nn.Module):
