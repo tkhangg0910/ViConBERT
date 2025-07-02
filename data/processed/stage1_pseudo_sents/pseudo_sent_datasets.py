@@ -334,7 +334,7 @@ class PseudoSentsFlatDataset(Dataset):
 
 
 class SynsetBatchSampler(Sampler):
-    def __init__(self, labels, batch_size, min_per_class=2, shuffle=True):
+    def __init__(self, labels, batch_size, min_per_class=4, shuffle=True):
         self.labels = labels
         self.batch_size = batch_size
         self.min_per_class = min_per_class
