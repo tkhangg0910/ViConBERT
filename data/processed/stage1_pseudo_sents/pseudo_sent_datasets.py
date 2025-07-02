@@ -266,7 +266,7 @@ class PseudoSentsFlatDataset(Dataset):
 
         synset_set = set()
         print("Processing samples and computing spans...")
-        for i, sample in enumerate(tqdm(samples, desc="Init")):
+        for i, sample in enumerate(tqdm(samples, desc="Init", ascii=True)):
             sent = text_normalize(sample["sentence"])
             target = sample["target_word"]
             synset_id = sample["synset_id"]
