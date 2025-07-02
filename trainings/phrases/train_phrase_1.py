@@ -96,8 +96,8 @@ if __name__=="__main__":
             encoder_type = config["model"]["encoder_type"],
             ).to(device)
     
-    total_steps = len(train_dataloader) * config["training"]["epochs"] 
-    steps_per_epoch = len(train_dataloader)
+    total_steps = len(train_loader) * config["training"]["epochs"] 
+    steps_per_epoch = len(train_loader)
     print(f"Steps per epoch: {steps_per_epoch}")
     print(f"Total steps: {total_steps}")
     warmup_steps = int(0.1 * total_steps)
@@ -123,8 +123,8 @@ if __name__=="__main__":
     history, trained_model = train_model(
         phrase = 1,
         num_epochs=config["training"]["epochs"],
-        train_data_loader=train_dataloader,
-        valid_data_loader=valid_dataloader,
+        train_data_loader=train_loader,
+        valid_data_loader=valid_loader,
         loss_fn=loss_fn,
         optimizer=optim,
         model=model,
