@@ -91,7 +91,7 @@ def train_model(phrase, num_epochs, train_data_loader, valid_data_loader,
 
                 )
 
-                loss = loss_fn(outputs,gloss_embd, synset_ids)
+                loss = loss_fn(outputs,gloss_embd)
                 
             scaler.scale(loss).backward()
             scaler.step(optimizer)
@@ -329,7 +329,7 @@ def evaluate_model(phrase,model, data_loader, loss_fn, device, metric_k_vals=(1,
                     target_span=target_spans
                 )
                 
-                loss = loss_fn(outputs, gloss_embd, synset_ids)
+                loss = loss_fn(outputs, gloss_embd)
             
             
             running_loss += loss.item()
