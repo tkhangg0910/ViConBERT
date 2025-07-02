@@ -334,49 +334,43 @@ class PseudoSentsFlatDataset(Dataset):
 
 
 class SynsetBatchSampler(Sampler):
-    def __init__(self, labels, batch_size, num_pos=4, shuffle=True):
-        """
-        labels: list[int] length N (label mỗi sample)
-        batch_size: int
-        num_pos: minimal positive pairs per batch
-        shuffle: bool
-        """
+    def __init__(self, labels, batch_size, min_per_class=2, shuffle=True):
         self.labels = labels
-        self.N = len(labels)
         self.batch_size = batch_size
-        self.num_pos = num_pos
+        self.min_per_class = min_per_class
         self.shuffle = shuffle
 
-        # map label -> indices
         from collections import defaultdict
         self.lab2idx = defaultdict(list)
         for idx, lab in enumerate(labels):
             self.lab2idx[lab].append(idx)
 
-        self.num_batches = math.ceil(self.N / batch_size)
-        self.all_idx = list(range(self.N))
+        self.label_groups = []
+        for lab, idxs in self.lab2idx.items():
+            if len(idxs) >= min_per_class:
+                self.label_groups.append((lab, idxs))
 
     def __iter__(self):
-        idxs = self.all_idx.copy()
+        all_samples = []
+
         if self.shuffle:
+            random.shuffle(self.label_groups)
+
+        for lab, idxs in self.label_groups:
             random.shuffle(idxs)
+            # Group into pairs (or more)
+            for i in range(0, len(idxs) - self.min_per_class + 1, self.min_per_class):
+                group = idxs[i:i+self.min_per_class]
+                if len(group) == self.min_per_class:
+                    all_samples.append(group)
 
-        ptr = 0
-        for _ in range(self.num_batches):
-            batch = idxs[ptr: ptr + self.batch_size]
-            ptr += self.batch_size
+        # Flatten and batch
+        random.shuffle(all_samples)
+        flat = [i for g in all_samples for i in g]
+        batches = [flat[i:i+self.batch_size] for i in range(0, len(flat), self.batch_size)]
 
-            # choose a label with >= num_pos samples
-            valid_labels = [lab for lab, idl in self.lab2idx.items() if len(idl) >= self.num_pos]
-            if valid_labels:
-                lab = random.choice(valid_labels)
-                pos_idxs = random.sample(self.lab2idx[lab], self.num_pos)
-                # ensure these pos_idxs in batch: replace first positions
-                for i, pi in enumerate(pos_idxs):
-                    if i < len(batch):
-                        batch[i] = pi
-
-            yield batch
+        for b in batches:
+            yield b
 
     def __len__(self):
-        return self.num_batches
+        return math.ceil(len(self.labels) / self.batch_size)
