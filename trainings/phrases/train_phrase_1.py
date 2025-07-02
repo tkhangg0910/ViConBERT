@@ -69,7 +69,7 @@ if __name__=="__main__":
 
     train_dataloader = DataLoader(train_set,
                                   config["training"]["batch_size"],
-                                  shuffle=False,
+                                  shuffle=True,
                                   collate_fn=train_set.collate_fn,
                                   num_workers=config["data"]["num_workers"],
                                   pin_memory=True
@@ -119,7 +119,7 @@ if __name__=="__main__":
     )
 
     
-    loss_fn = nn.CosineEmbeddingLoss()
+    loss_fn = InfoNceLoss()
 
     history, trained_model = train_model(
         phrase = 1,
