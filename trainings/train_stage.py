@@ -14,7 +14,7 @@ from data.processed.stage1_pseudo_sents.pseudo_sent_datasets import PseudoSents_
 from models.base_model import ViSynoSenseEmbedding
 from utils.load_config import load_config
 from utils.optimizer import create_optimizer
-from utils.loss_fn import InfonceDistillLoss, CosinMarginDistillLoss
+from utils.loss_fn import InfonceDistillLoss
 from trainings.utils import train_model
 
 if is_torch_available() and torch.multiprocessing.get_start_method() == "fork":
