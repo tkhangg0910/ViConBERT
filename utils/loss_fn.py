@@ -58,46 +58,39 @@ class InfoNceLossV2(nn.Module):
             gloss_emb:    Tensor [N, D]  (thứ tự gloss tương ứng với context)
             labels:       LongTensor [N], nhãn synset cho mỗi cặp
         """
-        # 1) Chuẩn hoá L2
+        gloss_emb = gloss_emb.detach()
+
         C = F.normalize(context_emb, p=2, dim=1)
         G = F.normalize(gloss_emb,    p=2, dim=1)
 
-        # 2) Ma trận cosine logits [N,N]
         logits = torch.matmul(C, G.t()) / self.temperature
 
         N = logits.size(0)
         device = logits.device
         dtype = logits.dtype
 
-        # 3) Tạo mask để exclude chính nó
         diag_mask = torch.eye(N, device=device, dtype=torch.bool)
 
-        # 4) Tạo mask positives: P[i,j]=True nếu labels[i]==labels[j] và i!=j
-        labels_i = labels.unsqueeze(1)          # [N,1]
-        labels_j = labels.unsqueeze(0)          # [1,N]
-        pos_mask = (labels_i == labels_j) & (~diag_mask)  # [N,N]
+        labels_i = labels.unsqueeze(1)       
+        labels_j = labels.unsqueeze(0)         
+        pos_mask = (labels_i == labels_j) & (~diag_mask)  
 
-        # 5) exponential
-        exp_logits = torch.exp(logits)  # [N,N]
+        exp_logits = torch.exp(logits)  
 
-        # 6) sum over positives và tất cả negatives
         sum_pos = (exp_logits * pos_mask.to(dtype)).sum(dim=1)
         sum_all = (exp_logits * (~diag_mask).to(dtype)).sum(dim=1) + self.eps
 
-        # 7) mask các sample không có positive
-        valid_mask = (pos_mask.sum(dim=1) > 0)  # [N], True nếu sample có ít nhất 1 positive
+        valid_mask = (pos_mask.sum(dim=1) > 0) 
 
-        # 8) loss per valid sample
         loss = torch.zeros_like(sum_pos)
         loss[valid_mask] = - torch.log((sum_pos[valid_mask] + self.eps) / sum_all[valid_mask])
 
-        # 9) tổng hợp
         if self.reduction == 'mean':
             return loss[valid_mask].mean() if valid_mask.any() else torch.tensor(0.0, device=logits.device)
         elif self.reduction == 'sum':
             return loss[valid_mask].sum()
         else:
-            return loss  # trả về loss từng sample, trong đó các sample không có positive = 0
+            return loss  
 
 
     
