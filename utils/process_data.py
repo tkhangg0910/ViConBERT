@@ -129,16 +129,24 @@ def save_synset_ids(synset_ids, path: str):
     torch.save(synset_ids, path)
     print(f"💾 Saved synset_id mapping to: {path}")
 
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--gloss_path", type=str, required=True, help="Path to gloss_embeddings.pt")
-    parser.add_argument("--index_out", type=str, default="gloss_faiss.index", help="FAISS index output file")
-    parser.add_argument("--id_out", type=str, default="synset_ids.pt", help="Synset ID output file")
-    parser.add_argument("--use_gpu", action="store_true", help="Use GPU for indexing")
+    split_contrastive_stage1_data(
+        "data/raw/stage_1_pseudo_sents/pseudo_sents_v1.json",
+        "data/raw/stage_1_pseudo_sents/word_synsets_with_pos_with_gloss_v2.csv",
+        "data/processed/stage1_pseudo_sents/pseudo_sent_datasets.py"
+    )
 
-    args = parser.parse_args()
+# if __name__ == "__main__":
+#     parser = argparse.ArgumentParser()
+#     parser.add_argument("--gloss_path", type=str, required=True, help="Path to gloss_embeddings.pt")
+#     parser.add_argument("--index_out", type=str, default="gloss_faiss.index", help="FAISS index output file")
+#     parser.add_argument("--id_out", type=str, default="synset_ids.pt", help="Synset ID output file")
+#     parser.add_argument("--use_gpu", action="store_true", help="Use GPU for indexing")
 
-    embd, synset_ids = load_gloss_embeddings(args.gloss_path)
-    index = index_embeddings(embd, use_gpu=args.use_gpu)
-    save_index(index, args.index_out)
-    save_synset_ids(synset_ids, args.id_out)
+#     args = parser.parse_args()
+
+#     embd, synset_ids = load_gloss_embeddings(args.gloss_path)
+#     index = index_embeddings(embd, use_gpu=args.use_gpu)
+#     save_index(index, args.index_out)
+#     save_synset_ids(synset_ids, args.id_out)
