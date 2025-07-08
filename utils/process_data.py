@@ -8,6 +8,8 @@ from underthesea.pipeline.text_normalize import token_normalize
 from utils.custom_uts_tokenize import tokenize
 import torch
 from tqdm import tqdm
+import os
+os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 
 def split_contrastive_stage1_data(pseudo_sent_path, word_synsets_path, output_dir):
