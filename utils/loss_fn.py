@@ -58,8 +58,6 @@ class InfoNceLossV2(nn.Module):
             gloss_emb:    Tensor [N, D]  (thứ tự gloss tương ứng với context)
             labels:       LongTensor [N], nhãn synset cho mỗi cặp
         """
-        gloss_emb = gloss_emb.detach()
-
         C = F.normalize(context_emb, p=2, dim=1)
         G = F.normalize(gloss_emb,    p=2, dim=1)
 
@@ -86,7 +84,8 @@ class InfoNceLossV2(nn.Module):
         loss[valid_mask] = - torch.log((sum_pos[valid_mask] + self.eps) / sum_all[valid_mask])
 
         if self.reduction == 'mean':
-            return loss[valid_mask].mean() if valid_mask.any() else torch.tensor(0.0, device=logits.device)
+            return loss[valid_mask].mean() if valid_mask.any() else torch.tensor(0.0, device=device, dtype=dtype, requires_grad=True)
+
         elif self.reduction == 'sum':
             return loss[valid_mask].sum()
         else:
