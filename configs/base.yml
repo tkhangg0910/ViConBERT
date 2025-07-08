@@ -18,7 +18,7 @@ model:
   temperature: 0.3
   hidden_dim: 512
   dropout: 0.3
-  out_dim: 512
+  out_dim: 768
   num_layers: 1
   context_window_size: 3
   encoder_type: attentive
@@ -26,7 +26,7 @@ model:
 training:
   ckpt_interval: 10
   shuffle: False
-  batch_size: 256
+  batch_size: 512
   epochs: 100
   early_stopping_patience: 5
   save_steps: 1000
