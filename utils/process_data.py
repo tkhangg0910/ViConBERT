@@ -134,7 +134,7 @@ if __name__ == "__main__":
     split_contrastive_stage1_data(
         "data/raw/stage_1_pseudo_sents/pseudo_sents_v1.json",
         "data/raw/stage_1_pseudo_sents/word_synsets_with_pos_with_gloss_v2.csv",
-        "data/processed/stage1_pseudo_sents/pseudo_sent_datasets.py"
+        "data/processed/stage1_pseudo_sents"
     )
 
 # if __name__ == "__main__":
