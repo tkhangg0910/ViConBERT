@@ -4,14 +4,14 @@ project:
   seed: 42
 
 stage_name: "contrastive_pretraining"
-base_model: "checkpoints/phobert_base/run_20250703_085146/best_model"
+base_model: "vinai/phobert-base"
 base_model_cache_dir: "embeddings/vinai/phobert-base"
 output_dir: "./checkpoints/phobert_base"
 
 data:
-  train_path: "data/processed/stage1_pseudo_sents/train_data_v2.json"
-  valid_path: "data/processed/stage1_pseudo_sents/valid_data_v2.json"
-  emd_path: "data/processed/stage1_pseudo_sents/gloss_embeddings.pt"
+  train_path: "data/processed/stage1_pseudo_sents/train_data_v3.json"
+  valid_path: "data/processed/stage1_pseudo_sents/valid_data_v3.json"
+  emd_path: "data/processed/gloss_embeddings.pt"
   num_workers: 16
 
 model:  
