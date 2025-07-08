@@ -136,6 +136,7 @@ def save_synset_ids(synset_ids, path: str):
 #         "data/raw/stage_1_pseudo_sents/word_synsets_with_pos_with_gloss_v2.csv",
 #         "data/processed/stage1_pseudo_sents"
 #     )
+from sentence_transformers import SentenceTransformer
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -143,9 +144,13 @@ if __name__ == "__main__":
     parser.add_argument("--index_out", type=str, default="gloss_faiss.index", help="FAISS index output file")
     parser.add_argument("--id_out", type=str, default="synset_ids.pt", help="Synset ID output file")
     parser.add_argument("--use_gpu", action="store_true", help="Use GPU for indexing")
-
+    gloss_enc = SentenceTransformer('dangvantuan/vietnamese-embedding') 
     args = parser.parse_args()
-
+    precompute_and_save(
+        "data/raw/stage_1_pseudo_sents/word_synsets_with_pos_with_gloss_v2.csv",
+        args.gloss_path,
+        gloss_enc
+        )
     embd, synset_ids = load_gloss_embeddings(args.gloss_path)
     index = index_embeddings(embd, use_gpu=args.use_gpu)
     save_index(index, args.index_out)
