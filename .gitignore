@@ -14,3 +14,4 @@ data/processed/stage1_pseudo_sents/valid_data_v2.json
 data/raw/check.py
 data/processed/stage1_pseudo_sents/train_data_v3.json
 data/processed/stage1_pseudo_sents/valid_data_v3.json
+data/raw/stage_1_pseudo_sents/pseudo_sent_v2.json
