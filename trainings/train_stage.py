@@ -10,7 +10,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 # from sentence_transformers import SentenceTransformer
 import pandas as pd
 
-from data.processed.stage1_pseudo_sents.pseudo_sent_datasets import PseudoSents_Dataset
+from data.processed.stage1_pseudo_sents.pseudo_sent_datasets import PseudoSents_Dataset, PseudoSentsFlatDataset, SynsetBatchSampler
 from models.base_model import ViSynoSenseEmbedding
 from utils.load_config import load_config
 from utils.optimizer import create_optimizer
@@ -52,38 +52,63 @@ if __name__=="__main__":
         tokenizer.add_special_tokens({'pad_token': '[PAD]'})
 
     
-    train_set = PseudoSents_Dataset(config["data"]["emd_path"],
-                                    # gloss_enc,
-                                    train_sample, tokenizer
-                                    , is_training=True, 
-                                    num_synsets_per_batch=128,samples_per_synset=6,
-                                    only_multiple_el=bool(args.only_multiple_el))
+    # train_set = PseudoSents_Dataset(config["data"]["emd_path"],
+    #                                 # gloss_enc,
+    #                                 train_sample, tokenizer
+    #                                 , is_training=True, 
+    #                                 num_synsets_per_batch=128,samples_per_synset=6,
+    #                                 only_multiple_el=bool(args.only_multiple_el))
     
-    valid_set = PseudoSents_Dataset(config["data"]["emd_path"],
+    # valid_set = PseudoSents_Dataset(config["data"]["emd_path"],
+    #                                 # gloss_enc,
+    #                                 valid_sample, tokenizer, is_training=False
+    #                                 ,only_multiple_el=bool(args.only_multiple_el))
+    train_set = PseudoSentsFlatDataset(config["data"]["emd_path"],
                                     # gloss_enc,
-                                    valid_sample, tokenizer, is_training=False
-                                    ,only_multiple_el=bool(args.only_multiple_el))
+                                    train_sample, tokenizer 
+                                    )
     
+    valid_set = PseudoSentsFlatDataset(config["data"]["emd_path"],
+                                    # gloss_enc,
+                                    valid_sample, tokenizer)
     # sampler = train_set.get_weighted_sampler()
 
     # custom_batch_sampler = CustomSynsetAwareBatchSampler(
     #     train_set, sampler=sampler, batch_size=config["training"]["batch_size"], drop_last=False
     # )   
+    batch_size = config["training"]["batch_size"]
+    labels = [ train_set[i]["synset_ids"] for i in range(len(train_set)) ]
 
-    train_dataloader = DataLoader(train_set,
-                                  config["training"]["batch_size"],
-                                  shuffle=False,
-                                  collate_fn=train_set.custom_collate_fn,
-                                  num_workers=config["data"]["num_workers"],
-                                  pin_memory=True
-                                  )
-    valid_dataloader = DataLoader(valid_set,
-                                  config["training"]["batch_size"],
-                                  shuffle=False,
-                                  collate_fn=valid_set.custom_collate_fn,
-                                  num_workers=config["data"]["num_workers"],
-                                  pin_memory=True
-                                  )
+    sampler = SynsetBatchSampler(labels, batch_size,shuffle=True)
+    # train_dataloader = DataLoader(train_set,
+    #                               config["training"]["batch_size"],
+    #                               shuffle=False,
+    #                               collate_fn=train_set.custom_collate_fn,
+    #                               num_workers=config["data"]["num_workers"],
+    #                               pin_memory=True
+    #                               )
+    # valid_dataloader = DataLoader(valid_set,
+    #                               config["training"]["batch_size"],
+    #                               shuffle=False,
+    #                               collate_fn=valid_set.custom_collate_fn,
+    #                               num_workers=config["data"]["num_workers"],
+    #                               pin_memory=True
+    #                               )
+    train_dataloader = DataLoader(
+        train_set,
+        batch_sampler=sampler,
+        collate_fn=train_set.collate_fn,
+        num_workers=config["data"]["num_workers"],
+        pin_memory=True
+    )
+    valid_dataloader = DataLoader(
+        valid_set,
+        batch_size=batch_size,
+        shuffle=False,
+        collate_fn=valid_set.collate_fn,
+        num_workers=config["data"]["num_workers"],
+        pin_memory=True
+    )
 
     if bool(args.load_ckpts):
         model = ViSynoSenseEmbedding.from_pretrained(config["base_model"]).to(device)

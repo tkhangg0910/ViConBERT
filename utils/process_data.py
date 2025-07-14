@@ -21,7 +21,7 @@ def split_contrastive_stage1_data(pseudo_sent_path, word_synsets_path, output_di
     for word_id, sentences in data.items():
         synset_row  = word_synsets[word_synsets["word_id"] == int(word_id)]
         synset_id = int(synset_row["synset_id"].values[0])
-        train_sents, valid_sents = train_test_split(sentences, test_size=0.2, random_state=42)
+        train_sents, valid_sents = train_test_split(sentences, test_size=0.1, random_state=42)
         target_word = synset_row["word"].values[0]  
         supersense = synset_row["pos"].values[0]
         train_data[synset_id].extend([(word_id,target_word,supersense, sent) for sent in train_sents])
@@ -35,12 +35,12 @@ def split_contrastive_stage1_data(pseudo_sent_path, word_synsets_path, output_di
         final_valid.extend(valid_data[synset_id][:min_samples])
 
     # Lưu dưới dạng danh sách các cặp (word_id, sentence)
-    with open(os.path.join(output_dir, "train_data_v3.json"), 'w', encoding='utf-8') as f:
+    with open(os.path.join(output_dir, "train_data_v4.json"), 'w', encoding='utf-8') as f:
         json.dump([{"word_id": w, "sentence": s,"target_word": target,"supersense":supersense, "synset_id": synset_id} 
                 for synset_id, group in train_data.items() 
                 for w,target,supersense, s in group], f,ensure_ascii=False,indent=2)
         
-    with open(os.path.join(output_dir, "valid_data_v3.json"), 'w', encoding='utf-8') as f:
+    with open(os.path.join(output_dir, "valid_data_v4.json"), 'w', encoding='utf-8') as f:
         json.dump([{"word_id": w, "sentence": s,"target_word": target,"supersense":supersense, "synset_id": synset_id} 
                 for synset_id, group in valid_data.items() 
                 for w,target,supersense, s in group], f, ensure_ascii=False,indent=2)
@@ -130,12 +130,12 @@ def save_synset_ids(synset_ids, path: str):
     print(f"💾 Saved synset_id mapping to: {path}")
 
 
-# if __name__ == "__main__":
-#     split_contrastive_stage1_data(
-#         "data/raw/stage_1_pseudo_sents/pseudo_sents_v1.json",
-#         "data/raw/stage_1_pseudo_sents/word_synsets_with_pos_with_gloss_v2.csv",
-#         "data/processed/stage1_pseudo_sents"
-#     )
+if __name__ == "__main__":
+    split_contrastive_stage1_data(
+        "data/raw/stage_1_pseudo_sents/pseudo_sents_v3.json",
+        "data/raw/stage_1_pseudo_sents/word_synsets_with_pos_with_gloss_v2.csv",
+        "data/processed/stage1_pseudo_sents"
+    )
 # from sentence_transformers import SentenceTransformer
 
 # if __name__ == "__main__":
