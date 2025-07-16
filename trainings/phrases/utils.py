@@ -132,7 +132,9 @@ def train_model(phrase, num_epochs, train_data_loader, valid_data_loader,
             
             # if scheduler:
             #     scheduler.step() 
-                
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
+
         train_metrics = {}
         num_batches = len(train_data_loader)
         train_metrics = {f'recall@{k}': train_metrics_accum[f'recall@{k}'] / num_batches
