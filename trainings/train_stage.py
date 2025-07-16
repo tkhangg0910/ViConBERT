@@ -121,6 +121,7 @@ if __name__=="__main__":
             out_dim=config["model"]["out_dim"],
             dropout=config["model"]["dropout"],
             num_layers=config["model"]["num_layers"],
+            num_head=config["model"]["num_head"],
             context_window_size=config["model"]["context_window_size"],
             encoder_type = config["model"]["encoder_type"],
             ).to(device)
