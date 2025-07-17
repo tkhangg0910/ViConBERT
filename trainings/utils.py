@@ -129,8 +129,6 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
             
             # if scheduler:
             #     scheduler.step() 
-            torch.cuda.empty_cache()
-            torch.cuda.ipc_collect()
                 
         train_metrics = {}
         num_batches = len(train_data_loader)
