@@ -4,7 +4,7 @@ project:
   seed: 42
 
 stage_name: "contrastive_pretraining"
-base_model: "checkpoints/phobert-large/run_20250717_040953/best_model"
+base_model: "checkpoints/phobert-large/run_20250717_091035/best_model"
 base_model_cache_dir: "embeddings/vinai/phobert-large"
 output_dir: "./checkpoints/phobert-large"
 
