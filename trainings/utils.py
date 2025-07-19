@@ -1,9 +1,33 @@
 import os
 import torch
 from tqdm import tqdm
+import numpy as np
 from torch.amp import GradScaler, autocast
 from datetime import datetime
 from utils.metrics import compute_step_metrics, compute_full_metrics_large_scale, compute_ndcg_from_faiss
+
+class AdaptiveGradientClipper:
+    def __init__(self, initial_max_norm=1.0):
+        self.max_norm = initial_max_norm
+        self.history = []
+        
+    def clip(self, model):
+        parameters = [p for p in model.parameters() if p.grad is not None]
+        total_norm = torch.norm(torch.stack(
+            [torch.norm(p.grad.detach(), 2) for p in parameters]), 2)
+        
+        self.history.append(total_norm.item())
+        
+        if len(self.history) % 100 == 0:
+            p95 = np.percentile(self.history[-100:], 95)
+            if p95 > self.max_norm * 1.5:
+                self.max_norm *= 1.2  
+            elif p95 < self.max_norm * 0.5:
+                self.max_norm *= 0.8 
+        
+        torch.nn.utils.clip_grad_norm_(parameters, self.max_norm)
+        return total_norm.item()
+
 
 def train_model(num_epochs, train_data_loader, valid_data_loader, 
                 loss_fn, optimizer, model, device, 
@@ -34,7 +58,7 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = os.path.join(checkpoint_dir, f"run_{run_id}")
     os.makedirs(run_dir, exist_ok=True)
-    
+    grad_clipper = AdaptiveGradientClipper(initial_max_norm=1.0)
     scaler = GradScaler()
     history = {
         'train_loss': [],
@@ -93,6 +117,10 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
                 loss = loss_fn(outputs,gloss_embd, synset_ids)
                 
             scaler.scale(loss).backward()
+            scaler.unscale_(optimizer)
+
+            current_norm = grad_clipper.clip(model)
+
             scaler.step(optimizer)
             scaler.update()
             
@@ -118,14 +146,13 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
                 step_metrics['loss'] = loss.item()
                 history['step_metrics'].append(step_metrics)
                 
-                # Hiển thị metrics trong progress bar
+            else:
                 train_pbar.set_postfix({
                     'Loss': f'{loss.item():.4f}',
-                    'R@5': f"{step_metrics['recall@5']:.4f}",
-                    'P@5': f"{step_metrics['precision@5']:.4f}"
+                    'Grad': f'{current_norm:.2f}',
+                    'Clip': f'{grad_clipper.max_norm:.2f}'
                 })
-            else:
-                train_pbar.set_postfix({'Loss': f'{loss.item():.4f}'})
+
             
             # if scheduler:
             #     scheduler.step() 
