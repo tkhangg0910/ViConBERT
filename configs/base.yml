@@ -16,7 +16,7 @@ data:
 
 model:  
   temperature: 0.3
-  hidden_dim: 1
+  hidden_dim: 512
   dropout: 0.3
   out_dim: 768
   num_layers: 1
@@ -27,7 +27,7 @@ model:
 training:
   ckpt_interval: 10
   shuffle: False
-  batch_size: 400
+  batch_size: 1
   epochs: 100
   early_stopping_patience: 5
   save_steps: 1000
