@@ -16,7 +16,7 @@ data:
 
 model:  
   temperature: 0.3
-  hidden_dim: 512
+  hidden_dim: 1
   dropout: 0.3
   out_dim: 768
   num_layers: 1
