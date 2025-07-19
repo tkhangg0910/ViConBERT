@@ -76,8 +76,8 @@ if __name__=="__main__":
     # custom_batch_sampler = CustomSynsetAwareBatchSampler(
     #     train_set, sampler=sampler, batch_size=config["training"]["batch_size"], drop_last=False
     # )   
-    batch_size = config["training"]["batch_size"]
-    labels = [ train_set[i]["synset_ids"] for i in range(len(train_set)) ]
+    # batch_size = config["training"]["batch_size"]
+    # labels = [ train_set[i]["synset_ids"] for i in range(len(train_set)) ]
 
     # sampler = SynsetBatchSampler(labels, batch_size,shuffle=True)
     train_dataloader = DataLoader(train_set,
