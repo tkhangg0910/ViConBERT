@@ -56,7 +56,7 @@ if __name__=="__main__":
                                     # gloss_enc,
                                     train_sample, tokenizer
                                     , is_training=True, 
-                                    num_synsets_per_batch=128,samples_per_synset=6,
+                                    num_synsets_per_batch=96,samples_per_synset=4,
                                     only_multiple_el=bool(args.only_multiple_el))
     
     valid_set = PseudoSents_Dataset(config["data"]["emd_path"],
