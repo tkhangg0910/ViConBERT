@@ -15,8 +15,8 @@ from transformers import PhobertTokenizerFast
 def setup_args():
     parser = argparse.ArgumentParser(description="Train a model")
     parser.add_argument("--model_path", type=str, help="Model path")
-    parser.add_argument("--csv_file_path", type=int,default=768, help="Batch size")
-    parser.add_argument("--json_file_path", type=int,default=768, help="Batch size")
+    parser.add_argument("--csv_file_path", type=str,default=768, help="Batch size")
+    parser.add_argument("--json_file_path", type=str,default=768, help="Batch size")
     args = parser.parse_args()
     return args 
 
