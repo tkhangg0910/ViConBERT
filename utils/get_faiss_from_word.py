@@ -40,14 +40,15 @@ if __name__ == "__main__":
     args = setup_args()
     csv_file_path=args.csv_file_path
     json_file_path= args.json_file_path
+    model_path = args.model_path
     dimension = 768
     index = faiss.IndexFlatL2(dimension)
     word_ids=[]
     df = pd.read_csv(csv_file_path)
     with open(json_file_path, 'r', encoding='utf-8') as jf:
         sentence_dict = json.load(jf)
-    tokenizer = PhobertTokenizerFast.from_pretrained("/content/drive/MyDrive/UIT/ViSynoSense_models/BERT_BASE")
-    model = ViSynoSenseEmbedding.from_pretrained("/content/drive/MyDrive/UIT/ViSynoSense_models/BERT_BASE",tokenizer).to(device)
+    tokenizer = PhobertTokenizerFast.from_pretrained(model_path)
+    model = ViSynoSenseEmbedding.from_pretrained(model_path,tokenizer).to(device)
     span_ex =SpanExtractor(tokenizer)
     pipeline=Pipeline(tokenizer,span_ex, model )
     for _, row in tqdm(df.iterrows(), total=len(df), desc="Processing", ascii=True):
