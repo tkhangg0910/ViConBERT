@@ -1,5 +1,7 @@
 import argparse
 import json
+import os
+
 import torch
 from transformers import PhobertTokenizerFast
 from torch.utils.data import DataLoader
@@ -8,8 +10,15 @@ from utils.load_config import load_config
 from models.base_model import ViSynoSenseEmbedding
 import torch
 from tqdm import tqdm
+from transformers.utils import is_torch_available
+
 from torch.amp import autocast
 from utils.metrics import compute_step_metrics, compute_full_metrics_large_scale, compute_ndcg_from_faiss
+
+
+if is_torch_available() and torch.multiprocessing.get_start_method() == "fork":
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
+    
 from utils.loss_fn import InfonceDistillLoss
 def setup_args():
     parser = argparse.ArgumentParser(description="Train a model")
