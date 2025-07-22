@@ -1,7 +1,6 @@
 import argparse
 import json
 import os
-
 import torch
 from transformers import PhobertTokenizerFast
 from torch.utils.data import DataLoader
@@ -23,7 +22,7 @@ from utils.loss_fn import InfonceDistillLoss
 def setup_args():
     parser = argparse.ArgumentParser(description="Train a model")
     parser.add_argument("--model_path", type=str, help="Model path")
-    parser.add_argument("--batch_size", type=int,default=512, help="Batch size")
+    parser.add_argument("--batch_size", type=int,default=768, help="Batch size")
     args = parser.parse_args()
     return args 
 
