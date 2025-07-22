@@ -50,7 +50,7 @@ if __name__ == "__main__":
     model = ViSynoSenseEmbedding.from_pretrained("/content/drive/MyDrive/UIT/ViSynoSense_models/BERT_BASE",tokenizer).to(device)
     span_ex =SpanExtractor(tokenizer)
     pipeline=Pipeline(tokenizer,span_ex, model )
-    for _, row in tqdm(df.iterrows(), total=len(df), desc="Processing"):
+    for _, row in tqdm(df.iterrows(), total=len(df), desc="Processing", ascii=True):
         word_id = str(row['word_id']) 
         word = row['word']
         gloss = row['gloss']
