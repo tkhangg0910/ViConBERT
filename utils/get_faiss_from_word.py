@@ -17,6 +17,7 @@ def setup_args():
     parser.add_argument("--model_path", type=str, help="Model path")
     parser.add_argument("--csv_file_path", type=str)
     parser.add_argument("--json_file_path", type=str)
+    parser.add_argument("--vector_aggerate", type=str, default="one")
     args = parser.parse_args()
     return args 
 
@@ -39,6 +40,7 @@ if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
     args = setup_args()
     csv_file_path=args.csv_file_path
+    metadata_list = []
     json_file_path= args.json_file_path
     model_path = args.model_path
     dimension = 768
@@ -55,22 +57,33 @@ if __name__ == "__main__":
         word_id = str(row['word_id']) 
         word = row['word']
         gloss = row['gloss']
+        pos = row['pos']
         
         if word_id in sentence_dict:
             sentences = sentence_dict[word_id]
             if sentences:
-                chosen_sentence = random.choice(sentences)
-                vec = pipeline.extract(chosen_sentence, word).cpu().detach().numpy()
+                if args.vector_aggerate =="one":
+                    chosen_sentence = random.choice(sentences)
+                    vec = pipeline.extract(chosen_sentence, word).cpu().detach().numpy()
                 vec = np.array(vec).astype('float32').reshape(1, -1)
 
-                index.add(vec)  # thêm vào FAISS
+                index.add(vec)
                 word_ids.append(word_id)  
+                metadata_list.append({
+                    "word_id": word_id,
+                    "pos":pos,
+                    "word": word,
+                    "gloss": gloss,
+                })
+
             else:
                 print(f"{word} ({word_id}): [Không có câu nào]")
         else:
             print(f"{word} ({word_id}): [Không tìm thấy trong JSON]")
 
     faiss.write_index(index, 'index.faiss')
+    with open('metadata.json', 'w', encoding='utf-8') as f:
+        json.dump(metadata_list, f, ensure_ascii=False, indent=2)
 
     # ✅ Lưu word_ids mapping nếu cần
     with open('word_ids.json', 'w', encoding='utf-8') as f:
