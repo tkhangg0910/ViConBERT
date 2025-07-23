@@ -114,10 +114,10 @@ if __name__ == "__main__":
         else:
             print(f"{word} ({word_id}): [Không tìm thấy trong JSON]")
 
-    faiss.write_index(index, 'index.faiss')
-    with open('metadata.json', 'w', encoding='utf-8') as f:
+    faiss.write_index(index, 'index_mean.faiss')
+    with open('metadata_mean.json', 'w', encoding='utf-8') as f:
         json.dump(metadata_list, f, ensure_ascii=False, indent=2)
 
     # ✅ Lưu word_ids mapping nếu cần
-    with open('word_ids.json', 'w', encoding='utf-8') as f:
+    with open('word_ids_mean.json', 'w', encoding='utf-8') as f:
         json.dump(word_ids, f, ensure_ascii=False, indent=2)
