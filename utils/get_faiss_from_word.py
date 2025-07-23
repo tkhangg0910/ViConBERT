@@ -72,7 +72,7 @@ if __name__ == "__main__":
     json_file_path= args.json_file_path
     model_path = args.model_path
     dimension = 768
-    index = faiss.IndexFlatL2(dimension)
+    index = faiss.IndexFlatIP(dimension)
     word_ids=[]
     df = pd.read_csv(csv_file_path)
     with open(json_file_path, 'r', encoding='utf-8') as jf:
