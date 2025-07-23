@@ -12,6 +12,9 @@ from utils.process_data import text_normalize
 from models.base_model import ViSynoSenseEmbedding
 from transformers import PhobertTokenizerFast
 
+def batch_text_normalize(texts, tokenizer='underthesea'):
+    return [text_normalize(text, tokenizer=tokenizer) for text in texts]
+
 def setup_args():
     parser = argparse.ArgumentParser(description="Train a model")
     parser.add_argument("--model_path", type=str, help="Model path")
@@ -36,6 +39,24 @@ class Pipeline:
         query_vec = self.model(tokenized_query, span)
         return query_vec
 
+class BatchPipeline:
+    def __init__(self, tokenizer, span_ex, model) -> None:
+        self.tokenizer=tokenizer
+        self.span_ex=span_ex
+        self.model=model
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+    def extract(self, query, target):
+        querys_norm=batch_text_normalize(query)
+        tokenized_queries = self.tokenizer(querys_norm,return_tensors="pt").to(self.device)
+        span = []
+        for query_norm in querys_norm:
+            span_idx = self.span_ex.get_span_indices(query_norm, target)
+            span.append(torch.Tensor(span_idx).unsqueeze(0).to(self.device))
+        self.model.eval()
+        spans = torch.cat(span, dim=0)
+        query_vec = self.model(tokenized_queries, span)
+        return query_vec
+
 if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
     args = setup_args()
@@ -52,7 +73,8 @@ if __name__ == "__main__":
     tokenizer = PhobertTokenizerFast.from_pretrained(model_path)
     model = ViSynoSenseEmbedding.from_pretrained(model_path,tokenizer).to(device)
     span_ex =SpanExtractor(tokenizer)
-    pipeline=Pipeline(tokenizer,span_ex, model )
+    # pipeline=Pipeline(tokenizer,span_ex, model )
+    pipeline= BatchPipeline(tokenizer,span_ex, model )
     for _, row in tqdm(df.iterrows(), total=len(df), desc="Processing", ascii=True):
         word_id = str(row['word_id']) 
         word = row['word']
@@ -65,6 +87,10 @@ if __name__ == "__main__":
                 if args.vector_aggerate =="one":
                     chosen_sentence = random.choice(sentences)
                     vec = pipeline.extract(chosen_sentence, word).cpu().detach().numpy()
+                elif args.vector_aggerate =="mean":
+                    vec = pipeline.extract(sentences, word).cpu().detach().numpy()
+                    vec = np.mean(vec, axis=0)
+
                 vec = np.array(vec).astype('float32').reshape(1, -1)
 
                 index.add(vec)
