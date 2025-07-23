@@ -58,6 +58,8 @@ class BatchPipeline:
         for query_norm in querys_norm:
             span_idx = self.span_ex.get_span_indices(query_norm, target)
             span.append(torch.Tensor(span_idx).unsqueeze(0).to(self.device))
+        span = torch.cat(span, dim=0)
+
         self.model.eval()
         query_vec = self.model(tokenized_queries, span)
         return query_vec
