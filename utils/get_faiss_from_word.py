@@ -47,13 +47,18 @@ class BatchPipeline:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
     def extract(self, query, target):
         querys_norm=batch_text_normalize(query)
-        tokenized_queries = self.tokenizer(querys_norm,return_tensors="pt").to(self.device)
+        tokenized_queries = self.tokenizer(
+            querys_norm,
+            return_tensors="pt",
+            padding=True,
+            truncation=True
+        ).to(self.device)
+
         span = []
         for query_norm in querys_norm:
             span_idx = self.span_ex.get_span_indices(query_norm, target)
             span.append(torch.Tensor(span_idx).unsqueeze(0).to(self.device))
         self.model.eval()
-        spans = torch.cat(span, dim=0)
         query_vec = self.model(tokenized_queries, span)
         return query_vec
 
