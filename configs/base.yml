@@ -3,7 +3,6 @@ project:
   language: "vi"
   seed: 42
 
-stage_name: "contrastive_pretraining"
 base_model: "vinai/phobert-base"
 base_model_cache_dir: "embeddings/vinai/phobert-base"
 output_dir: "./checkpoints/phobert_base"
@@ -33,8 +32,8 @@ training:
   save_steps: 1000
   optimizer:
     name: "adamw"
-    lr_base: 4e-5
-    lr_custom: 3e-4 
+    lr_base: 3e-5
+    lr_custom: 2e-4 
     weight_decay: 0.01
     eps: 1e-6
     betas: [0.9, 0.999]
