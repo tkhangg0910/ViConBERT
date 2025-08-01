@@ -36,7 +36,8 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
                 early_stopping_patience=3,
                 ckpt_interval=10,
                 metric_k_vals=(1, 5, 10),
-                metric_log_interval=500
+                metric_log_interval=500,
+                ndcg_eval_interval=1  
                 ):
     """
     Train a WSD model with early stopping and checkpoint saving
@@ -173,8 +174,9 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
         # ======================
         # VALIDATION PHASE
         # ======================
+        compute_ndcg = (epoch % ndcg_eval_interval == 0) or (epoch == num_epochs - 1)
         print(f"\nValidating epoch {epoch+1}...")
-        valid_metrics = evaluate_model(model, valid_data_loader, loss_fn, device, metric_k_vals)
+        valid_metrics = evaluate_model(model, valid_data_loader, loss_fn, device, metric_k_vals, compute_ndcg=compute_ndcg)
         
         # ======================
         # SCHEDULER STEP (EPOCH-LEVEL)
@@ -253,11 +255,17 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
         print("\n  TRAIN METRICS (avg per batch):")
         print(f"    Loss: {train_loss:.4f}")
         for k in metric_k_vals:
-            print(
-                f"    Recall@{k}:     {train_metrics[f'recall@{k}']:.4f} | "
-                f"Precision@{k}:  {train_metrics[f'precision@{k}']:.4f} | "
-                f"ndcg@{k}:      {train_metrics[f'ndcg@{k}']:.4f} | "
+            line = (
+                f"    Recall@{k}:     {valid_metrics[f'recall@{k}']:.4f} | "
+                f"Precision@{k}:  {valid_metrics[f'precision@{k}']:.4f} | "
+                f"F1@{k}:         {valid_metrics[f'f1@{k}']:.4f} | "
             )
+            
+            if compute_ndcg:
+                line += f"NDCG@{k}:      {valid_metrics[f'ndcg@{k}']:.4f} | "
+            
+            print(line)
+
 
         # Validation metrics
         print("\n  VALIDATION METRICS:")
@@ -311,7 +319,7 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
     return history, model
 
 
-def evaluate_model(model, data_loader, loss_fn, device, metric_k_vals=(1, 5, 10)):
+def evaluate_model(model, data_loader, loss_fn, device, metric_k_vals=(1, 5, 10), compute_ndcg=True):
     """Enhanced evaluation with detailed metrics"""
     model.eval()
     running_loss = 0.0
@@ -370,17 +378,22 @@ def evaluate_model(model, data_loader, loss_fn, device, metric_k_vals=(1, 5, 10)
     else:
         chunk_size = 1000
 
-        # label → raw synset_id
+    # label → raw synset_id
     label_to_synset_map = data_loader.dataset.global_label_to_synset 
+    if compute_ndcg:
+            # label → raw synset_id
+            label_to_synset_map = data_loader.dataset.global_label_to_synset 
+            ndcg = compute_ndcg_from_faiss(
+                context_embd=all_embeddings,
+                true_synset_labels=all_labels,
+                faiss_index_path="data/processed/gloss_faiss.index",
+                synset_id_map_path="data/processed/synset_ids.pt",
+                label_to_synset_map=label_to_synset_map,
+                k_vals=metric_k_vals
+            )
+    else:
+        ndcg = {f'ndcg@{k}': 0.0 for k in metric_k_vals}
 
-    ndcg = compute_ndcg_from_faiss(
-        context_embd=all_embeddings,
-        true_synset_labels=all_labels,
-        faiss_index_path="data/processed/gloss_faiss.index",
-        synset_id_map_path="data/processed/synset_ids.pt",
-        label_to_synset_map=label_to_synset_map,
-        k_vals=(1, 5, 10)
-    )
 
     
     return {

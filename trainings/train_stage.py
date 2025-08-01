@@ -158,5 +158,6 @@ if __name__=="__main__":
         device=device,
         checkpoint_dir=config["output_dir"],
         early_stopping_patience=config["training"]["early_stopping_patience"],
-        ckpt_interval=config["training"]["ckpt_interval"]
+        ckpt_interval=config["training"]["ckpt_interval"],
+        ndcg_eval_interval=5,
     )
