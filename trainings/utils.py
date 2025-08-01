@@ -58,7 +58,7 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = os.path.join(checkpoint_dir, f"run_{run_id}")
     os.makedirs(run_dir, exist_ok=True)
-    grad_clipper = AdaptiveGradientClipper(initial_max_norm=2.0)
+    # grad_clipper = AdaptiveGradientClipper(initial_max_norm=2.0)
     scaler = GradScaler()
     history = {
         'train_loss': [],
@@ -119,7 +119,7 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
 
-            current_norm = grad_clipper.clip(model)
+            # current_norm = grad_clipper.clip(model)
             scaler.step(optimizer)
             scaler.update()
             
@@ -148,8 +148,8 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
             else:
                 train_pbar.set_postfix({
                     'Loss': f'{loss.item():.4f}',
-                    'Grad': f'{current_norm:.2f}',
-                    'Clip': f'{grad_clipper.max_norm:.2f}'
+                    # 'Grad': f'{current_norm:.2f}',
+                    # 'Clip': f'{grad_clipper.max_norm:.2f}'
                 })
 
             
