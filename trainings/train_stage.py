@@ -23,6 +23,7 @@ if is_torch_available() and torch.multiprocessing.get_start_method() == "fork":
 def setup_args():
     parser = argparse.ArgumentParser(description="Train a model")
     parser.add_argument("--load_ckpts", type=int, default=0, help="Model type")
+    parser.add_argument("--model_type", type=str, default="base", help="Model type")
     parser.add_argument("--only_multiple_el", type=int, default=0, help="Model type")
     args = parser.parse_args()
     return args 
@@ -35,7 +36,7 @@ if __name__=="__main__":
     print(f"only_multiple_el: {bool(args.only_multiple_el)}")
     print(f"Device: {device}")
 
-    config = load_config("configs/base.yml")
+    config = load_config(f"configs/{args.model_type}.yml")
     
     
     with open(config["data"]["train_path"], "r",encoding="utf-8") as f:
