@@ -256,13 +256,13 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
         print(f"    Loss: {train_loss:.4f}")
         for k in metric_k_vals:
             line = (
-                f"    Recall@{k}:     {valid_metrics[f'recall@{k}']:.4f} | "
-                f"Precision@{k}:  {valid_metrics[f'precision@{k}']:.4f} | "
-                f"F1@{k}:         {valid_metrics[f'f1@{k}']:.4f} | "
+                f"    Recall@{k}:     {train_metrics[f'recall@{k}']:.4f} | "
+                f"Precision@{k}:  {train_metrics[f'precision@{k}']:.4f} | "
+                f"F1@{k}:         {train_metrics[f'f1@{k}']:.4f} | "
             )
             
             if compute_ndcg:
-                line += f"NDCG@{k}:      {valid_metrics[f'ndcg@{k}']:.4f} | "
+                line += f"NDCG@{k}:      {train_metrics[f'ndcg@{k}']:.4f} | "
             
             print(line)
 
