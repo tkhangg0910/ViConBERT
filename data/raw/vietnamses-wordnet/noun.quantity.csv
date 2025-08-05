@@ -37,7 +37,7 @@
 18086,số vô tỉ,số vô tỷ
 18087,bi,bi thuốc
 18088,đơn vị âm thanh,đơn vị đo âm thanh
-18089,M,NM,dặm,dặm biển,dặm không gian,dặm đường biển,hải lí,hải lí quốc tế,hải lý,hải lý quốc tế,mi,n.mile,naut_mi,nautical_mile
+18089,M,NM,dặm,dặm biển,dặm không gian,dặm đường biển,hải lí,hải lí quốc tế,hải lý,hải lý quốc tế,mi,n.mile,naut mi,nautical mile
 18090,byte,bai
 18091,đơn vị dung tích mét,đơn vị dung tích hệ mét
 18092,đơn vị trọng lượng hệ mét,đơn vị đo trọng lượng hệ mét
@@ -184,7 +184,7 @@
 18233,đơn vị thể tích,đơn vị dung tích,đơn vị đo sức chứa,đơn vị đo thể tích,đơn vị đo dung tích,đơn vị khối
 18234,lượng lớn không xác định
 18235,lượng tối thiểu,mức tối thiểu,lượng thấp nhất,mức thấp nhất,số lượng tối thiểu,số lượng thấp nhất
-18236,apothecaries_unit,apothecaries_weight,đơn vị đong thuốc
+18236,apothecaries unit,apothecaries weight,đơn vị đong thuốc
 18237,candle,candela,cd,candle tiêu chuẩn
 18238,gậy,gạy,cú đánh,cú gạy,stroke
 18239,bảng Ai Cập,pound Ai Cập,đồng bảng Ai Cập,đồng pound Ai Cập

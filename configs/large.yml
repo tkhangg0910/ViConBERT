@@ -1,0 +1,39 @@
+project:
+  name: "vietnamese_wordnet_embedding"
+  language: "vi"
+  seed: 42
+
+base_model: "vinai/phobert-large"
+base_model_cache_dir: "embeddings/vinai/phobert-large"
+output_dir: "./checkpoints/phobert_large"
+
+data:
+  train_path: "data/processed/stage1_pseudo_sents/train_data_v4.json"
+  valid_path: "data/processed/stage1_pseudo_sents/valid_data_v4.json"
+  emd_path: "data/processed/gloss_embeddings.pt"
+  num_workers: 16
+
+model:  
+  temperature: 0.3
+  hidden_dim: 512
+  dropout: 0.3
+  out_dim: 768
+  num_layers: 2
+  num_head: 8
+  context_window_size: 3
+  encoder_type: attentive
+
+training:
+  ckpt_interval: 10
+  shuffle: False
+  batch_size: 512
+  epochs: 100
+  early_stopping_patience: 5
+  save_steps: 1000
+  optimizer:
+    name: "adamw"
+    lr_base: 3e-5
+    lr_custom: 2e-4 
+    weight_decay: 0.01
+    eps: 1e-6
+    betas: [0.9, 0.999]

@@ -10,7 +10,9 @@ class SpanExtractor:
         self.tokenizer = tokenizer
         self.logger = logging.getLogger(__name__)
       
-    def get_span_indices(self, text: str, target_phrase: str) -> Optional[Tuple[int, int]]:
+    def get_span_indices(self, text: str,
+                         target_phrase: str,
+                         debug: bool=False) -> Optional[Tuple[int, int]]:
         """
         Finds start and end token indices for target phrase
         Handles Vietnamese subword tokenization with case-insensitive matching
@@ -35,16 +37,17 @@ class SpanExtractor:
             text,
             return_offsets_mapping=True,
             truncation=True,
-            max_length=258 ,
+            max_length=256 ,
             add_special_tokens=True
         )
 
         # Debug: print tokenization details
-        # tokens = self.tokenizer.convert_ids_to_tokens(encoding['input_ids'])
-        # print(f"Debug - Text: {text}")
-        # print(f"Debug - Target: {target_phrase}")
-        # print(f"Debug - Tokens: {tokens}")
-        # print(f"Debug - Offsets: {encoding['offset_mapping']}")
+        tokens = self.tokenizer.convert_ids_to_tokens(encoding['input_ids'])
+        if debug:
+            print(f"Debug - Text: {text}")
+            print(f"Debug - Target: {target_phrase}")
+            print(f"Debug - Tokens: {tokens}")
+            print(f"Debug - Offsets: {encoding['offset_mapping']}")
 
         # Use case-insensitive search for character positions
         normalized_text = text.lower()
@@ -80,7 +83,8 @@ class SpanExtractor:
         max_token_idx = len(offsets) - 1
 
         for start_char, end_char in matches:
-            # print(f"Debug - Trying match at chars {start_char}-{end_char}: '{text[start_char:end_char]}'")
+            if debug:
+                print(f"Debug - Trying match at chars {start_char}-{end_char}: '{text[start_char:end_char]}'")
 
             start_idx, end_idx = None, None
 
@@ -103,8 +107,9 @@ class SpanExtractor:
             max_length = self.tokenizer.model_max_length - 2  
             
             if start_idx is not None and end_idx is not None:
-                # print(f"Debug - Found token range: {start_idx}-{end_idx}")
-                # print(f"Debug - Corresponding tokens: {tokens[start_idx:end_idx+1]}")
+                if debug:
+                    print(f"Debug - Found token range: {start_idx}-{end_idx}")
+                    print(f"Debug - Corresponding tokens: {tokens[start_idx:end_idx+1]}")
                 start_idx = min(start_idx, max_length)
                 end_idx = min(end_idx, max_length)
                 end_idx = max(start_idx, end_idx)
@@ -120,7 +125,6 @@ class SpanExtractor:
         encoding = self.tokenizer(text, return_offsets_mapping=True, add_special_tokens=True)
         start_idx, end_idx = span_indices
 
-        # Kiểm tra chỉ số hợp lệ
         if start_idx >= len(encoding["offset_mapping"]) or end_idx >= len(encoding["offset_mapping"]):
             return None
 
@@ -132,10 +136,67 @@ class SpanExtractor:
         start_char = encoding["offset_mapping"][start_idx][0]
         end_char = encoding["offset_mapping"][end_idx][1]
 
-        # Trích xuất văn bản trực tiếp từ vị trí ký tự
         span_text = text[start_char:end_char]
 
         # Trích xuất văn bản trực tiếp từ vị trí ký tự
         span_text = text[start_char:end_char]
 
         return span_text
+    
+class SentenceMasking:
+    def __init__(self,tokenizer: PreTrainedTokenizerFast):
+        self.tokenizer=tokenizer 
+        
+    def create_masked_version(self,
+        text: str, 
+        target_phrase: str, 
+        
+    ) -> Tuple[Optional[str], Optional[Tuple[int, int]]]:
+        mask_token = self.tokenizer.mask_token
+
+        text = ' '.join(text.split())
+        target_phrase = ' '.join(target_phrase.split())
+        
+        if not target_phrase or not text:
+            return None, None
+        
+        extractor = SpanExtractor(self.tokenizer)
+        
+        span_indices = extractor.get_span_indices(text, target_phrase)
+        
+        if span_indices is None:
+            return None, None
+        
+        encoding = self.tokenizer(text, 
+                                  add_special_tokens=True, 
+                                  return_offsets_mapping=True,
+                                  truncation=True)
+        input_ids = encoding["input_ids"]
+        
+        if not input_ids:
+            return None, None
+        
+        tokens = self.tokenizer.convert_ids_to_tokens(input_ids)
+        
+        if not tokens or any(tok is None for tok in tokens):
+            return None, None
+        
+        masked_tokens = tokens.copy()
+        start_idx, end_idx = span_indices
+        
+        n_tokens = len(tokens)
+        start_idx = max(0, min(start_idx, n_tokens - 1))
+        end_idx = max(start_idx, min(end_idx, n_tokens - 1))
+
+        masked_tokens[start_idx:end_idx+1] = [mask_token+"</w>"]
+        
+        filtered_tokens = [tok for tok in masked_tokens if tok is not None]
+        
+        try:
+            masked_text = self.tokenizer.convert_tokens_to_string(filtered_tokens)
+        except Exception as e:
+            print(f"Error converting tokens to string: {e}")
+            print(f"Tokens: {filtered_tokens}")
+            return None, None
+        masked_text = re.sub(r'\s*<[/]?s>\s*', ' ', masked_text).strip()
+        return masked_text, (start_idx, end_idx)
