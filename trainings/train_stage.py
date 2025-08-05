@@ -22,9 +22,10 @@ if is_torch_available() and torch.multiprocessing.get_start_method() == "fork":
 
 def setup_args():
     parser = argparse.ArgumentParser(description="Train a model")
-    parser.add_argument("--load_ckpts", type=int, default=0, help="Model type")
+    parser.add_argument("--load_ckpts", action='store_true', help="Model type")
     parser.add_argument("--model_type", type=str, default="base", help="Model type")
-    parser.add_argument("--only_multiple_el", type=int, default=0, help="Model type")
+    parser.add_argument("--only_multiple_el", action='store_true', help="Model type")
+    parser.add_argument('--grad_clip', action='store_true', help='Gradient clipping')
     args = parser.parse_args()
     return args 
         
@@ -161,4 +162,5 @@ if __name__=="__main__":
         early_stopping_patience=config["training"]["early_stopping_patience"],
         ckpt_interval=config["training"]["ckpt_interval"],
         ndcg_eval_interval=5,
+        grad_clip=args.grad_clip
     )

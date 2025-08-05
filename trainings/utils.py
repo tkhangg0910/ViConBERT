@@ -37,7 +37,8 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
                 ckpt_interval=10,
                 metric_k_vals=(1, 5, 10),
                 metric_log_interval=500,
-                ndcg_eval_interval=1  
+                ndcg_eval_interval=1,
+                grad_clip = False 
                 ):
     """
     Train a WSD model with early stopping and checkpoint saving
@@ -59,7 +60,8 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = os.path.join(checkpoint_dir, f"run_{run_id}")
     os.makedirs(run_dir, exist_ok=True)
-    # grad_clipper = AdaptiveGradientClipper(initial_max_norm=2.0)
+    if grad_clip:
+        grad_clipper = AdaptiveGradientClipper(initial_max_norm=2.0)
     scaler = GradScaler()
     history = {
         'train_loss': [],
@@ -119,8 +121,8 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
                 
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
-
-            # current_norm = grad_clipper.clip(model)
+            if grad_clip:
+                current_norm = grad_clipper.clip(model)
             scaler.step(optimizer)
             scaler.update()
             
@@ -147,11 +149,14 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
                 history['step_metrics'].append(step_metrics)
                 
             else:
-                train_pbar.set_postfix({
+                postfix = {
                     'Loss': f'{loss.item():.4f}',
-                    # 'Grad': f'{current_norm:.2f}',
-                    # 'Clip': f'{grad_clipper.max_norm:.2f}'
-                })
+                }
+                if grad_clip:
+                    postfix["Grad"] = f'{current_norm:.2f}'
+                    postfix["Clip"] = f'{grad_clipper.max_norm:.2f}'
+
+                train_pbar.set_postfix()
 
             
             # if scheduler:
