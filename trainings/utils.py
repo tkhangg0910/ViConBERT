@@ -171,6 +171,12 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
         train_metrics.update({f'ndcg@{k}': train_metrics_accum[f'ndcg@{k}'] / num_batches
                             for k in metric_k_vals})
 
+        epsilon = 1e-10
+        for k in metric_k_vals:
+            precision = train_metrics[f'precision@{k}']
+            recall = train_metrics[f'recall@{k}']
+            f1 = 2 * precision * recall / (precision + recall + epsilon)
+            train_metrics[f'f1@{k}'] = f1
 
         train_loss = running_loss / num_batches
         train_metrics['loss'] = train_loss
