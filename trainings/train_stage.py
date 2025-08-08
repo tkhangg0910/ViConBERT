@@ -39,7 +39,9 @@ if __name__=="__main__":
     print(f"Device: {device}")
 
     config = load_config(f"configs/{args.model_type}.yml")
-    
+    print(f"base_model: {config['base_model']}")
+    print(f'Num head: {config["model"]["num_head"]}')
+    print(f'Num Layers: {config["model"]["num_layers"]}')
     
     with open(config["data"]["train_path"], "r",encoding="utf-8") as f:
         train_sample = json.load(f)
