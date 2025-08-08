@@ -2,7 +2,7 @@ import argparse
 import json
 import os
 import torch
-from transformers import PhobertTokenizerFast
+from transformers import PhobertTokenizerFast, XLMRobertaTokenizerFast
 from torch.utils.data import DataLoader
 from data.processed.stage1_pseudo_sents.pseudo_sent_datasets import PseudoSents_Dataset, PseudoSentsFlatDataset
 from utils.load_config import load_config
