@@ -19,7 +19,7 @@ model:
   dropout: 0.3
   out_dim: 768
   num_layers: 2
-  num_head: 8
+  num_head: 4
   context_window_size: 3
   encoder_type: attentive
 
