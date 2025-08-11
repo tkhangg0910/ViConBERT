@@ -252,8 +252,8 @@ class PseudoSentsFlatDataset(Dataset):
     def __init__(self, gloss_embeddings_path, samples, tokenizer, use_sent_masking=False):
         self.tokenizer = tokenizer
         self.use_sent_masking = use_sent_masking
-        # if self.tokenizer.pad_token is None:
-        #     self.tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.add_special_tokens({'pad_token': '[PAD]'})
         self.span_extractor = SpanExtractor(tokenizer)
 
         # Lưu samples thô
@@ -282,13 +282,13 @@ class PseudoSentsFlatDataset(Dataset):
                 s["sentence"], s["target_word"]
             )
             if idxs:
-                pred = self.span_extractor.get_span_text_from_indices(sample["sentence"],idxs)
-                print(sample["target_word"])
+                pred = self.span_extractor.get_span_text_from_indices(s["sentence"],idxs)
+                print(s["target_word"])
                 print(pred)
                 print(idxs)
-                if sample["target_word"].lower().strip()!= pred.lower().strip():
-                    print(f"sentence: {sample['sentence']}")
-                    print(f"target: {sample['target_word']}")
+                if s["target_word"].lower().strip()!= pred.lower().strip():
+                    print(f"sentence: {s['sentence']}")
+                    print(f"target: {s['target_word']}")
                     print(f"pred: {pred}")
             self.span_indices.append(idxs or (0,0))
 

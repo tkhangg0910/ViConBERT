@@ -59,8 +59,8 @@ if __name__=="__main__":
     elif config["base_model"].startswith("Fsoft-AIC"):
         print("using DebertaTokenizerFast")
         tokenizer = DebertaV2TokenizerFast.from_pretrained(config["base_model"])
-    # if tokenizer.pad_token is None:
-    #     tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+    if tokenizer.pad_token is None:
+        tokenizer.add_special_tokens({'pad_token': '[PAD]'})
     if args.dataset_mode == "sampling":
         train_set = PseudoSents_Dataset(config["data"]["emd_path"],
                                         # gloss_enc,
