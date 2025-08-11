@@ -290,6 +290,9 @@ class PseudoSentsFlatDataset(Dataset):
                 )
                 if idxs:
                     pred = self.span_extractor.get_span_text_from_indices(sample["sentence"],idxs)
+                    print(sample["target_word"])
+                    print(pred)
+                    print(idxs)
                     if sample["target_word"].lower().strip()!= pred.lower().strip():
                         print(f"sentence: {sample['sentence']}")
                         print(f"target: {sample['target_word']}")
