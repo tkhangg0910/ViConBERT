@@ -118,7 +118,7 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
                 )
 
                 loss = loss_fn(outputs,gloss_embd, synset_ids)
-                
+            
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
             if grad_clip:
@@ -130,10 +130,11 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
             running_loss += loss.item()
             
 
-            batch_metrics = compute_step_metrics(outputs, synset_ids, 
+            batch_metrics = compute_step_metrics(outputs.detach(), synset_ids, 
                                                k_vals=metric_k_vals, 
                                                device=device)
             
+            del outputs, loss, gloss_embd, context_input_ids, context_attention_mask, target_spans, synset_ids
 
             for k in metric_k_vals:
                 train_metrics_accum[f'recall@{k}']    += batch_metrics[f'recall@{k}']
@@ -363,8 +364,8 @@ def evaluate_model(model, data_loader, loss_fn, device, metric_k_vals=(1, 5, 10)
             
             running_loss += loss.item()
             
-            all_embeddings.append(outputs)
-            all_labels.append(synset_ids)
+            all_embeddings.append(outputs.detach().cpu())  # đưa ra CPU & detach
+            all_labels.append(synset_ids.cpu())
 
     
     all_embeddings = torch.cat(all_embeddings, dim=0)
