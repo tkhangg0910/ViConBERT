@@ -5,7 +5,7 @@ import argparse
 import torch
 from torch.utils.data import DataLoader
 from transformers.utils import is_torch_available
-from transformers import PreTrainedTokenizerFast, PhobertTokenizerFast, XLMRobertaTokenizerFast, DebertaTokenizerFast
+from transformers import PreTrainedTokenizerFast, PhobertTokenizerFast, XLMRobertaTokenizerFast, DebertaV2TokenizerFast
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 # from sentence_transformers import SentenceTransformer
 import pandas as pd
@@ -58,7 +58,7 @@ if __name__=="__main__":
         tokenizer = XLMRobertaTokenizerFast.from_pretrained(config["base_model"])
     elif config["base_model"].startswith("Fsoft-AIC"):
         print("using DebertaTokenizerFast")
-        tokenizer = DebertaTokenizerFast.from_pretrained(config["base_model"])
+        tokenizer = DebertaV2TokenizerFast.from_pretrained(config["base_model"])
     if tokenizer.pad_token is None:
         tokenizer.add_special_tokens({'pad_token': '[PAD]'})
     if args.dataset_mode == "sampling":
