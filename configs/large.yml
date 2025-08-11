@@ -19,14 +19,14 @@ model:
   dropout: 0.3
   out_dim: 768
   num_layers: 2
-  num_head: 8
+  num_head: 4
   context_window_size: 3
   encoder_type: attentive
 
 training:
   ckpt_interval: 10
   shuffle: False
-  batch_size: 512
+  batch_size: 416
   epochs: 100
   early_stopping_patience: 5
   save_steps: 1000
