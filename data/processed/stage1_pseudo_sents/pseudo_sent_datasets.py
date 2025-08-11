@@ -278,7 +278,7 @@ class PseudoSentsFlatDataset(Dataset):
 
         # Precompute spans (hoặc masked sents)
         self.span_indices = []
-        for s in self.all_samples:
+        for s in tqdm(self.all_samples, desc="Computing spans",ascii=True):
             if use_sent_masking:
                 masked, _ = self.sent_masking.create_masked_version(
                     s["sentence"], s["target_word"]
