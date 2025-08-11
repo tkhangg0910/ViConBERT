@@ -118,7 +118,7 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
                 )
 
                 loss = loss_fn(outputs,gloss_embd, synset_ids)
-            
+                
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
             if grad_clip:
