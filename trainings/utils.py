@@ -156,7 +156,7 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
                     postfix["Grad"] = f'{current_norm:.2f}'
                     postfix["Clip"] = f'{grad_clipper.max_norm:.2f}'
 
-                train_pbar.set_postfix()
+                train_pbar.set_postfix(postfix)
             
             # del outputs, loss, gloss_embd, context_input_ids, context_attention_mask, target_spans, synset_ids
             

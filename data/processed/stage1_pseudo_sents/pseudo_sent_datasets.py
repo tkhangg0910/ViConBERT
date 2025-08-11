@@ -281,12 +281,12 @@ class PseudoSentsFlatDataset(Dataset):
             idxs = self.span_extractor.get_span_indices(
                 s["sentence"], s["target_word"]
             )
-            if idxs:
-                pred = self.span_extractor.get_span_text_from_indices(s["sentence"],idxs)
-                if s["target_word"].lower().strip()!= pred.lower().strip():
-                    print(f"sentence: {s['sentence']}")
-                    print(f"target: {s['target_word']}")
-                    print(f"pred: {pred}")
+            # if idxs:
+            #     pred = self.span_extractor.get_span_text_from_indices(s["sentence"],idxs)
+            #     if s["target_word"].lower().strip()!= pred.lower().strip():
+            #         print(f"sentence: {s['sentence']}")
+            #         print(f"target: {s['target_word']}")
+            #         print(f"pred: {pred}")
             self.span_indices.append(idxs or (0,0))
 
         # Load gloss embeddings: dict synset_id -> tensor
