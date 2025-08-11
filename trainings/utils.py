@@ -134,7 +134,6 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
                                                k_vals=metric_k_vals, 
                                                device=device)
             
-            del outputs, loss, gloss_embd, context_input_ids, context_attention_mask, target_spans, synset_ids
 
             for k in metric_k_vals:
                 train_metrics_accum[f'recall@{k}']    += batch_metrics[f'recall@{k}']
@@ -158,7 +157,8 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
                     postfix["Clip"] = f'{grad_clipper.max_norm:.2f}'
 
                 train_pbar.set_postfix()
-
+            
+            del outputs, loss, gloss_embd, context_input_ids, context_attention_mask, target_spans, synset_ids
             
             # if scheduler:
             #     scheduler.step() 
