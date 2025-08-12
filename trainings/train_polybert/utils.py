@@ -1,18 +1,43 @@
 import os
 import torch
 from tqdm import tqdm
+import numpy as np
 from torch.amp import GradScaler, autocast
 from datetime import datetime
 from utils.metrics import compute_step_metrics, compute_full_metrics_large_scale, compute_ndcg_from_faiss
 
-def train_model(phrase, num_epochs, train_data_loader, valid_data_loader, 
-                loss_fn, optimizer, model, device, 
+class AdaptiveGradientClipper:
+    def __init__(self, initial_max_norm=1.0):
+        self.max_norm = initial_max_norm
+        self.history = []
+        
+    def clip(self, model):
+        parameters = [p for p in model.parameters() if p.grad is not None]
+        total_norm = torch.norm(torch.stack(
+            [torch.norm(p.grad.detach(), 2) for p in parameters]), 2)
+        
+        self.history.append(total_norm.item())
+        
+        if len(self.history) % 100 == 0:
+            p95 = np.percentile(self.history[-100:], 95)
+            if p95 > self.max_norm * 1.5:
+                self.max_norm *= 1.2  
+            elif p95 < self.max_norm * 0.5:
+                self.max_norm *= 0.8 
+        
+        torch.nn.utils.clip_grad_norm_(parameters, self.max_norm)
+        return total_norm.item()
+
+
+def train_model(num_epochs, train_data_loader, valid_data_loader, 
+                 optimizer, model, device, 
                 checkpoint_dir,
                 scheduler=None,
                 early_stopping_patience=3,
                 ckpt_interval=10,
-                metric_k_vals=(1, 5, 10),
-                metric_log_interval=500
+                metric_log_interval=500,
+                grad_clip = False,
+                grad_accum_steps=1  
                 ):
     """
     Train a WSD model with early stopping and checkpoint saving
@@ -34,7 +59,8 @@ def train_model(phrase, num_epochs, train_data_loader, valid_data_loader,
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = os.path.join(checkpoint_dir, f"run_{run_id}")
     os.makedirs(run_dir, exist_ok=True)
-    
+    if grad_clip:
+        grad_clipper = AdaptiveGradientClipper(initial_max_norm=2.0)
     scaler = GradScaler()
     history = {
         'train_loss': [],
@@ -60,14 +86,14 @@ def train_model(phrase, num_epochs, train_data_loader, valid_data_loader,
         running_loss = 0.0
         train_metrics_accum = {f'recall@{k}': 0.0 for k in metric_k_vals}
         train_metrics_accum.update({f'precision@{k}': 0.0 for k in metric_k_vals})
-        if phrase == 2:
-            train_metrics_accum.update({f'ndcg@{k}': 0.0 for k in metric_k_vals})
+        train_metrics_accum.update({f'ndcg@{k}': 0.0 for k in metric_k_vals})
 
         # Training loop
         train_pbar = tqdm(train_data_loader, 
                          desc=f"Training Epoch {epoch+1}/{num_epochs}",
                          position=0, leave=True, ascii=True)
-        
+        optimizer.zero_grad() 
+        current_norm = float('nan')
         for batch_idx, batch in enumerate(train_pbar):
             global_step += 1
             
@@ -79,7 +105,7 @@ def train_model(phrase, num_epochs, train_data_loader, valid_data_loader,
                 target_spans = batch["target_spans"].to(device)
             synset_ids=batch["synset_ids"].to(device)
 
-            optimizer.zero_grad()
+            # optimizer.zero_grad()
 
             with autocast(device_type=device):
                 outputs = model(
@@ -92,10 +118,15 @@ def train_model(phrase, num_epochs, train_data_loader, valid_data_loader,
                 )
 
                 loss = loss_fn(outputs,gloss_embd, synset_ids)
-                
+                loss = loss / grad_accum_steps
             scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+            if (batch_idx + 1) % grad_accum_steps == 0:
+                scaler.unscale_(optimizer)
+                if grad_clip:
+                    current_norm = grad_clipper.clip(model)
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad()
             
             # Calculate training metrics
             running_loss += loss.item()
@@ -103,15 +134,13 @@ def train_model(phrase, num_epochs, train_data_loader, valid_data_loader,
 
             batch_metrics = compute_step_metrics(outputs, synset_ids, 
                                                k_vals=metric_k_vals, 
-                                               device=device,
-                                               ndcg=False)
+                                               device=device)
             
 
             for k in metric_k_vals:
                 train_metrics_accum[f'recall@{k}']    += batch_metrics[f'recall@{k}']
                 train_metrics_accum[f'precision@{k}'] += batch_metrics[f'precision@{k}']
-                if phrase == 2:
-                    train_metrics_accum[f'ndcg@{k}']    += batch_metrics[f'ndcg@{k}']
+                train_metrics_accum[f'ndcg@{k}']    += batch_metrics[f'ndcg@{k}']
 
 
             # Update progress bar
@@ -121,30 +150,39 @@ def train_model(phrase, num_epochs, train_data_loader, valid_data_loader,
                 step_metrics['loss'] = loss.item()
                 history['step_metrics'].append(step_metrics)
                 
-                # Hiển thị metrics trong progress bar
-                train_pbar.set_postfix({
-                    'Loss': f'{loss.item():.4f}',
-                    'R@5': f"{step_metrics['recall@5']:.4f}",
-                    'P@5': f"{step_metrics['precision@5']:.4f}"
-                })
             else:
-                train_pbar.set_postfix({'Loss': f'{loss.item():.4f}'})
+                postfix = {
+                    'Loss': f'{loss.item():.4f}',
+                }
+                if grad_clip:
+                    postfix["Grad"] = f'{current_norm:.2f}'
+                    postfix["Clip"] = f'{grad_clipper.max_norm:.2f}'
+
+                train_pbar.set_postfix(postfix)
             
+            # del outputs, loss, gloss_embd, context_input_ids, context_attention_mask, target_spans, synset_ids
+            del outputs, loss, gloss_embd, context_input_ids, context_attention_mask, synset_ids
+            if target_spans is not None:
+                del target_spans
+            # torch.cuda.empty_cache()  
             # if scheduler:
             #     scheduler.step() 
-            torch.cuda.empty_cache()
-            torch.cuda.ipc_collect()
-
+                
         train_metrics = {}
         num_batches = len(train_data_loader)
         train_metrics = {f'recall@{k}': train_metrics_accum[f'recall@{k}'] / num_batches
                  for k in metric_k_vals}
         train_metrics.update({f'precision@{k}': train_metrics_accum[f'precision@{k}'] / num_batches
                             for k in metric_k_vals})
-        if phrase == 2:
-            train_metrics.update({f'ndcg@{k}': train_metrics_accum[f'ndcg@{k}'] / num_batches
+        train_metrics.update({f'ndcg@{k}': train_metrics_accum[f'ndcg@{k}'] / num_batches
                             for k in metric_k_vals})
 
+        epsilon = 1e-10
+        for k in metric_k_vals:
+            precision = train_metrics[f'precision@{k}']
+            recall = train_metrics[f'recall@{k}']
+            f1 = 2 * precision * recall / (precision + recall + epsilon)
+            train_metrics[f'f1@{k}'] = f1
 
         train_loss = running_loss / num_batches
         train_metrics['loss'] = train_loss
@@ -153,8 +191,9 @@ def train_model(phrase, num_epochs, train_data_loader, valid_data_loader,
         # ======================
         # VALIDATION PHASE
         # ======================
+        compute_ndcg = (epoch % ndcg_eval_interval == 0) or (epoch == num_epochs - 1)
         print(f"\nValidating epoch {epoch+1}...")
-        valid_metrics = evaluate_model(phrase,model, valid_data_loader, loss_fn, device, metric_k_vals)
+        valid_metrics = evaluate_model(model, valid_data_loader, loss_fn, device, metric_k_vals, compute_ndcg=compute_ndcg)
         
         # ======================
         # SCHEDULER STEP (EPOCH-LEVEL)
@@ -233,35 +272,29 @@ def train_model(phrase, num_epochs, train_data_loader, valid_data_loader,
         print("\n  TRAIN METRICS (avg per batch):")
         print(f"    Loss: {train_loss:.4f}")
         for k in metric_k_vals:
-            if phrase == 2:
-                print(
-                    f"    Recall@{k}:     {train_metrics[f'recall@{k}']:.4f} | "
-                    f"Precision@{k}:  {train_metrics[f'precision@{k}']:.4f} | "
-                    f"ndcg@{k}:      {train_metrics[f'ndcg@{k}']:.4f} | "
-                )
-            else:
-                    print(
-                    f"    Recall@{k}:     {train_metrics[f'recall@{k}']:.4f} | "
-                    f"Precision@{k}:  {train_metrics[f'precision@{k}']:.4f} "
-                )
+            line = (
+                f"    Recall@{k}:     {train_metrics[f'recall@{k}']:.4f} | "
+                f"Precision@{k}:  {train_metrics[f'precision@{k}']:.4f} | "
+                f"F1@{k}:         {train_metrics[f'f1@{k}']:.4f} | "
+            )
+            
+            if compute_ndcg:
+                line += f"NDCG@{k}:      {train_metrics[f'ndcg@{k}']:.4f} | "
+            
+            print(line)
+
 
         # Validation metrics
         print("\n  VALIDATION METRICS:")
         print(f"    Loss: {valid_metrics['loss']:.4f}")
         for k in metric_k_vals:
-            if phrase == 2:
-                print(
-                    f"    Recall@{k}:     {valid_metrics[f'recall@{k}']:.4f} | "
-                    f"Precision@{k}:  {valid_metrics[f'precision@{k}']:.4f} | "
-                    f"F1@{k}:         {valid_metrics[f'f1@{k}']:.4f} | "
-                    f"ndcg@{k}:      {valid_metrics[f'ndcg@{k}']:.4f} | "
-                )
-            else:
-                print(
-                    f"    Recall@{k}:     {valid_metrics[f'recall@{k}']:.4f} | "
-                    f"Precision@{k}:  {valid_metrics[f'precision@{k}']:.4f} | "
-                    f"F1@{k}:         {valid_metrics[f'f1@{k}']:.4f} "
-                )
+            print(
+                f"    Recall@{k}:     {valid_metrics[f'recall@{k}']:.4f} | "
+                f"Precision@{k}:  {valid_metrics[f'precision@{k}']:.4f} | "
+                f"F1@{k}:         {valid_metrics[f'f1@{k}']:.4f} | "
+                f"ndcg@{k}:      {valid_metrics[f'ndcg@{k}']:.4f} | "
+            )
+
         
         print(f"\n  Early stopping: {patience_counter}/{early_stopping_patience}")
         
@@ -303,7 +336,7 @@ def train_model(phrase, num_epochs, train_data_loader, valid_data_loader,
     return history, model
 
 
-def evaluate_model(phrase,model, data_loader, loss_fn, device, metric_k_vals=(1, 5, 10)):
+def evaluate_model(model, data_loader, loss_fn, device, metric_k_vals=(1, 5, 10), compute_ndcg=True):
     """Enhanced evaluation with detailed metrics"""
     model.eval()
     running_loss = 0.0
@@ -362,21 +395,26 @@ def evaluate_model(phrase,model, data_loader, loss_fn, device, metric_k_vals=(1,
     else:
         chunk_size = 1000
 
-        # label → raw synset_id
+    # label → raw synset_id
     label_to_synset_map = data_loader.dataset.global_label_to_synset 
-    if phrase==2:
-        ndcg = compute_ndcg_from_faiss(
-            context_embd=all_embeddings,
-            true_synset_labels=all_labels,
-            faiss_index_path="data/processed/gloss_faiss.index",
-            synset_id_map_path="data/processed/synset_ids.pt",
-            label_to_synset_map=label_to_synset_map,
-            k_vals=(1, 5, 10)
-        )
+    if compute_ndcg:
+            # label → raw synset_id
+            label_to_synset_map = data_loader.dataset.global_label_to_synset 
+            ndcg = compute_ndcg_from_faiss(
+                context_embd=all_embeddings,
+                true_synset_labels=all_labels,
+                faiss_index_path="data/processed/gloss_faiss.index",
+                synset_id_map_path="data/processed/synset_ids.pt",
+                label_to_synset_map=label_to_synset_map,
+                k_vals=metric_k_vals
+            )
+    else:
+        ndcg = {f'ndcg@{k}': 0.0 for k in metric_k_vals}
 
-            
+
+    
     return {
         'loss': avg_loss,
         **hard,
-        **(ndcg if phrase == 2 else {})
+         **ndcg
     }
