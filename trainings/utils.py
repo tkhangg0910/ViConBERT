@@ -95,6 +95,7 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
                          desc=f"Training Epoch {epoch+1}/{num_epochs}",
                          position=0, leave=True, ascii=True)
         optimizer.zero_grad() 
+        current_norm = float('nan')
         for batch_idx, batch in enumerate(train_pbar):
             global_step += 1
             
