@@ -27,6 +27,7 @@ def setup_args():
     parser.add_argument("--only_multiple_el", action='store_true', help="Model type")
     parser.add_argument('--grad_clip', action='store_true', help='Gradient clipping')
     parser.add_argument('--dataset_mode',  type=str, default='flat', help='dataset_mode')
+    parser.add_argument('--grad_accum_steps',  type=int, default=1, help='dataset_mode')
     args = parser.parse_args()
     return args 
         
@@ -37,7 +38,7 @@ if __name__=="__main__":
     print(f"Load From Checkpoint: {bool(args.load_ckpts)}")
     print(f"only_multiple_el: {bool(args.only_multiple_el)}")
     print(f"Device: {device}")
-
+    print(f"grad_accum_steps: {bool(args.grad_accum_steps)}")
     config = load_config(f"configs/{args.model_type}.yml")
     print(f"base_model: {config['base_model']}")
     print(f'Num head: {config["model"]["num_head"]}')
@@ -170,5 +171,6 @@ if __name__=="__main__":
         early_stopping_patience=config["training"]["early_stopping_patience"],
         ckpt_interval=config["training"]["ckpt_interval"],
         ndcg_eval_interval=5,
-        grad_clip=args.grad_clip
+        grad_clip=args.grad_clip,
+        grad_accum_steps=args.grad_accum_steps
     )
