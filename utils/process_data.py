@@ -35,12 +35,12 @@ def split_contrastive_stage1_data(pseudo_sent_path, word_synsets_path, output_di
         final_valid.extend(valid_data[synset_id][:min_samples])
 
     # Lưu dưới dạng danh sách các cặp (word_id, sentence)
-    with open(os.path.join(output_dir, "train_data_v4.json"), 'w', encoding='utf-8') as f:
+    with open(os.path.join(output_dir, "train_data.json"), 'w', encoding='utf-8') as f:
         json.dump([{"word_id": w, "sentence": s,"target_word": target,"supersense":supersense, "synset_id": synset_id} 
                 for synset_id, group in train_data.items() 
                 for w,target,supersense, s in group], f,ensure_ascii=False,indent=2)
         
-    with open(os.path.join(output_dir, "valid_data_v4.json"), 'w', encoding='utf-8') as f:
+    with open(os.path.join(output_dir, "valid_data.json"), 'w', encoding='utf-8') as f:
         json.dump([{"word_id": w, "sentence": s,"target_word": target,"supersense":supersense, "synset_id": synset_id} 
                 for synset_id, group in valid_data.items() 
                 for w,target,supersense, s in group], f, ensure_ascii=False,indent=2)
@@ -62,9 +62,9 @@ def text_normalize(text, tokenizer='underthesea'):
 
 
 
-# if __name__ == "__main__":
-#     split_contrastive_stage1_data(
-#         "data/raw/stage_1_pseudo_sents/pseudo_sents_v4.json",
-#         "data/raw/stage_1_pseudo_sents/word_synsets_with_pos_with_gloss_v2.csv",
-#         "data/processed/stage1_pseudo_sents"
-#     )
+if __name__ == "__main__":
+    split_contrastive_stage1_data(
+        "data/raw/stage_1_pseudo_sents/poly_sents.json",
+        "data/raw/stage_1_pseudo_sents/poly_only.csv",
+        "data/processed/polybert_exp"
+    )
