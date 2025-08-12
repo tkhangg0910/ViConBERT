@@ -38,7 +38,7 @@ if __name__=="__main__":
     print(f"Load From Checkpoint: {bool(args.load_ckpts)}")
     print(f"only_multiple_el: {bool(args.only_multiple_el)}")
     print(f"Device: {device}")
-    print(f"grad_accum_steps: {bool(args.grad_accum_steps)}")
+    print(f"grad_accum_steps: {args.grad_accum_steps}")
     config = load_config(f"configs/{args.model_type}.yml")
     print(f"base_model: {config['base_model']}")
     print(f'Num head: {config["model"]["num_head"]}')
