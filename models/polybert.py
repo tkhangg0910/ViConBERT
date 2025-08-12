@@ -20,17 +20,39 @@ class PolyBERT(nn.Module):
         hidden_size = self.context_encoder.config.hidden_size
         self.attn = nn.MultiheadAttention(embed_dim=hidden_size, num_heads=num_heads, batch_first=True)
 
-    def forward_context(self, input_ids, attention_mask, target_idx):
+    def forward_context(self, input_ids, attention_mask, target_span):
+        """
+        input_ids: Tensor [B, L]
+        attention_mask: Tensor [B, L]
+        target_span: Tensor [B, 2] with (start_idx, end_idx) inclusive
+        returns: fused context embeddings [B, polym, H]
+        """
+        # encode context
         outputs = self.context_encoder(input_ids=input_ids, attention_mask=attention_mask)
-        EC = outputs.last_hidden_state  # [B, L, H]
+        hidden_states = outputs.last_hidden_state  # [B, L, H]
 
-        batch_size = EC.size(0)
-        r_wt = EC[torch.arange(batch_size), target_idx]  # [B, H]
+        # extract span positions
+        start_pos = target_span[:, 0]  # [B]
+        end_pos   = target_span[:, 1]  # [B]
 
-        Q = r_wt.unsqueeze(1).repeat(1, self.polym, 1)  # [B, polym, H]
-        K, V = EC, EC
+        # build mask for spans: [B, L]
+        seq_len = hidden_states.size(1)
+        positions = torch.arange(seq_len, device=hidden_states.device).unsqueeze(0)  # [1, L]
+        mask = (positions >= start_pos.unsqueeze(1)) & (positions <= end_pos.unsqueeze(1))  # [B, L]
 
+        # zero-out non-span states and average-pool over span
+        masked_states = hidden_states * mask.unsqueeze(-1)  # [B, L, H]
+        span_lengths = mask.sum(dim=1, keepdim=True).clamp(min=1).to(hidden_states.dtype)  # [B, 1]
+        pooled_embeddings = masked_states.sum(dim=1) / span_lengths  # [B, H]
+
+        # create queries by replicating pooled span embedding polym times
+        Q = pooled_embeddings.unsqueeze(1).repeat(1, self.polym, 1)  # [B, polym, H]
+        K = hidden_states  # [B, L, H]
+        V = hidden_states  # [B, L, H]
+
+        # perform multi-head attention (batch_first=True)
         fused, _ = self.attn(Q, K, V)  # [B, polym, H]
+
         return fused
 
     def forward_gloss(self, input_ids, attention_mask):

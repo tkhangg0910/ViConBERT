@@ -47,9 +47,7 @@ if __name__=="__main__":
         train_sample = json.load(f)
     with open(config["data"]["valid_path"], "r",encoding="utf-8") as f:
         valid_sample = json.load(f)
-            
-    # gloss_enc = SentenceTransformer('dangvantuan/vietnamese-embedding'
-                                    # ,cache_folder="embeddings/vietnamese_embedding")
+
     if config["base_model"].startswith("vinai"):
         print("using PhobertTokenizerFast")
         tokenizer = PhobertTokenizerFast.from_pretrained(config["base_model"])
@@ -122,6 +120,7 @@ if __name__=="__main__":
         model = PolyBERT.from_pretrained(config["base_model"]).to(device)
     else:
         model = PolyBERT(
+            bert_model_name=config["base_model"],
             tokenizer=tokenizer,
             ).to(device)
     
