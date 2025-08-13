@@ -41,8 +41,6 @@ def train_model(
     metric_log_interval=500,
     grad_clip=False,
     grad_accum_steps=1,
-    compute_step_metrics=None,   
-    metric_k_vals=None,
     loss_fn=None,               
     save_optimizer_state=True
 ):
@@ -86,7 +84,11 @@ def train_model(
     global_step = 0
 
     model.to(device)
-
+    train_metrics_accum={
+        "recall":0.0,
+        "precision":0.0,
+        "f1":0.0
+    }
     print(f"[train] run_dir: {run_dir}  | device: {device} | AMP: {use_amp}")
 
     for epoch in range(num_epochs):
@@ -148,15 +150,13 @@ def train_model(
 
             running_loss += loss.item() * float(grad_accum_steps)  # accumulate true loss
             # optional metrics
-            if synset_ids is not None:
-                # MF: [B, B] if batch contrastive
-                # For simplicity, use argmax along row to predict sense
-                pred_sense_ids = MF.argmax(dim=1)
-                precision, recall, f1 = compute_precision_recall_f1_for_wsd(pred_sense_ids, synset_ids)
-                if global_step % metric_log_interval == 0:
-                    print(f"[Step {global_step}] Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}")
-
-
+            batch_size = MF.size(0)
+            correct_labels_in_batch = torch.arange(batch_size, device=MF.device)
+            pred_sense_ids = MF.argmax(dim=1)
+            precision, recall, f1 = compute_precision_recall_f1_for_wsd(pred_sense_ids, correct_labels_in_batch)
+            train_metrics_accum["f1"]+=f1
+            train_metrics_accum["precision"]+=precision
+            train_metrics_accum["recall"]+=recall
 
             # logging
             if global_step % metric_log_interval == 0:
@@ -167,6 +167,12 @@ def train_model(
             else:
                 pbar.set_postfix({"loss": f"{loss.item()*grad_accum_steps:.4f}"})
 
+        num_batches = len(train_data_loader)
+        train_metrics = {}
+        train_metrics = {f'recall': train_metrics_accum[f'recall'] / num_batches}
+        train_metrics.update({f'precision': train_metrics_accum[f'precision'] / num_batches})
+        train_metrics.update({f'f1': train_metrics_accum[f'f1'] / num_batches})
+        
         avg_train_loss = running_loss / max(1, train_steps)
         history["train_loss"].append(avg_train_loss)
 
@@ -184,7 +190,7 @@ def train_model(
                     "input_ids": batch["gloss_input_ids"].to(device),
                     "attention_mask": batch["gloss_attn_mask"].to(device)
                 }
-                target_idx = batch["target_idx"].to(device)
+                target_idx = batch["target_spans"].to(device)
 
                 synset_ids = batch.get("synset_ids", None)
                 if synset_ids is not None:

@@ -59,7 +59,7 @@ if __name__=="__main__":
     
     batch_size = config['batch_size']
     train_dataset = PolyBERTtDataset(train_sample, tokenizer)
-    valid_dataset = PolyBERTtDataset(valid_sample, tokenizer)
+    valid_dataset = PolyBERTtDataset(valid_sample, tokenizer, val_mode=True)
     
     sampler = ContrastiveBatchSampler(train_dataset,batch_size=batch_size)
     

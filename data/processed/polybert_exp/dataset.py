@@ -10,12 +10,14 @@ from torch.utils.data import Sampler
 from collections import defaultdict
 
 class PolyBERTtDataset(Dataset):
-    def __init__(self, samples, tokenizer, ):
+    def __init__(self, samples, tokenizer, val_mode = False):
         self.tokenizer = tokenizer
         if self.tokenizer.pad_token is None:
             self.tokenizer.add_special_tokens({'pad_token': '[PAD]'})
         self.span_extractor = SpanExtractor(tokenizer)
-
+        self.val_mode =val_mode
+        if self.val_mode:
+            self.targetword2glosses = defaultdict(list)
         synset_set = set()
         self.all_samples = []
         for sample in samples:
@@ -31,7 +33,13 @@ class PolyBERTtDataset(Dataset):
                 "gloss":gloss,
                 "word_id":word_id
             })
+            
+            if self.val_mode:
+                if gloss not in self.targetword2glosses[target]:
+                    self.targetword2glosses[target].append(gloss)
+
             synset_set.add(sid)
+            
         sorted_sids = sorted(synset_set)
         self.global_synset_to_label = {sid: i for i, sid in enumerate(sorted_sids)}
 
@@ -53,16 +61,20 @@ class PolyBERTtDataset(Dataset):
 
     def __getitem__(self, idx):
         s = self.all_samples[idx]
-        sid = s["synset_id"]
-        # label = self.global_synset_to_label[sid]
-        return {
+        item = {
             "sentence": s["sentence"],
             "target_span": self.span_indices[idx],
-            "synset_id": sid,
-            "gloss": s["gloss"],
-            "word_id":s["word_id"],
-            "target_word":s["target_word"]
+            "synset_id": s["synset_id"],
+            "word_id": s.get("word_id"),
+            "target_word": s["target_word"]
         }
+        if self.val_mode:
+            # candidate glosses = all glosses observed for this target_word
+            item["candidate_glosses"] = list(self.targetword2glosses[s["target_word"]])
+        else:
+            item["gloss"] = s["gloss"]
+
+        return item
 
     def collate_fn(self, batch):
         sentences = [b["sentence"] for b in batch]
