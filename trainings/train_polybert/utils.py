@@ -236,7 +236,7 @@ def train_model(
         print(f"Train Recall: {train_metrics['recall']:.4f} | Train Precision: {train_metrics['precision']:.4f} | Train F1: {train_metrics['f1']:.4f} | ")
         print("=======================================VALID========================================")
         print(f"[Epoch {epoch+1}] Valid Loss: {avg_valid_loss:.4f} | time: {epoch_time:.1f}s")
-        print(f"Train Recall: {valid_recall:.4f} | Train Precision: {valid_precision:.4f} | Train F1: {valid_recall:.4f} | ")
+        print(f"Train Recall: {valid_recall:.4f} | Train Precision: {valid_precision:.4f} | Train F1: {valid_f1:.4f} | ")
 
         # checkpointing
         ckpt_path = os.path.join(run_dir, f"epoch_{epoch+1}.pt")
