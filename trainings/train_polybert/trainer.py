@@ -21,10 +21,9 @@ if is_torch_available() and torch.multiprocessing.get_start_method() == "fork":
 def setup_args():
     parser = argparse.ArgumentParser(description="Train a model")
     parser.add_argument("--load_ckpts", action='store_true', help="Model type")
-    parser.add_argument("--model_type", type=str, default="base", help="Model type")
-    parser.add_argument("--only_multiple_el", action='store_true', help="Model type")
+    # parser.add_argument("--model_type", type=str, default="base", help="Model type")
     parser.add_argument('--grad_clip', action='store_true', help='Gradient clipping')
-    parser.add_argument('--dataset_mode',  type=str, default='flat', help='dataset_mode')
+    # parser.add_argument('--dataset_mode',  type=str, default='flat', help='dataset_mode')
     parser.add_argument('--grad_accum_steps',  type=int, default=1, help='dataset_mode')
     args = parser.parse_args()
     return args 
@@ -34,7 +33,6 @@ if __name__=="__main__":
     torch.manual_seed(42) 
     args = setup_args()
     print(f"Load From Checkpoint: {bool(args.load_ckpts)}")
-    print(f"only_multiple_el: {bool(args.only_multiple_el)}")
     print(f"Device: {device}")
     print(f"grad_accum_steps: {args.grad_accum_steps}")
     config = load_config(f"configs/poly.yml")
@@ -83,6 +81,8 @@ if __name__=="__main__":
         model = PolyBERT.from_pretrained(config["base_model"]).to(device)
     else:
         model = PolyBERT(
+            polym = config["model"]["polym"],
+            num_heads = config["model"]["num_heads"],
             bert_model_name=config["base_model"],
             tokenizer=tokenizer,
             ).to(device)
@@ -95,11 +95,6 @@ if __name__=="__main__":
     
     optim = create_optimizer(model, config)
     
-    # scheduler = get_linear_schedule_with_warmup(
-    #     optim,
-    #     num_warmup_steps=warmup_steps,
-    #     num_training_steps=total_steps
-    # )
     scheduler = ReduceLROnPlateau(
         optimizer = optim,
         mode='min',         
