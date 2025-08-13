@@ -6,6 +6,24 @@ from tqdm import tqdm
 import torch.nn.functional as F
 import faiss
 
+def compute_precision_recall_f1_for_wsd(pred_sense_ids, gt_sense_ids):
+    """
+    Args:
+        pred_sense_ids: tensor [B] - predicted sense indices
+        gt_sense_ids: tensor [B] - ground truth sense indices
+    Returns:
+        precision, recall, f1
+    """
+    correct = (pred_sense_ids == gt_sense_ids).sum().item()
+    total_pred = pred_sense_ids.size(0)  # B
+    total_gt = gt_sense_ids.size(0)      # B, same as total_pred
+
+    precision = correct / total_pred if total_pred > 0 else 0.0
+    recall = correct / total_gt if total_gt > 0 else 0.0
+    f1 = 2 * precision * recall / (precision + recall + 1e-8)  # tránh chia 0
+    return precision, recall, f1
+
+
 def normalize_embeddings(embeddings):
     """Normalize embeddings for efficient cosine similarity computation"""
     return torch.nn.functional.normalize(embeddings, p=2, dim=1)

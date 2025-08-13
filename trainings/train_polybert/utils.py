@@ -4,8 +4,7 @@ from tqdm import tqdm
 import numpy as np
 from torch.amp import GradScaler, autocast
 from datetime import datetime
-from utils.metrics import compute_step_metrics, compute_full_metrics_large_scale, compute_ndcg_from_faiss
-
+from utils.metrics import compute_precision_recall_f1_for_wsd
 class AdaptiveGradientClipper:
     def __init__(self, initial_max_norm=1.0):
         self.max_norm = initial_max_norm
@@ -149,15 +148,15 @@ def train_model(
 
             running_loss += loss.item() * float(grad_accum_steps)  # accumulate true loss
             # optional metrics
-            if (compute_step_metrics is not None) and (synset_ids is not None):
-                try:
-                    metrics = compute_step_metrics(MF, synset_ids, k_vals=metric_k_vals, device=device)
-                except TypeError:
-                    # fallback if compute_step_metrics signature differs
-                    metrics = compute_step_metrics(MF, synset_ids, device=device)
-                metrics["step"] = global_step
-                metrics["loss"] = loss.item() * float(grad_accum_steps)
-                history["step_metrics"].append(metrics)
+            if synset_ids is not None:
+                # MF: [B, B] if batch contrastive
+                # For simplicity, use argmax along row to predict sense
+                pred_sense_ids = MF.argmax(dim=1)
+                precision, recall, f1 = compute_precision_recall_f1_for_wsd(pred_sense_ids, synset_ids)
+                if global_step % metric_log_interval == 0:
+                    print(f"[Step {global_step}] Precision: {precision:.4f}, Recall: {recall:.4f}, F1: {f1:.4f}")
+
+
 
             # logging
             if global_step % metric_log_interval == 0:
@@ -173,7 +172,7 @@ def train_model(
 
         # ============= VALIDATION =============
         model.eval()
-        valid_loss = 0.0
+        valid_precision_accum, valid_recall_accum, valid_f1_accum = 0.0, 0.0, 0.0
         valid_steps = 0
         with torch.no_grad():
             for batch in valid_data_loader:
@@ -200,6 +199,13 @@ def train_model(
 
                 valid_loss += vloss.item()
                 valid_steps += 1
+                if synset_ids is not None:
+                    pred_sense_ids = MF.argmax(dim=1)
+                    p, r, f = compute_precision_recall_f1_for_wsd(pred_sense_ids, synset_ids)
+                    valid_precision_accum += p
+                    valid_recall_accum += r
+                    valid_f1_accum += f
+
 
         avg_valid_loss = valid_loss / max(1, valid_steps)
         history["valid_loss"].append(avg_valid_loss)
