@@ -20,6 +20,7 @@ class PolyBERTtDataset(Dataset):
         self.all_samples = []
         for sample in samples:
             sent = text_normalize(sample["sentence"])
+            word_id = sample["word_id"]
             target = sample["target_word"]
             sid = sample["synset_id"]
             gloss=sample["gloss"]
@@ -27,7 +28,8 @@ class PolyBERTtDataset(Dataset):
                 "sentence": sent,
                 "target_word": target,
                 "synset_id": sid,
-                "gloss":gloss
+                "gloss":gloss,
+                "word_id":word_id
             })
             synset_set.add(sid)
         sorted_sids = sorted(synset_set)
@@ -52,18 +54,22 @@ class PolyBERTtDataset(Dataset):
     def __getitem__(self, idx):
         s = self.all_samples[idx]
         sid = s["synset_id"]
-        label = self.global_synset_to_label[sid]
+        # label = self.global_synset_to_label[sid]
         return {
             "sentence": s["sentence"],
             "target_span": self.span_indices[idx],
-            "synset_id": label,
-            "gloss": s["gloss"]
+            "synset_id": sid,
+            "gloss": s["gloss"],
+            "word_id":s["word_id"],
+            "target_word":s["target_word"]
         }
 
     def collate_fn(self, batch):
         sentences = [b["sentence"] for b in batch]
+        target_words = [b["target_word"] for b in batch]
         spans     = [b["target_span"] for b in batch]
         labels    = torch.tensor([b["synset_id"] for b in batch], dtype=torch.long)
+        word_id = torch.tensor([b["word_id"] for b in batch], dtype=torch.long)
         glosses = [b["gloss"] for b in batch]
 
         c_toks = self.tokenizer(
@@ -89,6 +95,8 @@ class PolyBERTtDataset(Dataset):
             "context_attn_mask": c_toks["attention_mask"],
             "target_spans": torch.tensor(spans, dtype=torch.long) if spans else None,
             "synset_ids": labels,
+            "word_id":word_id,
+            "target_words":target_words,
             "gloss_input_ids": g_tokes["input_ids"],
             "gloss_attn_mask": g_tokes["attention_mask"],
         }
@@ -96,46 +104,74 @@ class PolyBERTtDataset(Dataset):
 
 class ContrastiveBatchSampler(Sampler):
     """
-    Batch sampler for WSD contrastive learning:
-    - Prioritize same target_word
-    - No duplicate (word_id, synset_id) in batch
+    Batch sampler for contrastive learning with priorities:
+    1. Samples with same target word (lemma) but different word_id/synset_id are grouped together
+    2. No samples with identical (lemma, word_id, synset_id) in the same batch
     """
     def __init__(self, dataset, batch_size):
         self.dataset = dataset
         self.batch_size = batch_size
         
-        # Group indices by target_word
-        self.target2indices = defaultdict(list)
+        # Build data structures
+        self.lemma2keys = defaultdict(set)  # lemma -> set of (word_id, synset_id)
+        self.key2indices = defaultdict(list)  # (lemma, word_id, synset_id) -> list of indices
+        
         for idx, item in enumerate(dataset):
-            self.target2indices[item['target_word']].append(idx)
+            lemma = item['target_word']
+            word_id = item['word_id']
+            synset_id = item['synset_ids']
+            
+            key = (lemma, word_id, synset_id)
+            self.lemma2keys[lemma].add(key)
+            self.key2indices[key].append(idx)
+        
+        # Convert to persistent structures
+        self.lemmas = list(self.lemma2keys.keys())
+        self.lemma_keys = {lemma: list(keys) for lemma, keys in self.lemma2keys.items()}
     
     def __iter__(self):
-        all_targets = list(self.target2indices.keys())
-        random.shuffle(all_targets)
+        # Create mutable copies for this epoch
+        key2indices = {key: idxs[:] for key, idxs in self.key2indices.items()}
+        lemma_keys = {lemma: keys[:] for lemma, keys in self.lemma_keys.items()}
         
-        for target_word in all_targets:
-            indices = self.target2indices[target_word].copy()
-            random.shuffle(indices)
+        # Prepare shuffled list of lemmas
+        lemmas = self.lemmas[:]
+        random.shuffle(lemmas)
+        
+        # Process each lemma
+        for lemma in lemmas:
+            # Get available keys for this lemma
+            available_keys = [
+                key for key in lemma_keys[lemma] 
+                if key in key2indices and key2indices[key]
+            ]
+            random.shuffle(available_keys)
             
-            batch = []
-            used_pairs = set()
-            
-            for idx in indices:
-                item = self.dataset[idx]
-                pair = (item['word_id'], item['synset_id'])
-                if pair in used_pairs:
-                    continue
-                batch.append(idx)
-                used_pairs.add(pair)
+            while available_keys:
+                batch = []
+                selected_keys = []
                 
-                if len(batch) == self.batch_size:
+                # Try to fill batch with current lemma
+                for key in available_keys:
+                    if len(batch) >= self.batch_size:
+                        break
+                    
+                    # Add sample from this key
+                    idx = key2indices[key].pop(0)
+                    batch.append(idx)
+                    selected_keys.append(key)
+                    
+                    # Remove key if no more samples
+                    if not key2indices[key]:
+                        del key2indices[key]
+                
+                # Remove selected keys from processing list
+                available_keys = [k for k in available_keys if k not in selected_keys]
+                
+                # Yield batch if we have any samples
+                if batch:
                     yield batch
-                    batch = []
-                    used_pairs = set()
-            
-            # leftover
-            if batch:
-                yield batch
     
     def __len__(self):
-        return sum(len(indices) for indices in self.target2indices.values()) // self.batch_size
+        # Estimate based on total samples
+        return (len(self.dataset) + self.batch_size - 1) // self.batch_size
