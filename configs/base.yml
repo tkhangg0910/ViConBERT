@@ -26,14 +26,14 @@ model:
 training:
   ckpt_interval: 10
   shuffle: False
-  batch_size: 768
+  batch_size: 448
   epochs: 100
   early_stopping_patience: 5
   save_steps: 1000
   optimizer:
     name: "adamw"
-    lr_base: 4e-5
-    lr_custom: 3e-4 
+    lr_base: 3e-5
+    lr_custom: 2e-4 
     weight_decay: 0.01
     eps: 1e-6
     betas: [0.9, 0.999]

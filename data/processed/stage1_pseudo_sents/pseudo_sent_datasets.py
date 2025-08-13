@@ -255,7 +255,6 @@ class PseudoSentsFlatDataset(Dataset):
         if self.tokenizer.pad_token is None:
             self.tokenizer.add_special_tokens({'pad_token': '[PAD]'})
         self.span_extractor = SpanExtractor(tokenizer)
-        self.sent_masking = SentenceMasking(tokenizer) if use_sent_masking else None
 
         # Lưu samples thô
         self.all_samples = []
@@ -278,17 +277,17 @@ class PseudoSentsFlatDataset(Dataset):
 
         # Precompute spans (hoặc masked sents)
         self.span_indices = []
-        for s in self.all_samples:
-            if use_sent_masking:
-                masked, _ = self.sent_masking.create_masked_version(
-                    s["sentence"], s["target_word"]
-                )
-                self.span_indices.append(masked)
-            else:
-                idxs = self.span_extractor.get_span_indices(
-                    s["sentence"], s["target_word"]
-                )
-                self.span_indices.append(idxs or (0,0))
+        for s in tqdm(self.all_samples, desc="Computing spans",ascii=True):
+            idxs = self.span_extractor.get_span_indices(
+                s["sentence"], s["target_word"]
+            )
+            # if idxs:
+            #     pred = self.span_extractor.get_span_text_from_indices(s["sentence"],idxs)
+            #     if s["target_word"].lower().strip()!= pred.lower().strip():
+            #         print(f"sentence: {s['sentence']}")
+            #         print(f"target: {s['target_word']}")
+            #         print(f"pred: {pred}")
+            self.span_indices.append(idxs or (0,0))
 
         # Load gloss embeddings: dict synset_id -> tensor
         self.gloss_embeddings = torch.load(gloss_embeddings_path)

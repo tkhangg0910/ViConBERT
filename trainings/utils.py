@@ -38,7 +38,8 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
                 metric_k_vals=(1, 5, 10),
                 metric_log_interval=500,
                 ndcg_eval_interval=1,
-                grad_clip = False 
+                grad_clip = False,
+                grad_accum_steps=1  
                 ):
     """
     Train a WSD model with early stopping and checkpoint saving
@@ -93,7 +94,8 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
         train_pbar = tqdm(train_data_loader, 
                          desc=f"Training Epoch {epoch+1}/{num_epochs}",
                          position=0, leave=True, ascii=True)
-        
+        optimizer.zero_grad() 
+        current_norm = float('nan')
         for batch_idx, batch in enumerate(train_pbar):
             global_step += 1
             
@@ -105,7 +107,7 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
                 target_spans = batch["target_spans"].to(device)
             synset_ids=batch["synset_ids"].to(device)
 
-            optimizer.zero_grad()
+            # optimizer.zero_grad()
 
             with autocast(device_type=device):
                 outputs = model(
@@ -118,13 +120,15 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
                 )
 
                 loss = loss_fn(outputs,gloss_embd, synset_ids)
-                
+                loss = loss / grad_accum_steps
             scaler.scale(loss).backward()
-            scaler.unscale_(optimizer)
-            if grad_clip:
-                current_norm = grad_clipper.clip(model)
-            scaler.step(optimizer)
-            scaler.update()
+            if (batch_idx + 1) % grad_accum_steps == 0:
+                scaler.unscale_(optimizer)
+                if grad_clip:
+                    current_norm = grad_clipper.clip(model)
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad()
             
             # Calculate training metrics
             running_loss += loss.item()
@@ -156,9 +160,13 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
                     postfix["Grad"] = f'{current_norm:.2f}'
                     postfix["Clip"] = f'{grad_clipper.max_norm:.2f}'
 
-                train_pbar.set_postfix()
-
+                train_pbar.set_postfix(postfix)
             
+            # del outputs, loss, gloss_embd, context_input_ids, context_attention_mask, target_spans, synset_ids
+            del outputs, loss, gloss_embd, context_input_ids, context_attention_mask, synset_ids
+            if target_spans is not None:
+                del target_spans
+            # torch.cuda.empty_cache()  
             # if scheduler:
             #     scheduler.step() 
                 
