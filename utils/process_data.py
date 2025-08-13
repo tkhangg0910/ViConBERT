@@ -24,8 +24,9 @@ def split_contrastive_stage1_data(pseudo_sent_path, word_synsets_path, output_di
         train_sents, valid_sents = train_test_split(sentences, test_size=0.1, random_state=42)
         target_word = synset_row["word"].values[0]  
         supersense = synset_row["pos"].values[0]
-        train_data[synset_id].extend([(word_id,target_word,supersense, sent) for sent in train_sents])
-        valid_data[synset_id].extend([(word_id,target_word,supersense, sent) for sent in valid_sents])
+        gloss = synset_row["gloss"].values[0]
+        train_data[synset_id].extend([(word_id,target_word,supersense, sent,gloss) for sent in train_sents])
+        valid_data[synset_id].extend([(word_id,target_word,supersense, sent,gloss) for sent in valid_sents])
 
     final_train = []
     final_valid = []
@@ -36,14 +37,14 @@ def split_contrastive_stage1_data(pseudo_sent_path, word_synsets_path, output_di
 
     # Lưu dưới dạng danh sách các cặp (word_id, sentence)
     with open(os.path.join(output_dir, "train_data.json"), 'w', encoding='utf-8') as f:
-        json.dump([{"word_id": w, "sentence": s,"target_word": target,"supersense":supersense, "synset_id": synset_id} 
+        json.dump([{"word_id": w, "sentence": s,"target_word": target,"supersense":supersense, "synset_id": synset_id, "gloss":gloss} 
                 for synset_id, group in train_data.items() 
-                for w,target,supersense, s in group], f,ensure_ascii=False,indent=2)
+                for w,target,supersense, s,gloss in group], f,ensure_ascii=False,indent=2)
         
     with open(os.path.join(output_dir, "valid_data.json"), 'w', encoding='utf-8') as f:
-        json.dump([{"word_id": w, "sentence": s,"target_word": target,"supersense":supersense, "synset_id": synset_id} 
+        json.dump([{"word_id": w, "sentence": s,"target_word": target,"supersense":supersense, "synset_id": synset_id, "gloss":gloss} 
                 for synset_id, group in valid_data.items() 
-                for w,target,supersense, s in group], f, ensure_ascii=False,indent=2)
+                for w,target,supersense, s,gloss in group], f, ensure_ascii=False,indent=2)
         
 def text_normalize(text, tokenizer='underthesea'):
       """
