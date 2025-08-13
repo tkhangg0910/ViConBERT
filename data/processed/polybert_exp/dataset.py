@@ -66,7 +66,8 @@ class PolyBERTtDataset(Dataset):
             "target_span": self.span_indices[idx],
             "synset_id": s["synset_id"],
             "word_id": s.get("word_id"),
-            "target_word": s["target_word"]
+            "target_word": s["target_word"],
+            "gloss" : s["gloss"]
         }
         if self.val_mode:
             # candidate glosses = all glosses observed for this target_word
@@ -77,6 +78,53 @@ class PolyBERTtDataset(Dataset):
         return item
 
     def collate_fn(self, batch):
+        if self.val_mode:
+            contexts = []
+            glosses = []
+            labels = []
+            target_words = []
+            word_ids = []
+            spans = []
+
+            for b in batch:
+                cand_glosses = b["candidate_glosses"]
+                contexts.extend([b["sentence"]] * len(cand_glosses))
+                glosses.extend(cand_glosses)
+                spans.extend([b["target_span"]] * len(cand_glosses))
+                target_words.extend([b["target_word"]] * len(cand_glosses))
+                word_ids.extend([b["word_id"]] * len(cand_glosses))
+
+                labels.extend([
+                    1 if g == b["gloss"] else 0
+                    for g in cand_glosses
+                ])
+
+            c_toks = self.tokenizer(
+                contexts,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=256
+            )
+            g_toks = self.tokenizer(
+                glosses,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=256
+            )
+
+            return {
+                "context_input_ids": c_toks["input_ids"],
+                "context_attn_mask": c_toks["attention_mask"],
+                "target_spans": torch.tensor(spans, dtype=torch.long),
+                "synset_labels": torch.tensor(labels, dtype=torch.long),  
+                "word_id": torch.tensor(word_ids, dtype=torch.long),
+                "target_words": target_words,
+                "gloss_input_ids": g_toks["input_ids"],
+                "gloss_attn_mask": g_toks["attention_mask"],
+            }
+
         sentences = [b["sentence"] for b in batch]
         target_words = [b["target_word"] for b in batch]
         spans     = [b["target_span"] for b in batch]

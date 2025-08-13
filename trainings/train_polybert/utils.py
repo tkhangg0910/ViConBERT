@@ -37,7 +37,7 @@ def train_model(
     checkpoint_dir,
     scheduler=None,
     early_stopping_patience=3,
-    ckpt_interval=1,
+    ckpt_interval=10,
     metric_log_interval=500,
     grad_clip=False,
     grad_accum_steps=1,
@@ -169,9 +169,9 @@ def train_model(
 
         num_batches = len(train_data_loader)
         train_metrics = {}
-        train_metrics = {f'recall': train_metrics_accum[f'recall'] / num_batches}
-        train_metrics.update({f'precision': train_metrics_accum[f'precision'] / num_batches})
-        train_metrics.update({f'f1': train_metrics_accum[f'f1'] / num_batches})
+        train_metrics = {'recall': train_metrics_accum['recall'] / num_batches}
+        train_metrics.update({'precision': train_metrics_accum['precision'] / num_batches})
+        train_metrics.update({'f1': train_metrics_accum['f1'] / num_batches})
         
         avg_train_loss = running_loss / max(1, train_steps)
         history["train_loss"].append(avg_train_loss)
@@ -180,46 +180,63 @@ def train_model(
         model.eval()
         valid_precision_accum, valid_recall_accum, valid_f1_accum = 0.0, 0.0, 0.0
         valid_steps = 0
+        valid_loss = 0.0
         with torch.no_grad():
             for batch in valid_data_loader:
-                context_inputs = {
-                    "input_ids": batch["context_input_ids"].to(device),
-                    "attention_mask": batch["context_attn_mask"].to(device)
-                }
-                gloss_inputs = {
-                    "input_ids": batch["gloss_input_ids"].to(device),
-                    "attention_mask": batch["gloss_attn_mask"].to(device)
-                }
-                target_idx = batch["target_spans"].to(device)
+                batch_size = len(batch["context_input_ids"])  
+                for i in range(batch_size):
+                    context_inputs = {
+                        "input_ids": batch["context_input_ids"][i].unsqueeze(0).to(device),
+                        "attention_mask": batch["context_attn_mask"][i].unsqueeze(0).to(device)
+                    }
+                    target_idx = batch["target_spans"][i].unsqueeze(0).to(device)
+                    candidate_glosses = batch["candidate_glosses"][i]
+                    gloss_tok = model.tokenizer(
+                        candidate_glosses,
+                        return_tensors="pt",
+                        padding=True,
+                        truncation=True,
+                        max_length=256
+                    )
+                    gloss_inputs = {
+                        "input_ids": gloss_tok["input_ids"].to(device),
+                        "attention_mask": gloss_tok["attention_mask"].to(device)
+                    }
 
-                synset_ids = batch.get("synset_ids", None)
-                if synset_ids is not None:
-                    synset_ids = synset_ids.to(device)
 
-                with autocast(device_type=device):
-                    model_loss, MF = model(context_inputs, gloss_inputs, target_idx)
-                    if loss_fn is not None:
-                        vloss = loss_fn((model_loss, MF), batch, device)
-                    else:
-                        vloss = model_loss
+                    with autocast(device_type=device):
+                        _, MF = model(context_inputs, gloss_inputs, target_idx)  #
 
-                valid_loss += vloss.item()
-                valid_steps += 1
-                if synset_ids is not None:
-                    pred_sense_ids = MF.argmax(dim=1)
-                    p, r, f = compute_precision_recall_f1_for_wsd(pred_sense_ids, synset_ids)
+                    pred_idx = MF.squeeze(0).argmax().item()
+                    pred_gloss = candidate_glosses[pred_idx]
+
+                    gold_gloss = batch["gloss"][i]
+
+                    p, r, f = compute_precision_recall_f1_for_wsd(
+                        torch.tensor([pred_gloss]),
+                        torch.tensor([gold_gloss])
+                    )
                     valid_precision_accum += p
                     valid_recall_accum += r
                     valid_f1_accum += f
+                    valid_steps += 1
 
+        # Average metrics
+        valid_precision = valid_precision_accum / valid_steps
+        valid_recall = valid_recall_accum / valid_steps
+        valid_f1 = valid_f1_accum / valid_steps
 
         avg_valid_loss = valid_loss / max(1, valid_steps)
         history["valid_loss"].append(avg_valid_loss)
 
         epoch_time = (datetime.now() - epoch_start).total_seconds()
         history["epoch_times"].append(epoch_time)
-
-        print(f"[Epoch {epoch+1}] Train Loss: {avg_train_loss:.4f} | Valid Loss: {avg_valid_loss:.4f} | time: {epoch_time:.1f}s")
+        print("=======================================TRAIN=======================================")        
+        print(f"[Epoch {epoch+1}] Train Loss: {avg_train_loss:.4f} | time: {epoch_time:.1f}s")
+        print(f"Train Recall: {train_metrics['recall']:.4f} | Train Precision: {train_metrics['precision']:.4f} | Train F1: {train_metrics['f1']:.4f} | ")
+        print("=======================================VALID========================================")
+        print(f"[Epoch {epoch+1}] Valid Loss: {avg_valid_loss:.4f} | time: {epoch_time:.1f}s")
+        print(f"Train Recall: {valid_recall:.4f} | Train Precision: {valid_precision:.4f} | Train F1: {valid_recall:.4f} | ")
 
         # checkpointing
         ckpt_path = os.path.join(run_dir, f"epoch_{epoch+1}.pt")
