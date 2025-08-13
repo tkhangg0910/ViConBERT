@@ -1,44 +1,35 @@
 import random
 import re
-from torch.utils.data import Dataset, DataLoader
-from collections import defaultdict
-from transformers import PreTrainedTokenizerFast
+from torch.utils.data import Dataset
 import torch
 from tqdm import tqdm
 import numpy as np
-from utils.span_extractor import SpanExtractor,SentenceMasking
+from utils.span_extractor import SpanExtractor
 from utils.process_data import text_normalize
 import math
 from torch.utils.data import Sampler
 
 class PolyBERTtDataset(Dataset):
-    def __init__(self, gloss_embeddings_path, samples, tokenizer, use_sent_masking=False):
+    def __init__(self, samples, tokenizer, use_sent_masking=False):
         self.tokenizer = tokenizer
         self.use_sent_masking = use_sent_masking
         if self.tokenizer.pad_token is None:
             self.tokenizer.add_special_tokens({'pad_token': '[PAD]'})
         self.span_extractor = SpanExtractor(tokenizer)
 
-        # Lưu samples thô
         self.all_samples = []
-        synset_set = set()
         for sample in samples:
             sent = text_normalize(sample["sentence"])
             target = sample["target_word"]
             sid = sample["synset_id"]
+            gloss=sample["gloss"]
             self.all_samples.append({
                 "sentence": sent,
                 "target_word": target,
-                "synset_id": sid
+                "synset_id": sid,
+                "gloss":gloss
             })
-            synset_set.add(sid)
 
-        # Xây mapping synset_id <-> label (contiguous từ 0)
-        sorted_sids = sorted(synset_set)
-        self.global_synset_to_label = {sid: i for i, sid in enumerate(sorted_sids)}
-        self.global_label_to_synset = {i: sid for i, sid in enumerate(sorted_sids)}
-
-        # Precompute spans (hoặc masked sents)
         self.span_indices = []
         for s in tqdm(self.all_samples, desc="Computing spans",ascii=True):
             idxs = self.span_extractor.get_span_indices(
@@ -52,31 +43,26 @@ class PolyBERTtDataset(Dataset):
             #         print(f"pred: {pred}")
             self.span_indices.append(idxs or (0,0))
 
-        # Load gloss embeddings: dict synset_id -> tensor
-        self.gloss_embeddings = torch.load(gloss_embeddings_path)
-
     def __len__(self):
         return len(self.all_samples)
 
     def __getitem__(self, idx):
         s = self.all_samples[idx]
         sid = s["synset_id"]
-        label = self.global_synset_to_label[sid]
         return {
-            "sentence": self.span_indices[idx] if self.use_sent_masking else s["sentence"],
-            "target_span": None if self.use_sent_masking else self.span_indices[idx],
+            "sentence": s["sentence"],
+            "target_span": self.span_indices[idx],
             "synset_id": sid,
-            "synset_ids": label,         
-            "gloss_embd": self.gloss_embeddings[sid]
+            "gloss": s["gloss"]
         }
 
     def collate_fn(self, batch):
         sentences = [b["sentence"] for b in batch]
         spans     = [b["target_span"] for b in batch] if not self.use_sent_masking else None
         labels    = torch.tensor([b["synset_ids"] for b in batch], dtype=torch.long)
-        glosses   = torch.stack([b["gloss_embd"] for b in batch])
+        glosses   = torch.stack([b["gloss"] for b in batch])
 
-        toks = self.tokenizer(
+        c_toks = self.tokenizer(
             sentences,
             return_tensors="pt",
             padding=True,
@@ -85,12 +71,22 @@ class PolyBERTtDataset(Dataset):
             return_attention_mask=True,
             return_offsets_mapping=True
         )
+        g_tokes = self.tokenizer(
+            glosses,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=256,
+            return_attention_mask=True,
+            return_offsets_mapping=True
+        )
         return {
-            "context_input_ids": toks["input_ids"],
-            "context_attn_mask": toks["attention_mask"],
+            "context_input_ids": c_toks["input_ids"],
+            "context_attn_mask": c_toks["attention_mask"],
             "target_spans": torch.tensor(spans, dtype=torch.long) if spans else None,
             "synset_ids": labels,
-            "gloss_embd": glosses
+            "gloss_input_ids": g_tokes["input_ids"],
+            "gloss_attn_mask": g_tokes["attention_mask"],
         }
 
 
