@@ -1,6 +1,6 @@
 from torch.optim import AdamW
 
-def create_optimizer(model, config):
+def create__diff_optimizer(model, config):
     """
     Create optimizer with different learning rates for base model and custom layers
     
@@ -80,5 +80,34 @@ def create_optimizer(model, config):
     for i, group in enumerate(optimizer.param_groups):
         param_count = sum(p.numel() for p in group['params'])
         print(f"  Group {i}: {param_count:,} parameters, LR={float(group['lr']):.2e}, WD={float(group['weight_decay'])}")
+    
+    return optimizer
+
+def create_optimizer(model, config):
+    """
+    Create AdamW optimizer with a single learning rate for all parameters.
+    
+    Args:
+        model: The neural network model
+        config: Configuration dictionary
+        
+    Returns:
+        AdamW optimizer
+    """
+    lr = float(config["training"]["optimizer"]["lr"])
+    weight_decay_val = float(config["training"]["optimizer"]["weight_decay"])
+    
+    # Chỉ chọn những parameter requires_grad
+    params = [p for p in model.parameters() if p.requires_grad]
+    
+    optimizer = AdamW(
+        params,
+        lr=lr,
+        weight_decay=weight_decay_val,
+        eps=float(config["training"]["optimizer"].get("eps", 1e-8)),
+        betas=config["training"]["optimizer"].get("betas", (0.9, 0.999))
+    )
+    
+    print(f"Optimizer created: {sum(p.numel() for p in params):,} parameters, LR={lr:.2e}, WD={weight_decay_val}")
     
     return optimizer

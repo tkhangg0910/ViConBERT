@@ -42,9 +42,9 @@ def train_model(
     metric_log_interval=500,
     grad_clip=False,
     grad_accum_steps=1,
-    compute_step_metrics=None,   # optional callable(MF, synset_ids, k_vals, device) -> dict
+    compute_step_metrics=None,   
     metric_k_vals=None,
-    loss_fn=None,                # optional custom loss function: loss_fn(model_outputs, batch, device)
+    loss_fn=None,               
     save_optimizer_state=True
 ):
     """

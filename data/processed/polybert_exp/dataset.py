@@ -10,9 +10,8 @@ import math
 from torch.utils.data import Sampler
 
 class PolyBERTtDataset(Dataset):
-    def __init__(self, samples, tokenizer, use_sent_masking=False):
+    def __init__(self, samples, tokenizer, ):
         self.tokenizer = tokenizer
-        self.use_sent_masking = use_sent_masking
         if self.tokenizer.pad_token is None:
             self.tokenizer.add_special_tokens({'pad_token': '[PAD]'})
         self.span_extractor = SpanExtractor(tokenizer)
