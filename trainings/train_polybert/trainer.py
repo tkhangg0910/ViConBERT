@@ -61,7 +61,7 @@ if __name__=="__main__":
     train_dataset = PolyBERTtDataset(train_sample, tokenizer)
     valid_dataset = PolyBERTtDataset(valid_sample, tokenizer)
     
-    sampler = ContrastiveBatchSampler(len(train_dataset),batch_size=batch_size, shuffle=True)
+    sampler = ContrastiveBatchSampler(train_dataset,batch_size=batch_size)
     
     train_dataloader = DataLoader(
             train_dataset,
