@@ -13,7 +13,7 @@ import pandas as pd
 from data.processed.stage1_pseudo_sents.pseudo_sent_datasets import PseudoSents_Dataset, PseudoSentsFlatDataset, SynsetBatchSampler
 from models.base_model import ViSynoSenseEmbedding
 from utils.load_config import load_config
-from utils.optimizer import create_optimizer
+from utils.optimizer import create__diff_optimizer
 from utils.loss_fn import InfonceDistillLoss
 from trainings.utils import train_model
 
@@ -141,7 +141,7 @@ if __name__=="__main__":
     print(f"Total steps: {total_steps}")
     warmup_steps = int(0.1 * total_steps)
     
-    optim = create_optimizer(model, config)
+    optim = create__diff_optimizer(model, config)
     
     # scheduler = get_linear_schedule_with_warmup(
     #     optim,
