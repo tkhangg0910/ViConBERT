@@ -59,8 +59,8 @@ class PolyBERTtDataset(Dataset):
     def collate_fn(self, batch):
         sentences = [b["sentence"] for b in batch]
         spans     = [b["target_span"] for b in batch] if not self.use_sent_masking else None
-        labels    = torch.tensor([b["synset_ids"] for b in batch], dtype=torch.long)
-        glosses   = torch.stack([b["gloss"] for b in batch])
+        labels    = torch.tensor([b["synset_id"] for b in batch], dtype=torch.long)
+        glosses = [b["gloss"] for b in batch]
 
         c_toks = self.tokenizer(
             sentences,
@@ -90,45 +90,34 @@ class PolyBERTtDataset(Dataset):
         }
 
 
-
-class SynsetBatchSampler(Sampler):
-    def __init__(self, labels, batch_size, min_per_class=4, shuffle=True):
-        self.labels = labels
+class ContrastiveBatchSampler(Sampler):
+    """
+    BatchSampler for contrastive learning in PolyBERT.
+    Ensures each batch has aligned (context, gloss) pairs.
+    """
+    def __init__(self, dataset_size, batch_size, shuffle=True, drop_last=False):
+        self.dataset_size = dataset_size
         self.batch_size = batch_size
-        self.min_per_class = min_per_class
         self.shuffle = shuffle
-
-        from collections import defaultdict
-        self.lab2idx = defaultdict(list)
-        for idx, lab in enumerate(labels):
-            self.lab2idx[lab].append(idx)
-
-        self.label_groups = []
-        for lab, idxs in self.lab2idx.items():
-            if len(idxs) >= min_per_class:
-                self.label_groups.append((lab, idxs))
+        self.drop_last = drop_last
+        self.indices = list(range(dataset_size))
 
     def __iter__(self):
-        all_samples = []
-
         if self.shuffle:
-            random.shuffle(self.label_groups)
-
-        for lab, idxs in self.label_groups:
-            random.shuffle(idxs)
-            # Group into pairs (or more)
-            for i in range(0, len(idxs) - self.min_per_class + 1, self.min_per_class):
-                group = idxs[i:i+self.min_per_class]
-                if len(group) == self.min_per_class:
-                    all_samples.append(group)
-
-        # Flatten and batch
-        random.shuffle(all_samples)
-        flat = [i for g in all_samples for i in g]
-        batches = [flat[i:i+self.batch_size] for i in range(0, len(flat), self.batch_size)]
-
-        for b in batches:
-            yield b
+            random.shuffle(self.indices)
+        
+        # yield batches
+        batch = []
+        for idx in self.indices:
+            batch.append(idx)
+            if len(batch) == self.batch_size:
+                yield batch
+                batch = []
+        if batch and not self.drop_last:
+            yield batch
 
     def __len__(self):
-        return math.ceil(len(self.labels) / self.batch_size)
+        if self.drop_last:
+            return self.dataset_size // self.batch_size
+        else:
+            return (self.dataset_size + self.batch_size - 1) // self.batch_size
