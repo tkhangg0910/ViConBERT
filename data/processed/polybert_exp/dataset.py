@@ -150,101 +150,59 @@ from collections import defaultdict, deque
 from math import ceil
 
 class ContrastiveBatchSampler(Sampler):
-    """
-    BatchSampler that:
-      - Avoids (as much as possible) putting two samples with same gloss in same batch.
-      - Encourages that each sample has at least one batch-mate with the same target_word but different gloss.
-      - Yields batches of indices.
-    """
-    def __init__(self, dataset, batch_size, seed=42):
-        """
-        dataset: object with dataset.all_samples where each item has 'target_word' and 'gloss'.
-        batch_size: int, number of samples per batch.
-        seed: for reproducibility.
-        """
-        self.dataset = dataset
+    def __init__(self, data, batch_size, shuffle=True):
+        self.data = data
         self.batch_size = batch_size
-        self.seed = seed
-        self.num_samples = len(dataset)
+        self.shuffle = shuffle
         
-        # Build maps
-        self.gloss_to_indices = defaultdict(list)
-        self.target_to_glosses = defaultdict(set)
-        self.gloss_to_target = {}
+        # Group samples theo target_word và synset_id
+        self.word_to_synsets = defaultdict(lambda: defaultdict(list))
         
-        for idx, s in enumerate(dataset.all_samples):
-            g = s["gloss"]
-            t = s["target_word"]
-            self.gloss_to_indices[g].append(idx)
-            self.target_to_glosses[t].add(g)
-            self.gloss_to_target[g] = t
-
-    def __len__(self):
-        return math.ceil(self.num_samples / self.batch_size)
-
+        for idx, item in enumerate(data):
+            word = item["target_word"]
+            synset_id = item["synset_id"]
+            self.word_to_synsets[word][synset_id].append(idx)
+        
+        # Lưu danh sách các từ có >= 2 gloss khác nhau
+        self.valid_words = [
+            word for word, synsets in self.word_to_synsets.items()
+            if len(synsets) >= 2
+        ]
+    
     def __iter__(self):
-        rnd = random.Random(self.seed)
-        all_indices = list(range(self.num_samples))
-        rnd.shuffle(all_indices)
+        if self.shuffle:
+            random.shuffle(self.valid_words)
         
-        # Shuffle indices per gloss so we don't always pick same samples
-        gloss_queues = {g: list(idxs) for g, idxs in self.gloss_to_indices.items()}
-        for g in gloss_queues:
-            rnd.shuffle(gloss_queues[g])
-        
-        available_glosses = set(gloss_queues.keys())
         batches = []
         
-        while any(gloss_queues.values()):
+        for word in self.valid_words:
+            synset_to_indices = self.word_to_synsets[word]
+            synset_ids = list(synset_to_indices.keys())
+            
+            if self.shuffle:
+                random.shuffle(synset_ids)
+            
+            # Tạo batch từ các synset khác nhau của cùng 1 từ
             batch = []
-            used_glosses = set()
+            for synset_id in synset_ids:
+                idx_list = synset_to_indices[synset_id]
+                if self.shuffle:
+                    random.shuffle(idx_list)
+                # Chọn 1 sample cho mỗi gloss
+                batch.append(idx_list[0])
+                if len(batch) == self.batch_size:
+                    batches.append(batch)
+                    batch = []
             
-            # Step 1: pick a random target that still has >= 2 glosses available
-            candidate_targets = [t for t, glosses in self.target_to_glosses.items()
-                                 if len(glosses & available_glosses) >= 2]
-            if candidate_targets:
-                t = rnd.choice(candidate_targets)
-                glosses_avail = list(self.target_to_glosses[t] & available_glosses)
-                rnd.shuffle(glosses_avail)
-                for g in glosses_avail:
-                    if len(batch) >= self.batch_size:
-                        break
-                    if gloss_queues[g]:
-                        batch.append(gloss_queues[g].pop())
-                        used_glosses.add(g)
-            
-            # Step 2: fill remaining slots with other glosses (avoid duplicates)
-            remaining_slots = self.batch_size - len(batch)
-            if remaining_slots > 0:
-                other_glosses = list(available_glosses - used_glosses)
-                rnd.shuffle(other_glosses)
-                for g in other_glosses:
-                    if remaining_slots <= 0:
-                        break
-                    if gloss_queues[g]:
-                        batch.append(gloss_queues[g].pop())
-                        used_glosses.add(g)
-                        remaining_slots -= 1
-            
-            # Step 3: if still not full, allow repeating gloss (fallback)
-            if len(batch) < self.batch_size:
-                leftover_glosses = [g for g, q in gloss_queues.items() if q]
-                rnd.shuffle(leftover_glosses)
-                for g in leftover_glosses:
-                    if len(batch) >= self.batch_size:
-                        break
-                    if gloss_queues[g]:
-                        batch.append(gloss_queues[g].pop())
-            
-            # Update availability
-            for g in list(available_glosses):
-                if not gloss_queues[g]:
-                    available_glosses.remove(g)
-            
-            batches.append(batch)
+            if len(batch) > 1:  # chỉ chấp nhận batch >= 2
+                batches.append(batch)
         
-        # Shuffle batches order
-        rnd.shuffle(batches)
+        if self.shuffle:
+            random.shuffle(batches)
         
-        for b in batches:
-            yield b
+        for batch in batches:
+            yield batch
+    
+    def __len__(self):
+        # không cố định — phụ thuộc vào data và cấu trúc gloss
+        return len(self.valid_words)
