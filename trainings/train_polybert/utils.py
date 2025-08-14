@@ -84,16 +84,13 @@ def train_model(
     global_step = 0
 
     model.to(device)
-    train_metrics_accum={
-        "recall":0.0,
-        "precision":0.0,
-        "f1":0.0
-    }
+    
     print(f"[train] run_dir: {run_dir}  | device: {device} | AMP: {use_amp}")
 
     for epoch in range(num_epochs):
         epoch_start = datetime.now()
         model.train()
+        train_tp = train_fp = train_fn = 0
 
         running_loss = 0.0
         train_steps = 0
@@ -155,10 +152,16 @@ def train_model(
             batch_size = MF.size(0)
             correct_labels_in_batch = torch.arange(batch_size, device=MF.device)
             pred_sense_ids = MF.argmax(dim=1)
-            precision, recall, f1 = compute_precision_recall_f1_for_wsd(pred_sense_ids, correct_labels_in_batch)
-            train_metrics_accum["f1"]+=f1
-            train_metrics_accum["precision"]+=precision
-            train_metrics_accum["recall"]+=recall
+            tp_batch = (pred_sense_ids == correct_labels_in_batch).sum().item()
+            # FP: dự đoán sai
+            fp_batch = (pred_sense_ids != correct_labels_in_batch).sum().item()
+            # FN: trong WSD mỗi sample có đúng 1 label, nên FN = FP trong trường hợp single-label
+            fn_batch = fp_batch
+
+            train_tp += tp_batch
+            train_fp += fp_batch
+            train_fn += fn_batch
+
 
             # logging
             if global_step % metric_log_interval == 0:
@@ -168,81 +171,79 @@ def train_model(
                 pbar.set_postfix(postfix)
             else:
                 pbar.set_postfix({"loss": f"{loss.item()*grad_accum_steps:.4f}"})
-        num_batches = len(train_data_loader)
-        train_metrics = {}
-        train_metrics = {'recall': train_metrics_accum['recall'] / num_batches}
-        train_metrics.update({'precision': train_metrics_accum['precision'] / num_batches})
-        train_metrics.update({'f1': train_metrics_accum['f1'] / num_batches})
+        precision = train_tp / (train_tp + train_fp + 1e-8)
+        recall    = train_tp / (train_tp + train_fn + 1e-8)
+        f1        = 2 * precision * recall / (precision + recall + 1e-8)
+
+        train_metrics = {
+            "precision": precision,
+            "recall": recall,
+            "f1": f1
+        }
+
         
         avg_train_loss = running_loss / max(1, train_steps)
         history["train_loss"].append(avg_train_loss)
 
         # ============= VALIDATION =============
         model.eval()
-        valid_precision_accum = valid_recall_accum = valid_f1_accum = 0.0
-        valid_steps = 0
+        TP, FP, FN = 0, 0, 0
         valid_loss = 0.0
+        valid_steps = 0
 
         with torch.no_grad():
             eval_pbar = tqdm(valid_data_loader, desc="Evaluating", position=1, leave=True)
             for batch in eval_pbar:
-                # batch-level tensors
-                context_input_ids = batch["context_input_ids"].to(device)       # [B, Lc]
-                context_attn_mask = batch["context_attn_mask"].to(device)      # [B, Lc]
-                target_spans = batch["target_spans"].to(device)                # [B,2]
-                gold_glosses = batch["gold_glosses"]                           # list len B
-                cand_counts = batch["candidate_gloss_counts"]                  # list len B
+                # Context
+                context_input_ids = batch["context_input_ids"].to(device)
+                context_attn_mask = batch["context_attn_mask"].to(device)
+                target_spans = batch["target_spans"].to(device)
+                gold_glosses = batch["gold_glosses"]
+                cand_counts = batch["candidate_gloss_counts"]
 
-                # 1) encode all contexts at once -> rwt: [B, polym, H]
+                # Encode context
                 rwt = model.forward_context(context_input_ids, context_attn_mask, target_spans)
-                rwt_mean = rwt.mean(dim=1)   # [B, H]
+                rwt_mean = rwt.mean(dim=1)
 
-                # 2) encode all flattened candidate glosses at once (if exist)
+                # Encode gloss candidates
                 flat_inp = batch["candidate_gloss_flat_input_ids"]
                 flat_att = batch["candidate_gloss_flat_attn"]
                 if flat_inp is None:
-                    # no candidates (shouldn't happen) -> skip
                     continue
 
                 flat_inp = flat_inp.to(device)
                 flat_att = flat_att.to(device)
+                rFg_flat = model.forward_gloss(flat_inp, flat_att)
+                rFg_flat_mean = rFg_flat.mean(dim=1)
 
-                rFg_flat = model.forward_gloss(flat_inp, flat_att)    # [N_total, polym, H]
-                rFg_flat_mean = rFg_flat.mean(dim=1)                  # [N_total, H]
-
-                # 3) split rFg_flat_mean by counts and compute scores per example
+                # Compare predictions
                 start = 0
                 batch_size = rwt_mean.size(0)
                 for i in range(batch_size):
                     cnt = cand_counts[i]
                     end = start + cnt
-                    cand_embs = rFg_flat_mean[start:end]   # [cnt, H]
-                    # scores: [1, cnt]
+                    cand_embs = rFg_flat_mean[start:end]
                     scores = torch.matmul(rwt_mean[i:i+1], cand_embs.T).squeeze(0).cpu()
                     pred_idx = int(torch.argmax(scores).item())
 
-                    # compute metrics: compare predicted candidate (index) with gold gloss string
                     pred_gloss = batch["candidate_glosses_grouped"][i][pred_idx]
                     gold_gloss = gold_glosses[i]
-                    # Here compute_precision_recall_f1_for_wsd expects numeric labels or index;
-                    # adapt it: return 1.0 if prediction equals gold (precision=recall=f1=1) else 0.
+
                     if pred_gloss == gold_gloss:
-                        p = r = f = 1.0
+                        TP += 1
                     else:
-                        p = r = f = 0.0
+                        FP += 1
+                        FN += 1  # vì gloss đúng không được chọn
 
-                    valid_precision_accum += p
-                    valid_recall_accum += r
-                    valid_f1_accum += f
                     valid_steps += 1
-
                     start = end
 
+        # Precision, Recall, F1
+        valid_precision = TP / (TP + FP) if (TP + FP) > 0 else 0.0
+        valid_recall = TP / (TP + FN) if (TP + FN) > 0 else 0.0
+        valid_f1 = 2 * valid_precision * valid_recall / (valid_precision + valid_recall) if (valid_precision + valid_recall) > 0 else 0.0
 
-        # Average metrics
-        valid_precision = valid_precision_accum / max(1, valid_steps)
-        valid_recall = valid_recall_accum / max(1, valid_steps)
-        valid_f1 = valid_f1_accum / max(1, valid_steps)
+
 
         avg_valid_loss = valid_loss / max(1, valid_steps)
         history["valid_loss"].append(avg_valid_loss)
