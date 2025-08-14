@@ -77,7 +77,8 @@ def train_model(
         "train_loss": [],
         "valid_loss": [],
         "step_metrics": [],
-        "epoch_times": []
+        "epoch_times": [],
+        "valid_metrics":[]
     }
 
     best_valid_loss = float("inf")
