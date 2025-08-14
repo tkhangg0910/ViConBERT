@@ -22,7 +22,7 @@ class PolyBERTtDataset(Dataset):
         self.all_samples = []
         for sample in samples:
             sent = text_normalize(sample["sentence"])
-            word_id = int(sample["word_id"])
+            word_id = sample["word_id"]
             target = sample["target_word"]
             sid = sample["synset_id"]
             gloss=sample["gloss"]
@@ -31,17 +31,17 @@ class PolyBERTtDataset(Dataset):
                 "target_word": target,
                 "synset_id": sid,
                 "gloss":gloss,
-                "word_id":word_id
+                "word_id":int(word_id)
             })
             
             if self.val_mode:
                 if gloss not in self.targetword2glosses[target]:
                     self.targetword2glosses[target].append(gloss)
 
-            word_set.add(word_id)
+            word_set.add(int(word_id))
             
         sorted_wids = sorted(word_set)
-        self.global_word_to_label = {sid: i for i, sid in enumerate(sorted_wids)}
+        self.global_word_to_label = {wid: i for i, wid in enumerate(sorted_wids)}
 
         self.span_indices = []
         for s in tqdm(self.all_samples, desc="Computing spans",ascii=True):
@@ -63,7 +63,7 @@ class PolyBERTtDataset(Dataset):
         s = self.all_samples[idx]
         sid = s["synset_id"]
         wid = s["word_id"]
-        label = self.global_word_to_label[wid]
+        label = self.global_word_to_label[int(wid)]
         item = {
             "sentence": s["sentence"],
             "target_span": self.span_indices[idx],
