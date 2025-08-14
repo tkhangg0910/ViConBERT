@@ -166,9 +166,9 @@ def train_model(
             train_fp += batch_fp
             train_fn += batch_fn
 
-            # batch_precision = batch_tp / (batch_tp + batch_fp + 1e-8)
-            # batch_recall = batch_tp / (batch_tp + batch_fn + 1e-8)
-            # batch_f1 = 2 * batch_precision * batch_recall / (batch_precision + batch_recall + 1e-8)
+            batch_precision = batch_tp / (batch_tp + batch_fp + 1e-8)
+            batch_recall = batch_tp / (batch_tp + batch_fn + 1e-8)
+            batch_f1 = 2 * batch_precision * batch_recall / (batch_precision + batch_recall + 1e-8)
 
             # logging
             if global_step % metric_log_interval == 0:
@@ -178,9 +178,10 @@ def train_model(
                 pbar.set_postfix(postfix)
             else:
                 pbar.set_postfix({"loss": f"{loss.item()*grad_accum_steps:.4f}"})
-        precision = train_tp / (train_tp + train_fp + 1e-8)
-        recall = train_tp / (train_tp + train_fn + 1e-8)
-        f1 = 2 * precision * recall / (precision + recall + 1e-8)
+                
+        precision = batch_precision/len(train_data_loader)
+        recall = batch_recall/len(train_data_loader)
+        f1 = 2 * batch_f1/len(train_data_loader)
 
         train_metrics = {
             "precision": precision,
