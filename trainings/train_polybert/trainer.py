@@ -63,7 +63,7 @@ if __name__=="__main__":
     
     train_dataloader = DataLoader(
             train_dataset,
-            # batch_sampler=sampler,
+            batch_sampler=sampler,
             collate_fn=train_dataset.collate_fn,
             num_workers=config["data"]["num_workers"],
             pin_memory=True
