@@ -145,64 +145,87 @@ class PolyBERTtDataset(Dataset):
             "target_words":target_words,
             "gloss_input_ids": g_tokes["input_ids"],
             "gloss_attn_mask": g_tokes["attention_mask"],
-        }
-from collections import defaultdict, deque
-from math import ceil
+        }l
+
 
 class ContrastiveBatchSampler(Sampler):
-    def __init__(self, data, batch_size, shuffle=True):
-        self.data = data
+    def __init__(self, dataset, min_senses=2, samples_per_sense=2, batch_size=64, drop_last=False):
+        """
+        Args:
+            dataset (PolyBERTtDataset): Dataset đã được khởi tạo
+            min_senses (int): Số nghĩa tối thiểu mỗi từ phải có
+            samples_per_sense (int): Số mẫu lấy cho mỗi nghĩa
+            batch_size (int): Kích thước batch mong muốn
+            drop_last (bool): Có bỏ batch cuối nếu không đủ size
+        """
+        self.dataset = dataset
+        self.min_senses = min_senses
+        self.samples_per_sense = samples_per_sense
         self.batch_size = batch_size
-        self.shuffle = shuffle
+        self.drop_last = drop_last
         
-        # Group samples theo target_word và synset_id
-        self.word_to_synsets = defaultdict(lambda: defaultdict(list))
+        # Validate batch size
+        self.words_per_batch = batch_size // (min_senses * samples_per_sense)
+        assert self.words_per_batch > 0, "batch_size quá nhỏ so với min_senses * samples_per_sense"
         
-        for idx, item in enumerate(data):
-            word = item["target_word"]
-            synset_id = item["word_id"]
-            self.word_to_synsets[word][synset_id].append(idx)
+        # Tạo cấu trúc dữ liệu phân cấp
+        self.word_to_senses = defaultdict(lambda: defaultdict(list))
+        for idx, sample in enumerate(dataset.all_samples):
+            word = sample["target_word"]
+            sense_id = sample["word_id"]
+            self.word_to_senses[word][sense_id].append(idx)
         
-        # Lưu danh sách các từ có >= 2 gloss khác nhau
-        self.valid_words = [
-            word for word, synsets in self.word_to_synsets.items()
-            if len(synsets) >= 2
+        # Lọc từ có đủ nghĩa
+        self.eligible_words = [
+            word for word, senses in self.word_to_senses.items()
+            if len(senses) >= min_senses
         ]
-    
+        
+        # Tính số batch
+        self.num_batches = len(self.eligible_words) // self.words_per_batch
+        if not drop_last and len(self.eligible_words) % self.words_per_batch != 0:
+            self.num_batches += 1
+
     def __iter__(self):
-        if self.shuffle:
-            random.shuffle(self.valid_words)
+        # Xáo trộn từ đủ điều kiện
+        random.shuffle(self.eligible_words)
         
-        batches = []
-        
-        for word in self.valid_words:
-            synset_to_indices = self.word_to_synsets[word]
-            synset_ids = list(synset_to_indices.keys())
+        # Tạo batches
+        for batch_idx in range(self.num_batches):
+            start_idx = batch_idx * self.words_per_batch
+            end_idx = start_idx + self.words_per_batch
             
-            if self.shuffle:
-                random.shuffle(synset_ids)
+            # Xử lý batch cuối
+            if batch_idx == self.num_batches - 1 and end_idx > len(self.eligible_words):
+                if self.drop_last:
+                    continue
+                end_idx = len(self.eligible_words)
             
-            # Tạo batch từ các synset khác nhau của cùng 1 từ
-            batch = []
-            for synset_id in synset_ids:
-                idx_list = synset_to_indices[synset_id]
-                if self.shuffle:
-                    random.shuffle(idx_list)
-                # Chọn 1 sample cho mỗi gloss
-                batch.append(idx_list[0])
-                if len(batch) == self.batch_size:
-                    batches.append(batch)
-                    batch = []
+            batch_words = self.eligible_words[start_idx:end_idx]
+            batch_indices = []
             
-            if len(batch) > 1:  # chỉ chấp nhận batch >= 2
-                batches.append(batch)
-        
-        if self.shuffle:
-            random.shuffle(batches)
-        
-        for batch in batches:
-            yield batch
-    
+            for word in batch_words:
+                # Lấy tất cả nghĩa của từ
+                senses = list(self.word_to_senses[word].keys())
+                
+                # Ưu tiên chọn các nghĩa khác nhau
+                selected_senses = random.sample(
+                    senses, 
+                    k=min(self.min_senses, len(senses))
+                )
+                for sense_id in selected_senses:
+                    # Lấy mẫu cho nghĩa này
+                    sense_samples = self.word_to_senses[word][sense_id]
+                    
+                    # Xử lý khi không đủ mẫu
+                    if len(sense_samples) < self.samples_per_sense:
+                        selected = random.choices(sense_samples, k=self.samples_per_sense)
+                    else:
+                        selected = random.sample(sense_samples, k=self.samples_per_sense)
+                    
+                    batch_indices.extend(selected)
+            
+            yield batch_indices
+
     def __len__(self):
-        # không cố định — phụ thuộc vào data và cấu trúc gloss
-        return len(self.valid_words)
+        return self.num_batches 
