@@ -182,7 +182,7 @@ def train_model(
         valid_steps = 0
         valid_loss = 0.0
         with torch.no_grad():
-            for batch in valid_data_loader:
+            for batch in tqdm(valid_data_loader, desc=f"Epoch {epoch+1}/{num_epochs}", leave=True):
                 batch_size = len(batch["context_input_ids"])  
                 for i in range(batch_size):
                     context_inputs = {
