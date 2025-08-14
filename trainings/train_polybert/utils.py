@@ -235,8 +235,8 @@ def train_model(
                         TP += 1
                     else:
                         FP += 1
-                        FN += 1  # vì gloss đúng không được chọn
-                    loss = loss_fn_val(scores, torch.tensor([gold_idx], device=scores.device))
+                        FN += 1  
+                    loss = loss_fn_val(scores.unsqueeze(0),, torch.tensor([gold_idx], device=scores.device))
                     valid_loss += loss.item()
 
                     valid_steps += 1
