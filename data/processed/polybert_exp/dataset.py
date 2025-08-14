@@ -197,4 +197,4 @@ class ContrastiveBatchSampler(Sampler):
 
     def __len__(self):
         # approximate number of batches
-        return (len(self.dataset) + self.batch_size - 1) // self.batch_size
+        return len(self.dataset) // self.batch_size
