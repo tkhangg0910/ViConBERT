@@ -100,7 +100,7 @@ def train_model(
 
         pbar = tqdm(train_data_loader, 
                          desc=f"Training Epoch {epoch+1}/{num_epochs}",
-                         position=0, leave=False)
+                         position=0, leave=True)
         optimizer.zero_grad()
 
         for batch_idx, batch in enumerate(pbar):
@@ -168,6 +168,7 @@ def train_model(
                 pbar.set_postfix(postfix)
             else:
                 pbar.set_postfix({"loss": f"{loss.item()*grad_accum_steps:.4f}"})
+        pbar.close()
         print("Finish")
         num_batches = len(train_data_loader)
         train_metrics = {}
