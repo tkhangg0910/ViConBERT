@@ -145,7 +145,7 @@ class PolyBERTtDataset(Dataset):
             "target_words":target_words,
             "gloss_input_ids": g_tokes["input_ids"],
             "gloss_attn_mask": g_tokes["attention_mask"],
-        }l
+        }
 
 
 class ContrastiveBatchSampler(Sampler):
