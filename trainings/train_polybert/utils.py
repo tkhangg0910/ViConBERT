@@ -190,7 +190,8 @@ def train_model(
         avg_train_loss = running_loss / max(1, train_steps)
         history["train_loss"].append(avg_train_loss)
 
-        # ============= VALIDATION =============valid_loss = 0.0
+        # ============= VALIDATION =============
+        valid_loss = 0.0
         TP, FP, FN = 0, 0, 0
         valid_steps = 0
 
