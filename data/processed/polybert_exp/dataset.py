@@ -22,7 +22,7 @@ class PolyBERTtDataset(Dataset):
         self.all_samples = []
         for sample in samples:
             sent = text_normalize(sample["sentence"])
-            word_id = sample["word_id"]
+            word_id = int(sample["word_id"])
             target = sample["target_word"]
             sid = sample["synset_id"]
             gloss=sample["gloss"]
@@ -31,7 +31,7 @@ class PolyBERTtDataset(Dataset):
                 "target_word": target,
                 "synset_id": sid,
                 "gloss":gloss,
-                "word_id":int(word_id)
+                "word_id":word_id
             })
             
             if self.val_mode:
