@@ -236,7 +236,7 @@ def train_model(
                     else:
                         FP += 1
                         FN += 1  
-                    loss = loss_fn_val(scores.unsqueeze(0),, torch.tensor([gold_idx], device=scores.device))
+                    loss = loss_fn_val(scores.unsqueeze(0), torch.tensor([gold_idx], device=scores.device))
                     valid_loss += loss.item()
 
                     valid_steps += 1
