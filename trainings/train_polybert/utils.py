@@ -190,6 +190,7 @@ def train_model(
         TP, FP, FN = 0, 0, 0
         valid_loss = 0.0
         valid_steps = 0
+        loss_fn_val = torch.nn.CrossEntropyLoss()
 
         with torch.no_grad():
             eval_pbar = tqdm(valid_data_loader, desc="Evaluating", position=1, leave=True)
@@ -225,6 +226,7 @@ def train_model(
                     cand_embs = rFg_flat_mean[start:end]
                     scores = torch.matmul(rwt_mean[i:i+1], cand_embs.T).squeeze(0).cpu()
                     pred_idx = int(torch.argmax(scores).item())
+                    gold_idx = batch["candidate_glosses_grouped"][i].index(gold_glosses[i])
 
                     pred_gloss = batch["candidate_glosses_grouped"][i][pred_idx]
                     gold_gloss = gold_glosses[i]
@@ -234,6 +236,8 @@ def train_model(
                     else:
                         FP += 1
                         FN += 1  # vì gloss đúng không được chọn
+                    loss = loss_fn_val(scores, torch.tensor([gold_idx], device=scores.device))
+                    valid_loss += loss.item()
 
                     valid_steps += 1
                     start = end
