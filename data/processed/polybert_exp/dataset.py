@@ -79,50 +79,61 @@ class PolyBERTtDataset(Dataset):
 
     def collate_fn(self, batch):
         if self.val_mode:
-            contexts = []
-            glosses = []
-            labels = []
-            target_words = []
-            word_ids = []
-            spans = []
+            # batch: list of items (each item has candidate_glosses list)
+            sentences = [b["sentence"] for b in batch]          # B
+            spans     = [b["target_span"] for b in batch]       # B x (2)
+            synset_ids = torch.tensor([b["synset_ids"] for b in batch], dtype=torch.long)
+            word_id = torch.tensor([(-1 if b.get("word_id") is None else b["word_id"]) for b in batch], dtype=torch.long)
+            target_words = [b["target_word"] for b in batch]
+            gold_glosses = [b["gloss"] for b in batch]
 
-            for b in batch:
-                cand_glosses = b["candidate_glosses"]
-                contexts.extend([b["sentence"]] * len(cand_glosses))
-                glosses.extend(cand_glosses)
-                spans.extend([b["target_span"]] * len(cand_glosses))
-                target_words.extend([b["target_word"]] * len(cand_glosses))
-                word_ids.extend([b["word_id"]] * len(cand_glosses))
-
-                labels.extend([
-                    1 if g == b["gloss"] else 0
-                    for g in cand_glosses
-                ])
-
+            # tokenise contexts (B)
             c_toks = self.tokenizer(
-                contexts,
+                sentences,
                 return_tensors="pt",
                 padding=True,
                 truncation=True,
-                max_length=256
+                max_length=256,
+                return_attention_mask=True
             )
-            g_toks = self.tokenizer(
-                glosses,
-                return_tensors="pt",
-                padding=True,
-                truncation=True,
-                max_length=256
-            )
+
+            # Prepare flattened candidate glosses and counts
+            candidate_glosses_grouped = [b.get("candidate_glosses", [b["gloss"]]) for b in batch]
+            flat_glosses = []
+            counts = []
+            for g_list in candidate_glosses_grouped:
+                counts.append(len(g_list))
+                flat_glosses.extend(g_list)
+
+            if len(flat_glosses) > 0:
+                flat_toks = self.tokenizer(
+                    flat_glosses,
+                    return_tensors="pt",
+                    padding=True,
+                    truncation=True,
+                    max_length=256,
+                    return_attention_mask=True
+                )
+                flat_input_ids = flat_toks["input_ids"]
+                flat_attn_mask = flat_toks["attention_mask"]
+            else:
+                flat_input_ids = None
+                flat_attn_mask = None
 
             return {
-                "context_input_ids": c_toks["input_ids"],
-                "context_attn_mask": c_toks["attention_mask"],
-                "target_spans": torch.tensor(spans, dtype=torch.long),
-                "synset_labels": torch.tensor(labels, dtype=torch.long),  
-                "word_id": torch.tensor(word_ids, dtype=torch.long),
+                "context_input_ids": c_toks["input_ids"],           # [B, Lc]
+                "context_attn_mask": c_toks["attention_mask"],      # [B, Lc]
+                "target_spans": torch.tensor(spans, dtype=torch.long),  # [B,2]
+                "synset_ids": synset_ids,
+                "word_id": word_id,
                 "target_words": target_words,
-                "gloss_input_ids": g_toks["input_ids"],
-                "gloss_attn_mask": g_toks["attention_mask"],
+                "gold_glosses": gold_glosses,                       # list len B (strings)
+                # grouped raw candidates for possible debug
+                "candidate_glosses_grouped": candidate_glosses_grouped,  # list of lists
+                # flattened tokenized candidates (to encode once)
+                "candidate_gloss_flat_input_ids": flat_input_ids,       # [N_total, Lg] or None
+                "candidate_gloss_flat_attn": flat_attn_mask,            # [N_total, Lg] or None
+                "candidate_gloss_counts": counts                        # list len B
             }
 
         sentences = [b["sentence"] for b in batch]

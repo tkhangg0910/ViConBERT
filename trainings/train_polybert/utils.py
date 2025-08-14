@@ -100,7 +100,7 @@ def train_model(
 
         pbar = tqdm(train_data_loader, 
                          desc=f"Training Epoch {epoch+1}/{num_epochs}",
-                         position=0, leave=False)
+                         position=0, leave=True)
         optimizer.zero_grad()
 
         for batch_idx, batch in enumerate(pbar):
@@ -168,8 +168,6 @@ def train_model(
                 pbar.set_postfix(postfix)
             else:
                 pbar.set_postfix({"loss": f"{loss.item()*grad_accum_steps:.4f}"})
-        pbar.close()
-        print("Finish")
         num_batches = len(train_data_loader)
         train_metrics = {}
         train_metrics = {'recall': train_metrics_accum['recall'] / num_batches}
@@ -181,54 +179,70 @@ def train_model(
 
         # ============= VALIDATION =============
         model.eval()
-        valid_precision_accum, valid_recall_accum, valid_f1_accum = 0.0, 0.0, 0.0
+        valid_precision_accum = valid_recall_accum = valid_f1_accum = 0.0
         valid_steps = 0
         valid_loss = 0.0
+
         with torch.no_grad():
             eval_pbar = tqdm(valid_data_loader, desc="Evaluating", position=1, leave=True)
             for batch in eval_pbar:
-                batch_size = len(batch["context_input_ids"])  
+                # batch-level tensors
+                context_input_ids = batch["context_input_ids"].to(device)       # [B, Lc]
+                context_attn_mask = batch["context_attn_mask"].to(device)      # [B, Lc]
+                target_spans = batch["target_spans"].to(device)                # [B,2]
+                gold_glosses = batch["gold_glosses"]                           # list len B
+                cand_counts = batch["candidate_gloss_counts"]                  # list len B
+
+                # 1) encode all contexts at once -> rwt: [B, polym, H]
+                rwt = model.forward_context(context_input_ids, context_attn_mask, target_spans)
+                rwt_mean = rwt.mean(dim=1)   # [B, H]
+
+                # 2) encode all flattened candidate glosses at once (if exist)
+                flat_inp = batch["candidate_gloss_flat_input_ids"]
+                flat_att = batch["candidate_gloss_flat_attn"]
+                if flat_inp is None:
+                    # no candidates (shouldn't happen) -> skip
+                    continue
+
+                flat_inp = flat_inp.to(device)
+                flat_att = flat_att.to(device)
+
+                rFg_flat = model.forward_gloss(flat_inp, flat_att)    # [N_total, polym, H]
+                rFg_flat_mean = rFg_flat.mean(dim=1)                  # [N_total, H]
+
+                # 3) split rFg_flat_mean by counts and compute scores per example
+                start = 0
+                batch_size = rwt_mean.size(0)
                 for i in range(batch_size):
-                    context_inputs = {
-                        "input_ids": batch["context_input_ids"][i].unsqueeze(0).to(device),
-                        "attention_mask": batch["context_attn_mask"][i].unsqueeze(0).to(device)
-                    }
-                    target_idx = batch["target_spans"][i].unsqueeze(0).to(device)
-                    candidate_glosses = batch["candidate_glosses"][i]
-                    gloss_tok = model.tokenizer(
-                        candidate_glosses,
-                        return_tensors="pt",
-                        padding=True,
-                        truncation=True,
-                        max_length=256
-                    )
-                    gloss_inputs = {
-                        "input_ids": gloss_tok["input_ids"].to(device),
-                        "attention_mask": gloss_tok["attention_mask"].to(device)
-                    }
+                    cnt = cand_counts[i]
+                    end = start + cnt
+                    cand_embs = rFg_flat_mean[start:end]   # [cnt, H]
+                    # scores: [1, cnt]
+                    scores = torch.matmul(rwt_mean[i:i+1], cand_embs.T).squeeze(0).cpu()
+                    pred_idx = int(torch.argmax(scores).item())
 
+                    # compute metrics: compare predicted candidate (index) with gold gloss string
+                    pred_gloss = batch["candidate_glosses_grouped"][i][pred_idx]
+                    gold_gloss = gold_glosses[i]
+                    # Here compute_precision_recall_f1_for_wsd expects numeric labels or index;
+                    # adapt it: return 1.0 if prediction equals gold (precision=recall=f1=1) else 0.
+                    if pred_gloss == gold_gloss:
+                        p = r = f = 1.0
+                    else:
+                        p = r = f = 0.0
 
-                    with autocast(device_type=device):
-                        _, MF = model(context_inputs, gloss_inputs, target_idx)  #
-
-                    pred_idx = MF.squeeze(0).argmax().item()
-                    pred_gloss = candidate_glosses[pred_idx]
-
-                    gold_gloss = batch["gloss"][i]
-
-                    p, r, f = compute_precision_recall_f1_for_wsd(
-                        torch.tensor([pred_gloss]),
-                        torch.tensor([gold_gloss])
-                    )
                     valid_precision_accum += p
                     valid_recall_accum += r
                     valid_f1_accum += f
                     valid_steps += 1
 
+                    start = end
+
+
         # Average metrics
-        valid_precision = valid_precision_accum / valid_steps
-        valid_recall = valid_recall_accum / valid_steps
-        valid_f1 = valid_f1_accum / valid_steps
+        valid_precision = valid_precision_accum / max(1, valid_steps)
+        valid_recall = valid_recall_accum / max(1, valid_steps)
+        valid_f1 = valid_f1_accum / max(1, valid_steps)
 
         avg_valid_loss = valid_loss / max(1, valid_steps)
         history["valid_loss"].append(avg_valid_loss)
