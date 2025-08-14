@@ -233,5 +233,7 @@ class ContrastiveBatchSampler(Sampler):
                     yield batch
     
     def __len__(self):
-        # Estimate based on total samples
-        return (len(self.dataset) + self.batch_size - 1) // self.batch_size
+        total = 0
+        for key, idxs in self.key2indices.items():
+            total += (len(idxs) + self.batch_size - 1) // self.batch_size
+        return total

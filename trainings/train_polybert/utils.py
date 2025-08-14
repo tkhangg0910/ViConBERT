@@ -100,7 +100,7 @@ def train_model(
 
         pbar = tqdm(train_data_loader, 
                          desc=f"Training Epoch {epoch+1}/{num_epochs}",
-                         position=0, leave=True)
+                         position=0, leave=False)
         optimizer.zero_grad()
 
         for batch_idx, batch in enumerate(pbar):
