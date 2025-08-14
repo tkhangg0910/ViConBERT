@@ -306,3 +306,168 @@ def train_model(
             break
 
     return history
+import random
+import math
+from collections import defaultdict, deque
+from torch.utils.data import Sampler
+
+class GlossAwareBatchSampler(Sampler):
+    """
+    Batch sampler that:
+      - tries to avoid multiple samples from the same gloss in one batch
+      - encourages (with probability encourage_target_prob) to include multiple
+        samples from the same target_word but with different glosses
+      - still yields every index exactly once per epoch (will allow same-gloss
+        duplicates only when necessary)
+    Args:
+      dataset: dataset instance, must expose `all_samples` list with dict items
+               containing keys "target_word" and "gloss".
+      batch_size: int
+      shuffle: whether to shuffle order each epoch
+      encourage_target_prob: float in [0,1], probability to try target-oriented fill
+      seed: optional random seed for reproducibility
+    """
+    def __init__(self, dataset, batch_size, shuffle=True, encourage_target_prob=0.6, seed=None):
+        self.dataset = dataset
+        self.batch_size = int(batch_size)
+        self.shuffle = bool(shuffle)
+        self.encourage_target_prob = float(encourage_target_prob)
+        self.seed = seed
+
+        # build mappings target_word -> gloss -> list(indices)
+        self.target2gloss2idxs = defaultdict(lambda: defaultdict(list))
+        self.gloss2idxs = defaultdict(list)
+
+        for idx, s in enumerate(self.dataset.all_samples):
+            target = s["target_word"]
+            gloss = s["gloss"]
+            self.target2gloss2idxs[target][gloss].append(idx)
+            self.gloss2idxs[gloss].append(idx)
+
+        self.num_samples = len(self.dataset)
+
+    def __len__(self):
+        return math.ceil(self.num_samples / self.batch_size)
+
+    def _make_epoch_queues(self, rnd):
+        """Return mutable deques for gloss queues and target->gloss->deque mapping."""
+        gloss_queues = {g: deque(idxs) for g, idxs in self.gloss2idxs.items()}
+        # optionally shuffle order within each gloss
+        if self.shuffle:
+            for g in gloss_queues:
+                idxs = list(gloss_queues[g])
+                rnd.shuffle(idxs)
+                gloss_queues[g] = deque(idxs)
+
+        target_queues = {}
+        for t, gmap in self.target2gloss2idxs.items():
+            inner = {}
+            for g, idxs in gmap.items():
+                idxs_copy = list(idxs)
+                if self.shuffle:
+                    rnd.shuffle(idxs_copy)
+                inner[g] = deque(idxs_copy)
+            target_queues[t] = inner
+
+        return gloss_queues, target_queues
+
+    def __iter__(self):
+        # use local Random for reproducibility per-epoch
+        rnd = random.Random(self.seed)
+        if self.shuffle:
+            # change seed each epoch slightly if provided
+            rnd.seed(None)
+
+        gloss_queues, target_queues = self._make_epoch_queues(rnd)
+
+        # helper to know whether any items remain
+        def any_remaining():
+            for q in gloss_queues.values():
+                if q:
+                    return True
+            return False
+
+        # list of gloss keys (static) for sampling order
+        gloss_keys = list(gloss_queues.keys())
+
+        while any_remaining():
+            batch = []
+            used_glosses = set()
+
+            # 1) Optionally try to pick multiple different-gloss samples from same target
+            if rnd.random() < self.encourage_target_prob:
+                # collect candidate targets which have >=2 distinct gloss queues non-empty
+                candidates = []
+                for t, gmap in target_queues.items():
+                    nonempty_glosses = [g for g, dq in gmap.items() if dq]
+                    if len(nonempty_glosses) >= 2:
+                        candidates.append(t)
+                if candidates:
+                    t = rnd.choice(candidates)
+                    available_glosses = [g for g, dq in target_queues[t].items() if dq]
+                    rnd.shuffle(available_glosses)
+                    for g in available_glosses:
+                        if len(batch) >= self.batch_size:
+                            break
+                        idx = target_queues[t][g].popleft()
+                        batch.append(idx)
+                        used_glosses.add(g)
+                        # also pop the same idx from gloss_queues (if present)
+                        # (gloss_queues should contain the same idx list; remove by value)
+                        try:
+                            gloss_queues[g].remove(idx)
+                        except ValueError:
+                            # might have been removed already (rare); ignore
+                            pass
+
+            # 2) Fill remaining slots by sampling from glosses not yet used in this batch
+            remaining_slots = self.batch_size - len(batch)
+            if remaining_slots > 0:
+                # create list of glosses that still have items and are not used in this batch
+                candidates = [g for g, dq in gloss_queues.items() if dq and g not in used_glosses]
+                # shuffle candidate gloss list to diversify
+                rnd.shuffle(candidates)
+                for g in candidates:
+                    if len(batch) >= self.batch_size:
+                        break
+                    idx = gloss_queues[g].popleft()
+                    batch.append(idx)
+                    used_glosses.add(g)
+                    # also remove from target_queues where it belongs
+                    # (we can avoid search by trusting later steps, but try to remove to keep consistency)
+                    # attempt removal from target_queues:
+                    # (each idx is in exactly one target->gloss queue)
+                    # loop small maps: cost acceptable
+                    for t, gmap in target_queues.items():
+                        if g in gmap:
+                            if idx in gmap[g]:
+                                try:
+                                    gmap[g].remove(idx)
+                                except ValueError:
+                                    pass
+                            break
+
+            # 3) If still not full, allow picking from glosses already used (i.e., duplicates of gloss)
+            if len(batch) < self.batch_size:
+                candidates = [g for g, dq in gloss_queues.items() if dq]
+                rnd.shuffle(candidates)
+                for g in candidates:
+                    if len(batch) >= self.batch_size:
+                        break
+                    idx = gloss_queues[g].popleft()
+                    batch.append(idx)
+                    # try remove from target_queues too
+                    for t, gmap in target_queues.items():
+                        if g in gmap:
+                            if idx in gmap[g]:
+                                try:
+                                    gmap[g].remove(idx)
+                                except ValueError:
+                                    pass
+                            break
+
+            # final sanity: if batch empty break (shouldn't happen)
+            if not batch:
+                break
+
+            yield batch
