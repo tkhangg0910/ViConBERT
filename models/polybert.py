@@ -71,11 +71,11 @@ class PolyBERT(nn.Module):
                 samples with same word_id are positives
         """
         B = rF_wt.size(0)
-        rF_wt_mean = rF_wt.mean(dim=1)  # [B, H]
-        rF_g_mean = rF_g.mean(dim=1)    # [B, H]
+        rF_wt_flat = rF_wt.view(B, -1)  # [B, polym*H]
+        rF_g_flat  = rF_g.view(B, -1)   # [B, polym*H]
 
         # similarity matrix [B, B]
-        sim = torch.matmul(rF_wt_mean, rF_g_mean.T)
+        sim = torch.matmul(rF_wt_flat, rF_g_flat.T)
 
         # softmax over rows
         P = F.softmax(sim, dim=1)
