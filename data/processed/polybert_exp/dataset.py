@@ -62,13 +62,15 @@ class PolyBERTtDataset(Dataset):
     def __getitem__(self, idx):
         s = self.all_samples[idx]
         sid = s["synset_id"]
-        label = self.global_word_to_label[sid]
+        wid = s["word_id"]
+        label = self.global_word_to_label[wid]
         item = {
             "sentence": s["sentence"],
             "target_span": self.span_indices[idx],
             "word_id": label,
             "target_word": s["target_word"],
-            "gloss" : s["gloss"]
+            "gloss" : s["gloss"],
+            "synset_ids":sid
         }
         if self.val_mode:
             # candidate glosses = all glosses observed for this target_word
