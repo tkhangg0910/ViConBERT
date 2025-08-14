@@ -224,7 +224,7 @@ def train_model(
                                             g_toks["attention_mask"])  # [N, polym, H]
 
                     # similarity context_i vs N candidate glosses
-                    sim = torch.matmul(rF_wt[i].flatten().unsqueeze(0), rF_g.view(len(candidates),-1).T)  # [1, N]
+                    sim = torch.matmul(rF_wt[i].flatten().unsqueeze(0), rF_g.reshape(len(candidates),-1).T)  # [1, N]
                     P = F.softmax(sim, dim=1)  # [1, N]
 
                     gold_idx = candidates.index(gold_gloss)
