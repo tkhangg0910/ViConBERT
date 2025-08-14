@@ -31,7 +31,7 @@ class PolyBERTtDataset(Dataset):
                 "target_word": target,
                 "synset_id": sid,
                 "gloss":gloss,
-                "word_id":word_id
+                "word_id":int(word_id)
             })
             
             if self.val_mode:
