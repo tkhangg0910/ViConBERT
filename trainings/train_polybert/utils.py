@@ -165,13 +165,9 @@ def train_model(
             train_fp += batch_fp
             train_fn += batch_fn
 
-            batch_precision = batch_tp / (batch_tp + batch_fp + 1e-8)
-            batch_recall = batch_tp / (batch_tp + batch_fn + 1e-8)
-            batch_f1 = 2 * batch_precision * batch_recall / (batch_precision + batch_recall + 1e-8)
-
-
-        
-
+            # batch_precision = batch_tp / (batch_tp + batch_fp + 1e-8)
+            # batch_recall = batch_tp / (batch_tp + batch_fn + 1e-8)
+            # batch_f1 = 2 * batch_precision * batch_recall / (batch_precision + batch_recall + 1e-8)
 
             # logging
             if global_step % metric_log_interval == 0:
