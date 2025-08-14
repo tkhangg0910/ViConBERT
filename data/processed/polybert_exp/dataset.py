@@ -64,7 +64,7 @@ class PolyBERTtDataset(Dataset):
         item = {
             "sentence": s["sentence"],
             "target_span": self.span_indices[idx],
-            "synset_id": s["synset_id"],
+            "synset_ids": s["synset_id"],
             "word_id": s.get("word_id"),
             "target_word": s["target_word"],
             "gloss" : s["gloss"]
