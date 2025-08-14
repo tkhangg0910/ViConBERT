@@ -160,7 +160,7 @@ class ContrastiveBatchSampler(Sampler):
         
         for idx, item in enumerate(data):
             word = item["target_word"]
-            synset_id = item["synset_id"]
+            synset_id = item["word_id"]
             self.word_to_synsets[word][synset_id].append(idx)
         
         # Lưu danh sách các từ có >= 2 gloss khác nhau
