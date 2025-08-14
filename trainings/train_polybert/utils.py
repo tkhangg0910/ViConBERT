@@ -4,6 +4,7 @@ from tqdm import tqdm
 import numpy as np
 from torch.amp import GradScaler, autocast
 from datetime import datetime
+import torch.nn.functional as F
 from utils.metrics import compute_precision_recall_f1_for_wsd
 class AdaptiveGradientClipper:
     def __init__(self, initial_max_norm=1.0):
@@ -90,7 +91,7 @@ def train_model(
     for epoch in range(num_epochs):
         epoch_start = datetime.now()
         model.train()
-        train_tp = train_fp = train_fn = 0
+        train_tp, train_fp, train_fn = 0, 0, 0  # accumulate for epoch
 
         running_loss = 0.0
         train_steps = 0
@@ -114,18 +115,15 @@ def train_model(
             }
             target_idx = batch["target_spans"].to(device)  # shape [B]
 
-            synset_ids = batch.get("synset_ids", None)
-            if synset_ids is not None:
-                synset_ids = synset_ids.to(device)
+            word_id = batch.get("word_id", None)
+            if word_id is not None:
+                word_id = word_id.to(device)
 
             # forward + loss (use AMP if available)
             with autocast(device_type=device):
-                model_loss, MF = model(context_inputs, gloss_inputs, target_idx)
+                rF_wt, rF_g = model(context_inputs, gloss_inputs, target_idx)
                 # allow user to override loss (e.g., add reg or custom objective)
-                if loss_fn is not None:
-                    loss = loss_fn((model_loss, MF), batch, device)
-                else:
-                    loss = model_loss
+                loss, MF = model.batch_contrastive_loss(rF_wt, rF_g, word_id)
 
                 loss = loss / float(grad_accum_steps)
 
@@ -149,18 +147,30 @@ def train_model(
 
             running_loss += loss.item() * float(grad_accum_steps)  # accumulate true loss
             # optional metrics
-            batch_size = MF.size(0)
-            correct_labels_in_batch = torch.arange(batch_size, device=MF.device)
-            pred_sense_ids = MF.argmax(dim=1)
-            tp_batch = (pred_sense_ids == correct_labels_in_batch).sum().item()
-            # FP: dự đoán sai
-            fp_batch = (pred_sense_ids != correct_labels_in_batch).sum().item()
-            # FN: trong WSD mỗi sample có đúng 1 label, nên FN = FP trong trường hợp single-label
-            fn_batch = fp_batch
+            B = MF.size(0)
+            pred_indices = MF.argmax(dim=1)  # [B] predicted most similar gloss in batch
 
-            train_tp += tp_batch
-            train_fp += fp_batch
-            train_fn += fn_batch
+            # batch-level ground truth: samples with same word_id are positives
+            pos_mask = (word_id.unsqueeze(0) == word_id.unsqueeze(1)).cpu().numpy()  # [B,B]
+            batch_tp, batch_fp, batch_fn = 0, 0, 0
+            for i in range(B):
+                # predicted positive = pred_indices[i]
+                if pos_mask[i, pred_indices[i]]:
+                    batch_tp += 1
+                else:
+                    batch_fp += 1
+                batch_fn += pos_mask[i].sum() - (1 if pos_mask[i, pred_indices[i]] else 0)
+
+            train_tp += batch_tp
+            train_fp += batch_fp
+            train_fn += batch_fn
+
+            batch_precision = batch_tp / (batch_tp + batch_fp + 1e-8)
+            batch_recall = batch_tp / (batch_tp + batch_fn + 1e-8)
+            batch_f1 = 2 * batch_precision * batch_recall / (batch_precision + batch_recall + 1e-8)
+
+
+        
 
 
             # logging
@@ -172,85 +182,81 @@ def train_model(
             else:
                 pbar.set_postfix({"loss": f"{loss.item()*grad_accum_steps:.4f}"})
         precision = train_tp / (train_tp + train_fp + 1e-8)
-        recall    = train_tp / (train_tp + train_fn + 1e-8)
-        f1        = 2 * precision * recall / (precision + recall + 1e-8)
+        recall = train_tp / (train_tp + train_fn + 1e-8)
+        f1 = 2 * precision * recall / (precision + recall + 1e-8)
 
         train_metrics = {
             "precision": precision,
             "recall": recall,
             "f1": f1
         }
-
         
         avg_train_loss = running_loss / max(1, train_steps)
         history["train_loss"].append(avg_train_loss)
 
-        # ============= VALIDATION =============
-        model.eval()
+        # ============= VALIDATION =============valid_loss = 0.0
         TP, FP, FN = 0, 0, 0
-        valid_loss = 0.0
         valid_steps = 0
-        loss_fn_val = torch.nn.CrossEntropyLoss()
 
+        model.eval()
         with torch.no_grad():
-            eval_pbar = tqdm(valid_data_loader, desc="Evaluating", position=1, leave=True)
-            for batch in eval_pbar:
-                # Context
-                context_input_ids = batch["context_input_ids"].to(device)
-                context_attn_mask = batch["context_attn_mask"].to(device)
+            for batch in valid_data_loader:
+                batch_size = len(batch["context_input_ids"])
+                context_inputs = {
+                    "input_ids": batch["context_input_ids"].to(device),
+                    "attention_mask": batch["context_attn_mask"].to(device)
+                }
+
                 target_spans = batch["target_spans"].to(device)
-                gold_glosses = batch["gold_glosses"]
-                cand_counts = batch["candidate_gloss_counts"]
+                rF_wt = model.forward_context(context_inputs["input_ids"],
+                                            context_inputs["attention_mask"],
+                                            target_spans)  # [B, polym, H]
 
-                # Encode context
-                rwt = model.forward_context(context_input_ids, context_attn_mask, target_spans)
-                rwt_mean = rwt.mean(dim=1)
-
-                # Encode gloss candidates
-                flat_inp = batch["candidate_gloss_flat_input_ids"]
-                flat_att = batch["candidate_gloss_flat_attn"]
-                if flat_inp is None:
-                    continue
-
-                flat_inp = flat_inp.to(device)
-                flat_att = flat_att.to(device)
-                rFg_flat = model.forward_gloss(flat_inp, flat_att)
-                rFg_flat_mean = rFg_flat.mean(dim=1)
-
-                # Compare predictions
-                start = 0
-                batch_size = rwt_mean.size(0)
                 for i in range(batch_size):
-                    cnt = cand_counts[i]
-                    end = start + cnt
-                    cand_embs = rFg_flat_mean[start:end]
-                    scores = torch.matmul(rwt_mean[i:i+1], cand_embs.T).squeeze(0).cpu()
-                    pred_idx = int(torch.argmax(scores).item())
-                    gold_idx = batch["candidate_glosses_grouped"][i].index(gold_glosses[i])
+                    candidates = batch["candidate_glosses"][i]  # list of N gloss strings
+                    gold_gloss = batch["gold_glosses"][i]
 
-                    pred_gloss = batch["candidate_glosses_grouped"][i][pred_idx]
-                    gold_gloss = gold_glosses[i]
+                    # tokenize candidate glosses
+                    g_toks = model.tokenizer(candidates,
+                                            return_tensors="pt",
+                                            padding=True,
+                                            truncation=True,
+                                            max_length=256).to(device)
 
-                    if pred_gloss == gold_gloss:
+                    rF_g = model.forward_gloss(g_toks["input_ids"],
+                                            g_toks["attention_mask"])  # [N, polym, H]
+
+                    # similarity context_i vs N candidate glosses
+                    sim = torch.matmul(rF_wt[i].unsqueeze(0), rF_g.mean(dim=1).T)  # [1, N]
+                    P = F.softmax(sim, dim=1)  # [1, N]
+
+                    gold_idx = candidates.index(gold_gloss)
+                    loss_i = -torch.log(P[0, gold_idx] + 1e-8)
+                    valid_loss += loss_i.item()
+                    valid_steps += 1
+
+                    # prediction
+                    pred_idx = P.argmax(dim=1).item()
+                    if pred_idx == gold_idx:
                         TP += 1
                     else:
                         FP += 1
-                        FN += 1  
-                    loss = loss_fn_val(scores.unsqueeze(0), torch.tensor([gold_idx], device=scores.device))
-                    valid_loss += loss.item()
+                        FN += 1
 
-                    valid_steps += 1
-                    start = end
-
-        # Precision, Recall, F1
+        # compute metrics
         valid_precision = TP / (TP + FP) if (TP + FP) > 0 else 0.0
-        valid_recall = TP / (TP + FN) if (TP + FN) > 0 else 0.0
-        valid_f1 = 2 * valid_precision * valid_recall / (valid_precision + valid_recall) if (valid_precision + valid_recall) > 0 else 0.0
+        valid_recall    = TP / (TP + FN) if (TP + FN) > 0 else 0.0
+        valid_f1        = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+        avg_valid_loss  = valid_loss / max(1, valid_steps)
 
-
-
-        avg_valid_loss = valid_loss / max(1, valid_steps)
+        
         history["valid_loss"].append(avg_valid_loss)
+        history["valid_metrics"].append({
+            "precision": valid_precision,
+            "recall": valid_recall,
+            "f1": valid_f1
+        })
+
 
         epoch_time = (datetime.now() - epoch_start).total_seconds()
         history["epoch_times"].append(epoch_time)
@@ -259,7 +265,7 @@ def train_model(
         print(f"Train Recall: {train_metrics['recall']:.4f} | Train Precision: {train_metrics['precision']:.4f} | Train F1: {train_metrics['f1']:.4f} | ")
         print("=======================================VALID========================================")
         print(f"[Epoch {epoch+1}] Valid Loss: {avg_valid_loss:.4f} | time: {epoch_time:.1f}s")
-        print(f"Train Recall: {valid_recall:.4f} | Train Precision: {valid_precision:.4f} | Train F1: {valid_f1:.4f} | ")
+        print(f"Valid Recall: {valid_recall:.4f} | Valid Precision: {valid_precision:.4f} | Valid F1: {valid_f1:.4f} | ")
 
         # checkpointing
         ckpt_path = os.path.join(run_dir, f"epoch_{epoch+1}.pt")

@@ -6,23 +6,40 @@ from tqdm import tqdm
 import torch.nn.functional as F
 import faiss
 
-def compute_precision_recall_f1_for_wsd(pred_sense_ids, gt_sense_ids):
+def compute_precision_recall_f1_for_wsd(MF, word_id):
     """
-    Args:
-        pred_sense_ids: tensor [B] - predicted sense indices
-        gt_sense_ids: tensor [B] - ground truth sense indices
-    Returns:
-        precision, recall, f1
+    MF: [B, B] similarity matrix (context vs gloss embeddings)
+    word_id: [B] global word ids
     """
-    correct = (pred_sense_ids == gt_sense_ids).sum().item()
-    total_pred = pred_sense_ids.size(0)  # B
-    total_gt = gt_sense_ids.size(0)      # B, same as total_pred
+    device = MF.device
+    B = MF.size(0)
+    
+    # positive mask: same global word_id
+    word_id_row = word_id.unsqueeze(0)   # [1, B]
+    word_id_col = word_id.unsqueeze(1)   # [B, 1]
+    pos_mask = (word_id_row == word_id_col).float()  # [B, B]
 
-    precision = correct / total_pred if total_pred > 0 else 0.0
-    recall = correct / total_gt if total_gt > 0 else 0.0
-    f1 = 2 * precision * recall / (precision + recall + 1e-8)  # tránh chia 0
+    # predicted gloss: index of max similarity for each context
+    pred_idx = MF.argmax(dim=1)  # [B]
+
+    # TP / FP / FN
+    tp = 0
+    fp = 0
+    fn = 0
+    for i in range(B):
+        # positive indices for this sample
+        pos_indices = torch.nonzero(pos_mask[i]).flatten().tolist()
+        if pred_idx[i].item() in pos_indices:
+            tp += 1
+        else:
+            fp += 1
+            fn += 1  # missed positive
+
+    precision = tp / (tp + fp + 1e-8)
+    recall    = tp / (tp + fn + 1e-8)
+    f1        = 2 * precision * recall / (precision + recall + 1e-8)
+    
     return precision, recall, f1
-
 
 def normalize_embeddings(embeddings):
     """Normalize embeddings for efficient cosine similarity computation"""
