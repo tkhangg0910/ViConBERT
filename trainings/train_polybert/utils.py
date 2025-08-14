@@ -99,7 +99,7 @@ def train_model(
 
         pbar = tqdm(train_data_loader, 
                          desc=f"Training Epoch {epoch+1}/{num_epochs}",
-                         position=0, leave=True)
+                         position=0, leave=True, ascii=True)
         optimizer.zero_grad()
 
         for batch_idx, batch in enumerate(pbar):
@@ -201,7 +201,7 @@ def train_model(
         with torch.no_grad():
             val_pbar = tqdm(valid_data_loader, 
                          desc=f"Validating {epoch+1}/{num_epochs}",
-                         position=1, leave=True)
+                         position=1, leave=True, ascii=True)
             for batch in val_pbar:
                 batch_size = len(batch["context_input_ids"])
                 context_inputs = {
