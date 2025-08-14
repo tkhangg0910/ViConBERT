@@ -113,7 +113,7 @@ def train_model(
                 "input_ids": batch["gloss_input_ids"].to(device),
                 "attention_mask": batch["gloss_attn_mask"].to(device)
             }
-            target_idx = batch["target_idx"].to(device)  # shape [B]
+            target_idx = batch["target_spans"].to(device)  # shape [B]
 
             synset_ids = batch.get("synset_ids", None)
             if synset_ids is not None:
