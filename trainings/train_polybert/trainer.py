@@ -55,7 +55,7 @@ if __name__=="__main__":
     if tokenizer.pad_token is None:
         tokenizer.add_special_tokens({'pad_token': '[PAD]'})
     
-    batch_size = config['batch_size']
+    batch_size = config["training"]['batch_size']
     train_dataset = PolyBERTtDataset(train_sample, tokenizer)
     valid_dataset = PolyBERTtDataset(valid_sample, tokenizer, val_mode=True)
     
