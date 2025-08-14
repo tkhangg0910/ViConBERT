@@ -128,7 +128,7 @@ class PolyBERTtDataset(Dataset):
         sentences = [b["sentence"] for b in batch]
         target_words = [b["target_word"] for b in batch]
         spans     = [b["target_span"] for b in batch]
-        labels    = torch.tensor([b["synset_id"] for b in batch], dtype=torch.long)
+        labels    = torch.tensor([b["synset_ids"] for b in batch], dtype=torch.long)
         word_id = torch.tensor([b["word_id"] for b in batch], dtype=torch.long)
         glosses = [b["gloss"] for b in batch]
 
