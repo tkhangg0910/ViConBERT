@@ -198,7 +198,10 @@ def train_model(
 
         model.eval()
         with torch.no_grad():
-            for batch in valid_data_loader:
+            val_pbar = tqdm(valid_data_loader, 
+                         desc=f"Validating {epoch+1}/{num_epochs}",
+                         position=1, leave=True)
+            for batch in val_pbar:
                 batch_size = len(batch["context_input_ids"])
                 context_inputs = {
                     "input_ids": batch["context_input_ids"].to(device),
