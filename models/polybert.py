@@ -54,6 +54,25 @@ class PolyBERT(nn.Module):
         fused, _ = self.attn(Q, K, V)  # [B, polym, H]
 
         return fused
+    def contrastive_classification_loss(self, rF_wt, rF_g, label):
+        """
+        rF_wt: [B, polym, H]  - context embeddings
+        rF_g:  [B, polym, H]  - gloss embeddings
+        label: [B] long tensor - index của gloss đúng (0..B-1).
+        """
+        B = rF_wt.size(0)
+
+        # Flatten polym dimension để lấy vector cuối cùng
+        rF_wt_flat = rF_wt.reshape(B, -1)  # [B, polym*H]
+        rF_g_flat  = rF_g.reshape(B, -1)   # [B, polym*H]
+
+        # similarity matrix [B, B]
+        logits = torch.matmul(rF_wt_flat, rF_g_flat.T)  # context x gloss
+
+        # CrossEntropyLoss trực tiếp
+        loss = F.cross_entropy(logits, label)
+
+        return loss, logits
 
     def forward_gloss(self, input_ids, attention_mask):
         outputs = self.gloss_encoder(input_ids=input_ids, attention_mask=attention_mask)

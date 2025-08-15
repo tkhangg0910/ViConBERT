@@ -20,7 +20,8 @@ class PolyBERTtDataset(Dataset):
         if self.val_mode:
             self.targetword2glosses = defaultdict(list)
         word_set = set()
-        gloss_set = set()
+        if val_mode == False:
+            gloss_set = set()
         self.all_samples = []
         for sample in samples:
             sent = text_normalize(sample["sentence"])
@@ -41,7 +42,8 @@ class PolyBERTtDataset(Dataset):
             if self.val_mode:
                 if gloss not in self.targetword2glosses[target]:
                     self.targetword2glosses[target].append(gloss)
-            gloss_set.add(gloss)
+            if val_mode == False:
+              gloss_set.add(gloss)
             word_set.add(int(word_id))
             
         sorted_wids = sorted(word_set)
@@ -59,7 +61,18 @@ class PolyBERTtDataset(Dataset):
             #         print(f"target: {s['target_word']}")
             #         print(f"pred: {pred}")
             self.span_indices.append(idxs or (0,0))
-
+        if val_mode == False:
+            self.g_tokes = self.tokenizer(
+                gloss_set,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=256,
+                return_attention_mask=True,
+                return_offsets_mapping=True
+            )
+            self.gloss_input_ids= self.g_tokes["input_ids"],
+            self.gloss_attn_mask=self.g_tokes["attention_mask"],
     def __len__(self):
         return len(self.all_samples)
 
@@ -133,24 +146,28 @@ class PolyBERTtDataset(Dataset):
             return_attention_mask=True,
             return_offsets_mapping=True
         )
-        g_tokes = self.tokenizer(
-            glosses,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=256,
-            return_attention_mask=True,
-            return_offsets_mapping=True
-        )
+        # g_tokes = self.tokenizer(
+        #     glosses,
+        #     return_tensors="pt",
+        #     padding=True,
+        #     truncation=True,
+        #     max_length=256,
+        #     return_attention_mask=True,
+        #     return_offsets_mapping=True
+        # )
+        gold_glosses_idx = torch.tensor([
+            self.gloss_set.index(g) for g in glosses
+        ], dtype=torch.long)
         return {
             "context_input_ids": c_toks["input_ids"],
             "context_attn_mask": c_toks["attention_mask"],
             "target_spans": torch.tensor(spans, dtype=torch.long) if spans else None,
             "synset_ids": labels,
             "word_id":word_id,
+            "gold_glosses_idx": gold_glosses_idx,
             "target_words":target_words,
-            "gloss_input_ids": g_tokes["input_ids"],
-            "gloss_attn_mask": g_tokes["attention_mask"],
+            # "gloss_input_ids": self.g_tokes["input_ids"],
+            # "gloss_attn_mask": self.g_tokes["attention_mask"],
             "gloss_id":gloss_id
         }
 

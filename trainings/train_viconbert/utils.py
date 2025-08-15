@@ -108,7 +108,7 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
             synset_ids=batch["synset_ids"].to(device)
 
             # optimizer.zero_grad()
-
+        
             with autocast(device_type=device):
                 outputs = model(
                     {

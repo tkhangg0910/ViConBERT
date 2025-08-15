@@ -110,21 +110,26 @@ def train_model(
                 "input_ids": batch["context_input_ids"].to(device),
                 "attention_mask": batch["context_attn_mask"].to(device)
             }
+            
             gloss_inputs = {
-                "input_ids": batch["gloss_input_ids"].to(device),
-                "attention_mask": batch["gloss_attn_mask"].to(device)
+                "input_ids": train_data_loader.gloss_input_ids.to(device),
+                "attention_mask": train_data_loader.gloss_attn_mask.to(device)
             }
             target_idx = batch["target_spans"].to(device)  # shape [B]
 
-            gloss_id = batch.get("gloss_id", None)
-            if gloss_id is not None:
-                gloss_id = gloss_id.to(device)
+            # gloss_id = batch.get("gloss_id", None)
+            # if gloss_id is not None:
+            #     gloss_id = gloss_id.to(device)
+            
+            gold_glosses_idx = batch.get("gold_glosses_idx", None)
+            if gold_glosses_idx is not None:
+                gold_glosses_idx = gold_glosses_idx.to(device)
 
             # forward + loss (use AMP if available)
             with autocast(device_type=device):
                 rF_wt, rF_g = model(context_inputs, gloss_inputs, target_idx)
                 # allow user to override loss (e.g., add reg or custom objective)
-                loss, MF = model.batch_contrastive_loss(rF_wt, rF_g, gloss_id)
+                loss, MF = model.contrastive_classification_loss(rF_wt, rF_g, gold_glosses_idx)
 
                 loss = loss / float(grad_accum_steps)
 
@@ -148,27 +153,14 @@ def train_model(
 
             running_loss += loss.item() * float(grad_accum_steps)  # accumulate true loss
             # optional metrics
-            B = MF.size(0)
-            pred_indices = MF.argmax(dim=1)  # [B] predicted most similar gloss in batch
+            pred_indices = MF.argmax(dim=1)        
 
-            # batch-level ground truth: samples with same word_id are positives
-            pos_mask = (gloss_id.unsqueeze(0) == gloss_id.unsqueeze(1)).cpu().numpy()  # [B,B]
-            batch_tp, batch_fp, batch_fn = 0, 0, 0
-            for i in range(B):
-                # predicted positive = pred_indices[i]
-                if pos_mask[i, pred_indices[i]]:
-                    batch_tp += 1
+            for pred, gold in zip(pred_indices, gold_glosses_idx):
+                if pred == gold:
+                    train_tp += 1
                 else:
-                    batch_fp += 1
-                batch_fn += pos_mask[i].sum() - (1 if pos_mask[i, pred_indices[i]] else 0)
-
-            train_tp += batch_tp
-            train_fp += batch_fp
-            train_fn += batch_fn
-
-            batch_precision = batch_tp / (batch_tp + batch_fp + 1e-8)
-            batch_recall = batch_tp / (batch_tp + batch_fn + 1e-8)
-            batch_f1 = 2 * batch_precision * batch_recall / (batch_precision + batch_recall + 1e-8)
+                    train_fp += 1
+                    train_fn += 1
 
             # logging
             if global_step % metric_log_interval == 0:
@@ -178,10 +170,10 @@ def train_model(
                 pbar.set_postfix(postfix)
             else:
                 pbar.set_postfix({"loss": f"{loss.item()*grad_accum_steps:.4f}"})
-                
-        precision = batch_precision/len(train_data_loader)
-        recall = batch_recall/len(train_data_loader)
-        f1 = 2 * batch_f1/len(train_data_loader)
+        
+        precision = train_tp / (train_tp + train_fp) if (train_tp + train_fp) > 0 else 0.0
+        recall    = train_tp / (train_tp + train_fn) if (train_tp + train_fn) > 0 else 0.0
+        f1        = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
 
         train_metrics = {
             "precision": precision,
@@ -262,13 +254,15 @@ def train_model(
 
         epoch_time = (datetime.now() - epoch_start).total_seconds()
         history["epoch_times"].append(epoch_time)
-        print("=======================================TRAIN=======================================")        
+        print()
+        print("===============================================================================")
         print(f"[Epoch {epoch+1}] Train Loss: {avg_train_loss:.4f} | time: {epoch_time:.1f}s")
         print(f"Train Recall: {train_metrics['recall']:.4f} | Train Precision: {train_metrics['precision']:.4f} | Train F1: {train_metrics['f1']:.4f} | ")
-        print("=======================================VALID========================================")
+        print()
         print(f"[Epoch {epoch+1}] Valid Loss: {avg_valid_loss:.4f} | time: {epoch_time:.1f}s")
         print(f"Valid Recall: {valid_recall:.4f} | Valid Precision: {valid_precision:.4f} | Valid F1: {valid_f1:.4f} | ")
-
+        print("===============================================================================")
+        print()
         # checkpointing
         ckpt_path = os.path.join(run_dir, f"epoch_{epoch+1}.pt")
         if (epoch + 1) % ckpt_interval == 0:
