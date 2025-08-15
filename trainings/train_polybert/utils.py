@@ -112,8 +112,8 @@ def train_model(
             }
             
             gloss_inputs = {
-                "input_ids": train_data_loader.gloss_input_ids.to(device),
-                "attention_mask": train_data_loader.gloss_attn_mask.to(device)
+                "input_ids": train_data_loader.dataset.gloss_input_ids.to(device),
+                "attention_mask": train_data_loader.dataset.gloss_attn_mask.to(device)
             }
             target_idx = batch["target_spans"].to(device)  # shape [B]
 
