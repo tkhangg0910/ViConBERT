@@ -102,8 +102,10 @@ def evaluate_model(model, tokenizer, data, device, use_pseudo_sent=False):
         
     word_1_embd = get_embedding(model,word_1_sample,tokenizer,device)
     word_2_embd = get_embedding(model,word_2_sample,tokenizer,device)
-    sims = F.cosine_similarity(word_1_embd, word_2_embd, dim=1)
+    word_1_embd = F.normalize(word_1_embd, p=2, dim=1)
+    word_2_embd = F.normalize(word_2_embd, p=2, dim=1)
 
+    sims = F.cosine_similarity(word_1_embd, word_2_embd, dim=1)
     correlation, _ = spearmanr(sims.cpu().numpy(), sim_gt)
     print("Spearman correlation:", correlation)
     return correlation
