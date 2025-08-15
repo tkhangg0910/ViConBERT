@@ -51,10 +51,13 @@ def get_visim400():
 
 def get_embedding(model,samples,tokenizer, device):
     span_extractor = SpanExtractor(tokenizer)
-    indices = span_extractor.get_span_indices(
-                    samples["sentence"], 
-                    samples["target_word"]
-                )
+    span_indices = []
+    for sample in samples:
+        idx = span_extractor.get_span_indices(
+                        sample["sentence"], 
+                        sample["target_word"]
+                    )
+        span_indices.append(idx)
     
     toks = tokenizer(
             samples["sentence"],
@@ -67,7 +70,7 @@ def get_embedding(model,samples,tokenizer, device):
     ).to(device)
     
     with torch.inference_mode():
-        outputs = model(**toks,target_span=torch.tensor(indices, dtype=torch.long) )
+        outputs = model(**toks,target_span=torch.tensor(span_indices, dtype=torch.long) )
     return outputs
 
 def construct_pseudo_sent(word ,pos): 
