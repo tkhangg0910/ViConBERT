@@ -156,7 +156,7 @@ class PolyBERTtDataset(Dataset):
         #     return_offsets_mapping=True
         # )
         gold_glosses_idx = torch.tensor([
-            self.gloss_set.index(g) for g in glosses
+            self.gloss_list.index(g) for g in glosses
         ], dtype=torch.long)
         return {
             "context_input_ids": c_toks["input_ids"],
