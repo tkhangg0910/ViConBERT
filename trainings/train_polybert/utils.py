@@ -28,7 +28,7 @@ class AdaptiveGradientClipper:
         torch.nn.utils.clip_grad_norm_(parameters, self.max_norm)
         return total_norm.item()
     
-def forward_gloss_in_chunks(model, gloss_list, tokenizer, device, chunk_size=32):
+def forward_gloss_in_chunks(model, gloss_list, tokenizer, device, chunk_size=64):
     """
     Encode glosses in mini-batches to save GPU memory
     """
@@ -148,7 +148,7 @@ def train_model(
             # forward + loss (use AMP if available)
             with autocast(device_type=device):
                 batch_glosses = [train_data_loader.dataset.gloss_list[i] for i in range(len(train_data_loader.dataset.gloss_list))]
-                rF_g = forward_gloss_in_chunks(model, batch_glosses, model.tokenizer, device, chunk_size=64)
+                rF_g = forward_gloss_in_chunks(model, batch_glosses, model.tokenizer, device, chunk_size=32)
                 rF_wt = model.forward_context(context_inputs["input_ids"],context_inputs["attention_mask"], target_idx)
                 # allow user to override loss (e.g., add reg or custom objective)
                 loss, MF = model.contrastive_classification_loss(rF_wt, rF_g, gold_glosses_idx)
