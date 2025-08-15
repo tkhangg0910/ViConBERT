@@ -109,7 +109,7 @@ def _evaluate_ap(model, tokenizer, df, device, use_pseudo_sent):
     pos     = df["POS"].tolist()
     label_str = df["Relation"].tolist()
 
-    labels = [1 if rel.lower() == "synonym" else 0 for rel in label_str]
+    labels = [1 if rel.lower() == "SYN" else 0 for rel in label_str]
 
     if use_pseudo_sent:
         word_1_sample = {
