@@ -88,9 +88,16 @@ def evaluate_model(model, tokenizer, data, device, use_pseudo_sent=False):
         word_1_sample = {"sentence": [construct_pseudo_sent(w.replace("_"," "),p) for w,p in zip(words1,pos)], "target_word": words1.replace("_"," ")}
         word_2_sample = {"sentence": [construct_pseudo_sent(w.replace("_"," "),p) for w,p in zip(words2,pos)], "target_word": words2.replace("_"," ")}
     else:
-        word_1_sample = {"sentence": words1.replace("_"," "), "target_word":words1.replace("_"," ")}
-        word_2_sample = {"sentence": words2.replace("_"," "), "target_word":words2.replace("_"," ")}
-    
+        word_1_sample = {
+            "sentence": [w.replace("_", " ") for w in words1],
+            "target_word": [w.replace("_", " ") for w in words1]
+        }
+
+        word_2_sample = {
+            "sentence": [w.replace("_", " ") for w in words2],
+            "target_word": [w.replace("_", " ") for w in words2]
+        }
+        
     word_1_embd = get_embedding(model,word_1_sample,tokenizer,device)
     word_2_embd = get_embedding(model,word_2_sample,tokenizer,device)
     sims = F.cosine_similarity(word_1_embd, word_2_embd, dim=1)
