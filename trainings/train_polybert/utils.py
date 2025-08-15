@@ -28,25 +28,46 @@ class AdaptiveGradientClipper:
         torch.nn.utils.clip_grad_norm_(parameters, self.max_norm)
         return total_norm.item()
     
-def forward_gloss_in_chunks(model, gloss_list, tokenizer, device, chunk_size=64):
+def compute_context_vs_gloss_similarity(model, context_inputs, target_idx, input_ids,attention_mask, device, chunk_size=64):
     """
-    Encode glosses in mini-batches to save GPU memory
+    context_inputs: dict with 'input_ids' and 'attention_mask', shape [B, Lc]
+    target_idx: tensor [B, 2] target spans
+    gloss_list: list of all gloss strings (~5000)
+    Returns: similarity matrix [B, num_gloss]
     """
-    all_embs = []
-    for i in range(0, len(gloss_list), chunk_size):
-        toks = tokenizer(
-            gloss_list[i:i+chunk_size],
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=256
-        ).to(device)
-        with autocast(device_type=device):
-            emb = model.forward_gloss(toks["input_ids"], toks["attention_mask"])
-        all_embs.append(emb)
-        del toks, emb
-        torch.cuda.empty_cache()
-    return torch.cat(all_embs, dim=0)
+    B = context_inputs["input_ids"].size(0)
+    num_gloss = len(tok_gloss_list)
+    
+    # Encode contexts once
+    rF_wt = model.forward_context(
+        context_inputs["input_ids"].to(device),
+        context_inputs["attention_mask"].to(device),
+        target_idx.to(device)
+    )  # [B, H] or [B, polym, H] depending on your model
+    rF_wt_flat = rF_wt.reshape(B, -1)  # flatten if needed
+
+    # Encode glosses in chunks
+    sim_list = []
+    for i in range(0, num_gloss, chunk_size):
+        chunk_input_ids, chunk_attention_mask = input_ids[i:i+chunk_size],attention_mask[i:i+chunk_size]
+        # toks = tokenizer(
+        #     chunk,
+        #     return_tensors="pt",
+        #     padding=True,
+        #     truncation=True,
+        #     max_length=256
+        # ).to(device)
+
+        with autocast(device_type=device):  # or autocast for fp16
+            rF_g = model.forward_gloss(chunk_input_ids, chunk_attention_mask)  # [chunk_size, H]
+            rF_g_flat = rF_g.reshape(len(chunk_input_ids), -1)
+            sim_chunk = torch.matmul(rF_wt_flat, rF_g_flat.T)  # [B, chunk_size]
+            sim_list.append(sim_chunk)  # move to CPU to save GPU memory
+
+    # 4Concatenate all chunk similarities -> [B, num_gloss]
+    similarity = torch.cat(sim_list, dim=1)
+    return similarity
+
 
 def train_model(
     num_epochs,
@@ -147,11 +168,15 @@ def train_model(
 
             # forward + loss (use AMP if available)
             with autocast(device_type=device):
-                batch_glosses = [train_data_loader.dataset.gloss_list[i] for i in range(len(train_data_loader.dataset.gloss_list))]
-                rF_g = forward_gloss_in_chunks(model, batch_glosses, model.tokenizer, device, chunk_size=32)
-                rF_wt = model.forward_context(context_inputs["input_ids"],context_inputs["attention_mask"], target_idx)
+                # batch_glosses = [train_data_loader.dataset.gloss_list[i] for i in range(len(train_data_loader.dataset.gloss_list))]
+                sim = compute_context_vs_gloss_similarity(model, context_inputs, 
+                                                          target_idx,
+                                                          train_data_loader.dataset.gloss_input_ids,
+                                                          train_data_loader.dataset.gloss_attn_mask, device=device)
+                # rF_g = forward_gloss_in_chunks(model, batch_glosses, model.tokenizer, device, chunk_size=32)
+                # rF_wt = model.forward_context(context_inputs["input_ids"],context_inputs["attention_mask"], target_idx)
                 # allow user to override loss (e.g., add reg or custom objective)
-                loss, MF = model.contrastive_classification_loss(rF_wt, rF_g, gold_glosses_idx)
+                loss, MF = model.contrastive_classification_loss(sim, gold_glosses_idx)
 
                 loss = loss / float(grad_accum_steps)
 
