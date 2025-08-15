@@ -37,7 +37,6 @@ if is_torch_available() and torch.multiprocessing.get_start_method() == "fork":
 def setup_args():
     parser = argparse.ArgumentParser(description="Train a model")
     parser.add_argument("--model_path", type=str, help="Model path")
-    parser.add_argument("--batch_size", type=int,default=768, help="Batch size")
     parser.add_argument("--pseudo_sent", action='store_true', help="Use pseudo sentences")
     args = parser.parse_args()
     return args 
