@@ -71,8 +71,8 @@ class PolyBERTtDataset(Dataset):
                 return_attention_mask=True,
                 return_offsets_mapping=True
             )
-            self.gloss_input_ids= self.g_tokes["input_ids"],
-            self.gloss_attn_mask=self.g_tokes["attention_mask"],
+            self.gloss_input_ids= self.g_tokes["input_ids"]
+            self.gloss_attn_mask=self.g_tokes["attention_mask"]
     def __len__(self):
         return len(self.all_samples)
 
