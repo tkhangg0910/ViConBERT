@@ -63,6 +63,8 @@ def compute_context_vs_gloss_similarity(model, context_inputs, target_idx, input
             rF_g_flat = rF_g.reshape(len(chunk_input_ids), -1)
             sim_chunk = torch.matmul(rF_wt_flat, rF_g_flat.T)  # [B, chunk_size]
             sim_list.append(sim_chunk)  # move to CPU to save GPU memory
+        del rF_g, chunk_input_ids, chunk_attention_mask
+        torch.cuda.empty_cache()
 
     # 4Concatenate all chunk similarities -> [B, num_gloss]
     similarity = torch.cat(sim_list, dim=1)
