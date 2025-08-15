@@ -49,7 +49,7 @@ def compute_context_vs_gloss_similarity(model, context_inputs, target_idx, input
     # Encode glosses in chunks
     sim_list = []
     for i in range(0, num_gloss, chunk_size):
-        chunk_input_ids, chunk_attention_mask = input_ids[i:i+chunk_size],attention_mask[i:i+chunk_size]
+        chunk_input_ids, chunk_attention_mask = input_ids[i:i+chunk_size].to(device),attention_mask[i:i+chunk_size].to(device)
         # toks = tokenizer(
         #     chunk,
         #     return_tensors="pt",
