@@ -6,6 +6,12 @@ from torch.amp import GradScaler, autocast
 from datetime import datetime
 import torch.nn.functional as F
 from utils.metrics import compute_precision_recall_f1_for_wsd
+
+def log_gpu_memory(tag=""):
+    allocated = torch.cuda.memory_allocated() / 1024**2  # MB
+    reserved  = torch.cuda.memory_reserved() / 1024**2   # MB
+    print(f"[GPU Memory] {tag} | Allocated: {allocated:.1f} MB | Reserved: {reserved:.1f} MB")
+
 class AdaptiveGradientClipper:
     def __init__(self, initial_max_norm=1.0):
         self.max_norm = initial_max_norm
@@ -45,28 +51,24 @@ def compute_context_vs_gloss_similarity(model, context_inputs, target_idx, input
         target_idx.to(device)
     )  # [B, H] or [B, polym, H] depending on your model
     rF_wt_flat = rF_wt.reshape(B, -1)  # flatten if needed
+    log_gpu_memory(f"After Context")
 
     # Encode glosses in chunks
     sim_list = []
     for i in range(0, num_gloss, chunk_size):
         chunk_input_ids = input_ids[i:i+chunk_size].to(device)
         chunk_attention_mask = attention_mask[i:i+chunk_size].to(device)
+        log_gpu_memory(f"Before forward chunk {i//chunk_size}")
 
-        # toks = tokenizer(
-        #     chunk,
-        #     return_tensors="pt",
-        #     padding=True,
-        #     truncation=True,
-        #     max_length=256
-        # ).to(device)
 
-        with autocast(device_type=device):  # or autocast for fp16
+        with autocast(device_type=device):
             rF_g = model.forward_gloss(chunk_input_ids, chunk_attention_mask)  # [chunk_size, H]
             rF_g_flat = rF_g.reshape(len(chunk_input_ids), -1)
             sim_chunk = torch.matmul(rF_wt_flat, rF_g_flat.T)  # [B, chunk_size]
         sim_list.append(sim_chunk.cpu())  
         del rF_g, rF_g_flat, chunk_input_ids, chunk_attention_mask, sim_chunk
         torch.cuda.empty_cache()
+        log_gpu_memory(f"After forward chunk {i//chunk_size}")
 
 
     # 4Concatenate all chunk similarities -> [B, num_gloss]
@@ -179,7 +181,7 @@ def train_model(
                                                           target_idx,
                                                           train_data_loader.dataset.gloss_input_ids,
                                                           train_data_loader.dataset.gloss_attn_mask, device=device,
-                                                          chunk_size=1)
+                                                          chunk_size=256)
                 # rF_g = forward_gloss_in_chunks(model, batch_glosses, model.tokenizer, device, chunk_size=32)
                 # rF_wt = model.forward_context(context_inputs["input_ids"],context_inputs["attention_mask"], target_idx)
                 # allow user to override loss (e.g., add reg or custom objective)

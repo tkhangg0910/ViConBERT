@@ -17,24 +17,6 @@ from trainings.train_polybert.utils import train_model
 
 if is_torch_available() and torch.multiprocessing.get_start_method() == "fork":
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
-def report_gpu_memory(device="cuda"):
-    """
-    Report GPU memory usage: allocated, cached, reserved (all in GB)
-    """
-    if device == "cuda" and torch.cuda.is_available():
-        allocated = torch.cuda.memory_allocated(device) / (1024**3)
-        reserved  = torch.cuda.memory_reserved(device) / (1024**3)
-        cached    = torch.cuda.memory_reserved(device)/ (1024**3) - torch.cuda.memory_allocated(device)/ (1024**3)
-        print(f"GPU Memory (GB) | Allocated: {allocated:.3f} | Reserved: {reserved:.3f} | Cached: {cached:.3f}")
-    else:
-        print("CUDA not available")
-
-def report_peak_memory(device="cuda"):
-    if device == "cuda" and torch.cuda.is_available():
-        peak = torch.cuda.max_memory_allocated(device) / (1024**3)
-        print(f"Peak GPU memory usage: {peak:.3f} GB")
-    else:
-        print("CUDA not available")
 
 def setup_args():
     parser = argparse.ArgumentParser(description="Train a model")
@@ -105,9 +87,6 @@ if __name__=="__main__":
             bert_model_name=config["base_model"],
             tokenizer=tokenizer,
             ).to(device)
-    report_gpu_memory(device)
-    report_peak_memory(device)
-
     total_steps = len(train_dataloader) * config["training"]["epochs"] 
     steps_per_epoch = len(train_dataloader)
     print(f"Steps per epoch: {steps_per_epoch}")
