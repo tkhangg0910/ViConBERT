@@ -7,7 +7,7 @@ from transformers import AutoModel, AutoTokenizer
 
 
 class BiEncoderModel(nn.Module):
-    def __init__(self, encoder_name="bert-base-uncased", freeze_context=False, freeze_gloss=False, tie_encoders=False, tokenizer=None):
+    def __init__(self, encoder_name="vinai/phobert-base", freeze_context=False, freeze_gloss=False, tie_encoders=False, tokenizer=None):
         super().__init__()
         self.encoder_name = encoder_name
         self.freeze_context = freeze_context
@@ -29,7 +29,7 @@ class BiEncoderModel(nn.Module):
         """
         input_ids: [B, L]
         attention_mask: [B, L]
-        target_mask: [B, L]  (1 tại vị trí từ/phrase cần lấy vector)
+        target_mask: [B, L] 
         """
         with torch.no_grad() if self.freeze_context else torch.enable_grad():
             outputs = self.context_encoder(input_ids=input_ids, attention_mask=attention_mask)

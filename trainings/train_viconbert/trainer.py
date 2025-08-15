@@ -15,7 +15,7 @@ from models.base_model import ViSynoSenseEmbedding
 from utils.load_config import load_config
 from utils.optimizer import create__diff_optimizer
 from utils.loss_fn import InfonceDistillLoss
-from trainings.utils import train_model
+from trainings.train_viconbert.utils import train_model
 
 if is_torch_available() and torch.multiprocessing.get_start_method() == "fork":
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
