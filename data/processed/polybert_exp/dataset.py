@@ -48,7 +48,7 @@ class PolyBERTtDataset(Dataset):
             
         sorted_wids = sorted(word_set)
         self.global_word_to_label = {wid: i for i, wid in enumerate(sorted_wids)}
-        self.gloss_set = list(gloss_set)
+        self.gloss_list = list(gloss_set)
         self.span_indices = []
         for s in tqdm(self.all_samples, desc="Computing spans",ascii=True):
             idxs = self.span_extractor.get_span_indices(
@@ -63,7 +63,7 @@ class PolyBERTtDataset(Dataset):
             self.span_indices.append(idxs or (0,0))
         if val_mode == False:
             self.g_tokes = self.tokenizer(
-                gloss_set,
+                self.gloss_list,
                 return_tensors="pt",
                 padding=True,
                 truncation=True,
