@@ -51,16 +51,15 @@ def get_visim400():
 
 def get_embedding(model,samples,tokenizer, device):
     span_extractor = SpanExtractor(tokenizer)
-    span_indices = []
-    for sample in samples:
-        idx = span_extractor.get_span_indices(
-                        sample["sentence"], 
-                        sample["target_word"]
-                    )
-        span_indices.append(idx)
+    sentences = samples["sentence"]
+    target_words = samples["target_word"]
+
+    span_indices = [span_extractor.get_span_indices(sent, word)
+                    for sent, word in zip(sentences, target_words)]
+
     
     toks = tokenizer(
-            samples["sentence"],
+            sentences,
             return_tensors="pt",
             padding=True,
             truncation=True,
