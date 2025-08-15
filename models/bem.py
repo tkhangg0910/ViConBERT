@@ -79,6 +79,17 @@ class BiEncoderModel(nn.Module):
             gloss_inputs["attention_mask"]
         )
         return ctx_vecs, gloss_vecs
+    
+    def contrastive_classification_loss(self, logits, label):
+        """
+        rF_wt: [B, polym, H]  - context embeddings
+        rF_g:  [B, polym, H]  - gloss embeddings
+        label: [B] long tensor - (0..B-1).
+        """
+        # CrossEntropyLoss trực tiếp
+        loss = F.cross_entropy(logits, label)
+
+        return loss, logits
 
     def save_pretrained(self, save_directory):
         os.makedirs(save_directory, exist_ok=True)

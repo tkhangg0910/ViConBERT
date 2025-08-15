@@ -6,9 +6,7 @@ from tqdm import tqdm
 import numpy as np
 from utils.span_extractor import SpanExtractor
 from utils.process_data import text_normalize
-from torch.utils.data import Sampler
 from collections import defaultdict
-import math
 
 class BEMDataset(Dataset):
     def __init__(self, samples, tokenizer, val_mode = False):
