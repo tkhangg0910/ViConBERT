@@ -116,15 +116,15 @@ def train_model(
             }
             target_idx = batch["target_spans"].to(device)  # shape [B]
 
-            word_id = batch.get("word_id", None)
-            if word_id is not None:
-                word_id = word_id.to(device)
+            gloss_id = batch.get("gloss_id", None)
+            if gloss_id is not None:
+                gloss_id = gloss_id.to(device)
 
             # forward + loss (use AMP if available)
             with autocast(device_type=device):
                 rF_wt, rF_g = model(context_inputs, gloss_inputs, target_idx)
                 # allow user to override loss (e.g., add reg or custom objective)
-                loss, MF = model.batch_contrastive_loss(rF_wt, rF_g, word_id)
+                loss, MF = model.batch_contrastive_loss(rF_wt, rF_g, gloss_id)
 
                 loss = loss / float(grad_accum_steps)
 
@@ -152,7 +152,7 @@ def train_model(
             pred_indices = MF.argmax(dim=1)  # [B] predicted most similar gloss in batch
 
             # batch-level ground truth: samples with same word_id are positives
-            pos_mask = (word_id.unsqueeze(0) == word_id.unsqueeze(1)).cpu().numpy()  # [B,B]
+            pos_mask = (gloss_id.unsqueeze(0) == gloss_id.unsqueeze(1)).cpu().numpy()  # [B,B]
             batch_tp, batch_fp, batch_fn = 0, 0, 0
             for i in range(B):
                 # predicted positive = pred_indices[i]
