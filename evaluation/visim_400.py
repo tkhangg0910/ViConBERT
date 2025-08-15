@@ -69,7 +69,7 @@ def get_embedding(model,samples,tokenizer, device):
     ).to(device)
     
     with torch.inference_mode():
-        outputs = model(**toks,target_span=torch.tensor(span_indices, dtype=torch.long) )
+        outputs = model(toks,target_span=torch.tensor(span_indices, dtype=torch.long) )
     return outputs
 
 def construct_pseudo_sent(word ,pos): 
