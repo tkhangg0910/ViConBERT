@@ -175,7 +175,7 @@ def train_model(
                                                           target_idx,
                                                           train_data_loader.dataset.gloss_input_ids,
                                                           train_data_loader.dataset.gloss_attn_mask, device=device,
-                                                          chunk_size=32)
+                                                          chunk_size=16)
                 # rF_g = forward_gloss_in_chunks(model, batch_glosses, model.tokenizer, device, chunk_size=32)
                 # rF_wt = model.forward_context(context_inputs["input_ids"],context_inputs["attention_mask"], target_idx)
                 # allow user to override loss (e.g., add reg or custom objective)
