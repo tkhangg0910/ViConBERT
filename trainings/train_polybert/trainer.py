@@ -94,8 +94,6 @@ if __name__=="__main__":
     warmup_steps = int(0.1 * total_steps)
     
     optim = create_optimizer(model, config)
-    report_gpu_memory(device)
-    report_peak_memory(device)
 
     scheduler = ReduceLROnPlateau(
         optimizer = optim,
