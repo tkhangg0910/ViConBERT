@@ -36,7 +36,7 @@ def compute_context_vs_gloss_similarity(model, context_inputs, target_idx, input
     Returns: similarity matrix [B, num_gloss]
     """
     B = context_inputs["input_ids"].size(0)
-    num_gloss = len(tok_gloss_list)
+    num_gloss = len(input_ids)
     
     # Encode contexts once
     rF_wt = model.forward_context(

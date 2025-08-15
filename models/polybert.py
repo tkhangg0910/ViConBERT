@@ -58,7 +58,7 @@ class PolyBERT(nn.Module):
         """
         rF_wt: [B, polym, H]  - context embeddings
         rF_g:  [B, polym, H]  - gloss embeddings
-        label: [B] long tensor - index của gloss đúng (0..B-1).
+        label: [B] long tensor - (0..B-1).
         """
         # CrossEntropyLoss trực tiếp
         loss = F.cross_entropy(logits, label)
