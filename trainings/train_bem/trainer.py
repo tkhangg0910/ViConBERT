@@ -9,8 +9,8 @@ from transformers import PreTrainedTokenizerFast, PhobertTokenizerFast, XLMRober
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import pandas as pd
 
-from data.processed.polybert_exp.dataset import PolyBERTtDataset, ContrastiveBatchSampler
-from models.polybert import PolyBERT
+from data.processed.bem_exp.dataset import BEMDataset
+from models.bem import BiEncoderModel
 from utils.load_config import load_config
 from utils.optimizer import create_optimizer
 from trainings.train_polybert.utils import train_model
@@ -35,7 +35,7 @@ if __name__=="__main__":
     print(f"Load From Checkpoint: {bool(args.load_ckpts)}")
     print(f"Device: {device}")
     print(f"grad_accum_steps: {args.grad_accum_steps}")
-    config = load_config(f"configs/poly.yml")
+    config = load_config(f"configs/bem.yml")
     print(f"base_model: {config['base_model']}")
     
     with open(config["data"]["train_path"], "r",encoding="utf-8") as f:
@@ -56,8 +56,8 @@ if __name__=="__main__":
         tokenizer.add_special_tokens({'pad_token': '[PAD]'})
     
     batch_size = config["training"]['batch_size']
-    train_dataset = PolyBERTtDataset(train_sample, tokenizer)
-    valid_dataset = PolyBERTtDataset(valid_sample, tokenizer, val_mode=True)
+    train_dataset = BEMDataset(train_sample, tokenizer)
+    valid_dataset = BEMDataset(valid_sample, tokenizer, val_mode=True)
     
     # sampler = ContrastiveBatchSampler(train_dataset,batch_size=batch_size)
     
@@ -79,12 +79,10 @@ if __name__=="__main__":
         )
     
     if bool(args.load_ckpts):
-        model = PolyBERT.from_pretrained(config["base_model"]).to(device)
+        model = BiEncoderModel.from_pretrained(config["base_model"]).to(device)
     else:
-        model = PolyBERT(
-            polym = config["model"]["polym"],
-            num_heads = config["model"]["num_heads"],
-            bert_model_name=config["base_model"],
+        model = BiEncoderModel(
+            encoder_name=config["base_model"],
             tokenizer=tokenizer,
             ).to(device)
     
