@@ -80,7 +80,7 @@ def get_embedding(model, samples, tokenizer, device):
 def evaluate_model_vicon_by_pos(model, tokenizer, df, device, use_pseudo_sent=False):
     pos_tags = ["N", "V", "A"]
     results = []
-
+    print(df.head(5))
     for pos_tag in pos_tags:
         df_pos = df[df["POS"] == pos_tag]
         if df_pos.empty:
