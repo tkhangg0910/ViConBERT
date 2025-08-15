@@ -65,7 +65,7 @@ def get_embedding(model,samples,tokenizer, device):
             truncation=True,
             max_length=256,
             return_attention_mask=True,
-            return_offsets_mapping=True
+            # return_offsets_mapping=True
     ).to(device)
     
     with torch.inference_mode():
