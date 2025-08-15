@@ -87,8 +87,8 @@ def evaluate_model_vicon_by_pos(model, tokenizer, df, device, use_pseudo_sent=Fa
 
         ap_all = _evaluate_ap(model, tokenizer, df_pos, device, use_pseudo_sent)
 
-        ap_syn = _evaluate_ap(model, tokenizer, df_pos[df_pos["Relation"].str.lower() == "syn"], device, use_pseudo_sent)
-        ap_ant = _evaluate_ap(model, tokenizer, df_pos[df_pos["Relation"].str.lower() == "ant"], device, use_pseudo_sent)
+        ap_syn = _evaluate_ap(model, tokenizer, df_pos[df_pos["Relation"].str == "SYN"], device, use_pseudo_sent)
+        ap_ant = _evaluate_ap(model, tokenizer, df_pos[df_pos["Relation"].str == "ANT"], device, use_pseudo_sent)
 
         results.append({
             "POS": pos_tag,
@@ -109,7 +109,7 @@ def _evaluate_ap(model, tokenizer, df, device, use_pseudo_sent):
     pos     = df["POS"].tolist()
     label_str = df["Relation"].tolist()
 
-    labels = [1 if rel.lower() == "syn" else 0 for rel in label_str]
+    labels = [1 if rel == "SYN" else 0 for rel in label_str]
 
     if use_pseudo_sent:
         word_1_sample = {
