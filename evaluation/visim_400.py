@@ -123,4 +123,4 @@ if __name__=="__main__":
     model = ViSynoSenseEmbedding.from_pretrained(args.model_path).to(device)
 
 
-    valid_metrics = evaluate_model(model, tokenizer,benchmark, device)
+    valid_metrics = evaluate_model(model, tokenizer,benchmark, device, use_pseudo_sent=args.pseudo_sent)
