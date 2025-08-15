@@ -47,7 +47,7 @@ def get_visim400():
     # Download latest version
     path = kagglehub.dataset_download("dinhvietahn19021217/visim400csv")
 
-    return pd.read_csv(path)
+    return pd.read_csv(os.path.join(path,"visim-40401.csv"))
 
 def get_embedding(model,samples,tokenizer, device):
     span_extractor = SpanExtractor(tokenizer)
