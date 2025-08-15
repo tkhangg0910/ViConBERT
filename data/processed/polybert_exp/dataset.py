@@ -155,127 +155,182 @@ class PolyBERTtDataset(Dataset):
 
 
 class ContrastiveBatchSampler(Sampler):
-    def __init__(self, dataset, batch_size, samples_per_gloss=2, max_gloss_per_batch=None, drop_last=False):
+    """
+    Batch sampler that:
+    - tries to maximize distinct gloss_id inside each batch
+    - optionally adds pairs of samples that share the same target_word but come
+      from different gloss_id (hard negatives)
+    Use with DataLoader(..., batch_sampler=ContrastiveBatchSampler(...))
+    """
+    def __init__(self, dataset, batch_size, same_word_pair_prob=0.3, drop_last=True, shuffle=True, seed=None):
         """
-        Args:
-            dataset: Your PolyBERTtDataset instance
-            batch_size: Total batch size
-            samples_per_gloss: How many samples to include per gloss in a batch
-            max_gloss_per_batch: Maximum number of glosses per batch (None for auto)
-            drop_last: Whether to drop last incomplete batch
+        dataset: your PolyBERTtDataset instance (expects dataset.all_samples with 'gloss_id' and 'target_word')
+        batch_size: int
+        same_word_pair_prob: fraction of batch size to allocate to same-target-word pairs (range 0..1).
+                             e.g. 0.3 -> ~30% of batch positions used in same-word pairs (pairs consume 2 positions)
+        drop_last: whether to drop last incomplete batch
+        shuffle: shuffle samples within each gloss list at start of epoch
         """
+        assert batch_size >= 2, "batch_size should be >= 2"
         self.dataset = dataset
         self.batch_size = batch_size
+        self.same_word_pair_prob = float(same_word_pair_prob)
         self.drop_last = drop_last
-        self.samples_per_gloss = samples_per_gloss
-        
-        # Auto-calculate max_gloss_per_batch if not specified
-        self.max_gloss_per_batch = max_gloss_per_batch or (batch_size // samples_per_gloss)
-        
-        # Build indices organized by gloss_id and target_word
-        self._build_indices()
-        
-    def _build_indices(self):
-        # Create mapping from gloss_id to sample indices
-        self.gloss_to_indices = defaultdict(list)
-        
-        # Also create mapping from target_word to gloss_ids
-        self.word_to_glosses = defaultdict(set)
-        
-        for idx, sample in enumerate(self.dataset.all_samples):
-            gloss_id = sample["gloss_id"]
-            target_word = sample["target_word"]
-            
-            self.gloss_to_indices[gloss_id].append(idx)
-            self.word_to_glosses[target_word].add(gloss_id)
-        
-        # Convert to regular dict and shuffle each gloss's indices
-        self.gloss_to_indices = dict(self.gloss_to_indices)
-        for gloss_id in self.gloss_to_indices:
-            random.shuffle(self.gloss_to_indices[gloss_id])
-        
-        # Get all gloss_ids and shuffle them
-        self.all_gloss_ids = list(self.gloss_to_indices.keys())
-        random.shuffle(self.all_gloss_ids)
-        
-        # Track current position for each gloss
-        self.gloss_ptr = {gloss_id: 0 for gloss_id in self.all_gloss_ids}
-        
-    def _get_samples_for_gloss(self, gloss_id, count):
-        """Get next 'count' samples for given gloss_id"""
-        indices = []
-        remaining = count
-        
-        while remaining > 0:
-            available = len(self.gloss_to_indices[gloss_id]) - self.gloss_ptr[gloss_id]
-            if available == 0:
-                break
-                
-            take = min(remaining, available)
-            start = self.gloss_ptr[gloss_id]
-            end = start + take
-            indices.extend(self.gloss_to_indices[gloss_id][start:end])
-            self.gloss_ptr[gloss_id] = end
-            remaining -= take
-        
-        return indices
-    
-    def __iter__(self):
-        # Reset gloss pointers
-        self.gloss_ptr = {gloss_id: 0 for gloss_id in self.all_gloss_ids}
-        random.shuffle(self.all_gloss_ids)
-        
-        # Create a list of all gloss_ids that still have samples remaining
-        remaining_gloss_ids = [gloss_id for gloss_id in self.all_gloss_ids 
-                              if self.gloss_ptr[gloss_id] < len(self.gloss_to_indices[gloss_id])]
-        
-        while len(remaining_gloss_ids) > 0:
-            batch_indices = []
-            
-            # Strategy 1: Prioritize glosses that share target_words with other glosses in batch
-            if len(batch_indices) > 0:
-                # Get target_words already in batch
-                batch_target_words = set()
-                for idx in batch_indices:
-                    batch_target_words.add(self.dataset.all_samples[idx]["target_word"])
-                
-                # Find gloss_ids that share these target_words but aren't already in batch
-                candidate_gloss_ids = set()
-                for word in batch_target_words:
-                    for gloss_id in self.word_to_glosses[word]:
-                        if (gloss_id in remaining_gloss_ids and 
-                            gloss_id not in [self.dataset.all_samples[idx]["gloss_id"] for idx in batch_indices]):
-                            candidate_gloss_ids.add(gloss_id)
-                
-                if candidate_gloss_ids:
-                    selected_gloss = random.choice(list(candidate_gloss_ids))
-                    samples = self._get_samples_for_gloss(selected_gloss, self.samples_per_gloss)
-                    batch_indices.extend(samples)
-            
-            # Strategy 2: If batch still needs more samples, add new glosses
-            while len(batch_indices) < self.batch_size and len(remaining_gloss_ids) > 0:
-                # Select a gloss we haven't used yet in this batch
-                available_gloss = [g for g in remaining_gloss_ids 
-                                 if g not in [self.dataset.all_samples[idx]["gloss_id"] for idx in batch_indices]]
-                
-                if not available_gloss:
-                    break
-                
-                selected_gloss = random.choice(available_gloss)
-                samples = self._get_samples_for_gloss(selected_gloss, self.samples_per_gloss)
-                batch_indices.extend(samples)
-            
-            # Update remaining gloss_ids
-            remaining_gloss_ids = [gloss_id for gloss_id in self.all_gloss_ids 
-                                  if self.gloss_ptr[gloss_id] < len(self.gloss_to_indices[gloss_id])]
-            
-            if len(batch_indices) < self.batch_size and self.drop_last:
-                continue
-            
-            if batch_indices:
-                yield batch_indices
-    
+        self.shuffle = shuffle
+        self.seed = seed
+
+        # Build mapping gloss_id -> indices, and target_word -> set(gloss_id)
+        gloss2idxs = defaultdict(list)
+        word2glosses = defaultdict(set)
+
+        for idx, s in enumerate(self.dataset.all_samples):
+            gid = s["gloss_id"]
+            w = s["target_word"]
+            gloss2idxs[gid].append(idx)
+            word2glosses[w].add(gid)
+
+        # convert sets to lists
+        self.gloss2idxs = {g: list(idxs) for g, idxs in gloss2idxs.items()}
+        self.word2glosses = {w: list(gs) for w, gs in word2glosses.items()}
+
+        # Precompute total samples
+        self.total_samples = sum(len(v) for v in self.gloss2idxs.values())
+
+        # reproducible randomness
+        self._rnd = random.Random(seed)
+
     def __len__(self):
-        # Approximate number of batches
-        total_samples = sum(len(indices) for indices in self.gloss_to_indices.values())
-        return total_samples // self.batch_size
+        # number of batches per epoch
+        if self.drop_last:
+            return self.total_samples // self.batch_size
+        else:
+            return math.ceil(self.total_samples / self.batch_size)
+
+    def _prepare_epoch(self):
+        # Make working copies of per-gloss indices and shuffle if needed
+        self._work_gloss2idxs = {g: list(idxs) for g, idxs in self.gloss2idxs.items()}
+        if self.shuffle:
+            for idxs in self._work_gloss2idxs.values():
+                self._rnd.shuffle(idxs)
+
+        # Track glosses that currently have samples
+        self._available_glosses = {g for g, idxs in self._work_gloss2idxs.items() if len(idxs) > 0}
+
+        # precompute words that could possibly produce pairs (>=2 distinct glosses with >=1 sample)
+        self._update_candidate_pair_words()
+
+        # total remaining samples
+        self._remaining = sum(len(idxs) for idxs in self._work_gloss2idxs.values())
+
+    def _update_candidate_pair_words(self):
+        self._candidate_pair_words = []
+        for w, gloss_list in self.word2glosses.items():
+            # count available glosses for this word with at least one sample
+            avail = [g for g in gloss_list if g in self._available_glosses]
+            if len(avail) >= 2:
+                self._candidate_pair_words.append(w)
+
+    def __iter__(self):
+        self._prepare_epoch()
+        batches_emitted = 0
+
+        while self._remaining >= self.batch_size:
+            batch = []
+            used_gloss_in_batch = set()
+
+            # how many positions to allocate to same-word pairs (each pair uses 2 positions)
+            pair_positions = int(self.same_word_pair_prob * self.batch_size)
+            num_pairs = pair_positions // 2  # full pairs only
+            # safety: don't request more pairs than possible given remaining samples
+            max_pairs_possible = 0
+            # estimate max pairs by counting words that can still produce pairs
+            for w in self._candidate_pair_words:
+                avail_glosses = [g for g in self.word2glosses[w] if g in self._available_glosses]
+                max_pairs_possible += len(avail_glosses) // 2  # loose bound
+            num_pairs = min(num_pairs, max_pairs_possible)
+
+            # create pairs
+            for _ in range(num_pairs):
+                if not self._candidate_pair_words:
+                    break
+                # pick a word that currently can produce a pair
+                w = self._rnd.choice(self._candidate_pair_words)
+                avail_glosses = [g for g in self.word2glosses[w] if g in self._available_glosses]
+                if len(avail_glosses) < 2:
+                    # update and continue
+                    self._update_candidate_pair_words()
+                    continue
+                # choose two distinct gloss_ids
+                g1, g2 = self._rnd.sample(avail_glosses, 2)
+
+                # pop one index from each gloss
+                i1 = self._work_gloss2idxs[g1].pop()
+                i2 = self._work_gloss2idxs[g2].pop()
+                batch.extend([i1, i2])
+                used_gloss_in_batch.update([g1, g2])
+
+                # update availability
+                if not self._work_gloss2idxs[g1]:
+                    self._available_glosses.discard(g1)
+                if not self._work_gloss2idxs[g2]:
+                    self._available_glosses.discard(g2)
+                self._remaining -= 2
+
+                # refresh candidate words list occasionally
+                self._update_candidate_pair_words()
+
+            # Fill remaining slots preferring distinct glosses
+            slots_left = self.batch_size - len(batch)
+            if slots_left > 0:
+                # try to pick 'slots_left' distinct glosses different from used_gloss_in_batch
+                candidates = list(self._available_glosses - used_gloss_in_batch)
+                if len(candidates) >= slots_left:
+                    chosen = self._rnd.sample(candidates, slots_left)
+                else:
+                    # not enough distinct glosses left -> take what we can, then allow duplicates
+                    chosen = list(candidates)
+                    needed = slots_left - len(chosen)
+                    # make a flatten list of glosses with remaining samples (including those already used in batch)
+                    refill_pool = [g for g in self._available_glosses]
+                    # if still insufficient (rare), we will break early
+                    if not refill_pool:
+                        break
+                    # sample with replacement if needed
+                    for _ in range(needed):
+                        chosen.append(self._rnd.choice(refill_pool))
+
+                # pop one index from each chosen gloss
+                for g in chosen:
+                    if not self._work_gloss2idxs[g]:
+                        continue
+                    idx = self._work_gloss2idxs[g].pop()
+                    batch.append(idx)
+                    used_gloss_in_batch.add(g)
+                    if not self._work_gloss2idxs[g]:
+                        self._available_glosses.discard(g)
+                    self._remaining -= 1
+
+            # final verification: if batch has desired size, yield it
+            if len(batch) == self.batch_size:
+                batches_emitted += 1
+                yield batch
+            else:
+                # not enough samples to complete batch
+                break
+
+        # optionally yield a smaller last batch if not drop_last
+        if (not self.drop_last) and (self._remaining > 0):
+            tail = []
+            for g in list(self._available_glosses):
+                while self._work_gloss2idxs[g] and len(tail) < self.batch_size:
+                    tail.append(self._work_gloss2idxs[g].pop())
+                    self._remaining -= 1
+                if len(tail) >= self.batch_size:
+                    break
+            if tail:
+                yield tail  # possibly smaller than batch_size
+
+    def set_epoch_seed(self, seed):
+        """Optional: set a new seed between epochs for reproducible shuffling."""
+        self.seed = seed
+        self._rnd = random.Random(seed)
