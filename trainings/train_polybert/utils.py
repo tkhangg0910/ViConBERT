@@ -28,6 +28,26 @@ class AdaptiveGradientClipper:
         torch.nn.utils.clip_grad_norm_(parameters, self.max_norm)
         return total_norm.item()
     
+def forward_gloss_in_chunks(model, gloss_list, tokenizer, device, chunk_size=64):
+    """
+    Encode glosses in mini-batches to save GPU memory
+    """
+    all_embs = []
+    for i in range(0, len(gloss_list), chunk_size):
+        toks = tokenizer(
+            gloss_list[i:i+chunk_size],
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=256
+        ).to(device)
+        with autocast(device_type=device):
+            emb = model.forward_gloss(toks["input_ids"], toks["attention_mask"])
+        all_embs.append(emb)
+        del toks, emb
+        torch.cuda.empty_cache()
+    return torch.cat(all_embs, dim=0)
+
 def train_model(
     num_epochs,
     train_data_loader,
@@ -111,10 +131,10 @@ def train_model(
                 "attention_mask": batch["context_attn_mask"].to(device)
             }
             
-            gloss_inputs = {
-                "input_ids": train_data_loader.dataset.gloss_input_ids.to(device),
-                "attention_mask": train_data_loader.dataset.gloss_attn_mask.to(device)
-            }
+            # gloss_inputs = {
+            #     "input_ids": train_data_loader.dataset.gloss_input_ids.to(device),
+            #     "attention_mask": train_data_loader.dataset.gloss_attn_mask.to(device)
+            # }
             target_idx = batch["target_spans"].to(device)  # shape [B]
 
             # gloss_id = batch.get("gloss_id", None)
@@ -127,7 +147,9 @@ def train_model(
 
             # forward + loss (use AMP if available)
             with autocast(device_type=device):
-                rF_wt, rF_g = model(context_inputs, gloss_inputs, target_idx)
+                batch_glosses = [train_data_loader.dataset.gloss_list[i] for i in range(len(train_data_loader.dataset.gloss_list))]
+                rF_g = forward_gloss_in_chunks(model, batch_glosses, model.tokenizer, device, chunk_size=64)
+                rF_wt = model.forward_context(context_inputs["input_ids"],context_inputs["attention_mask"], target_idx)
                 # allow user to override loss (e.g., add reg or custom objective)
                 loss, MF = model.contrastive_classification_loss(rF_wt, rF_g, gold_glosses_idx)
 
