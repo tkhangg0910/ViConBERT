@@ -85,8 +85,10 @@ def evaluate_model(model, tokenizer, data, device, use_pseudo_sent=False):
     sim_gt = data["Sim2"].tolist()  
     pos = data["POS"].tolist()
     if use_pseudo_sent:
-        word_1_sample = {"sentence": [construct_pseudo_sent(w.replace("_"," "),p) for w,p in zip(words1,pos)], "target_word": words1.replace("_"," ")}
-        word_2_sample = {"sentence": [construct_pseudo_sent(w.replace("_"," "),p) for w,p in zip(words2,pos)], "target_word": words2.replace("_"," ")}
+        word_1_sample = {"sentence": [construct_pseudo_sent(w.replace("_"," "),p) for w,p in zip(words1,pos)], 
+                         "target_word": [w.replace("_", " ") for w in words1]}
+        word_2_sample = {"sentence": [construct_pseudo_sent(w.replace("_"," "),p) for w,p in zip(words2,pos)], 
+                          "target_word": [w.replace("_", " ") for w in words2]}
     else:
         word_1_sample = {
             "sentence": [w.replace("_", " ") for w in words1],
