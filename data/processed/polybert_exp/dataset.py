@@ -172,7 +172,7 @@ class ContrastiveBatchSampler(Sampler):
         self.word_to_senses = defaultdict(lambda: defaultdict(list))
         for idx, sample in enumerate(dataset.all_samples):
             word = sample["target_word"]
-            sense_id = sample["word_id"]
+            sense_id = sample["gloss"]
             self.word_to_senses[word][sense_id].append(idx)
         
         # Lọc từ có đủ nghĩa
