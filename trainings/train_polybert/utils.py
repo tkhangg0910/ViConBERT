@@ -28,7 +28,7 @@ class AdaptiveGradientClipper:
         torch.nn.utils.clip_grad_norm_(parameters, self.max_norm)
         return total_norm.item()
     
-def forward_gloss_in_chunks(model, gloss_list, tokenizer, device, chunk_size=64):
+def forward_gloss_in_chunks(model, gloss_list, tokenizer, device, chunk_size=32):
     """
     Encode glosses in mini-batches to save GPU memory
     """
