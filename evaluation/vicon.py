@@ -80,7 +80,6 @@ def get_embedding(model, samples, tokenizer, device):
 def evaluate_model_vicon_by_pos(model, tokenizer, df, device, use_pseudo_sent=False):
     pos_tags = ["N", "V", "A"]
     results = []
-    print(df.head(5))
     for pos_tag in pos_tags:
         df_pos = df[df["POS"] == pos_tag]
         if df_pos.empty:
@@ -88,8 +87,8 @@ def evaluate_model_vicon_by_pos(model, tokenizer, df, device, use_pseudo_sent=Fa
 
         ap_all = _evaluate_ap(model, tokenizer, df_pos, device, use_pseudo_sent)
 
-        ap_syn = _evaluate_ap(model, tokenizer, df_pos[df_pos["Relation"].str.lower() == "synonym"], device, use_pseudo_sent)
-        ap_ant = _evaluate_ap(model, tokenizer, df_pos[df_pos["Relation"].str.lower() == "antonym"], device, use_pseudo_sent)
+        ap_syn = _evaluate_ap(model, tokenizer, df_pos[df_pos["Relation"].str.lower() == "SYN"], device, use_pseudo_sent)
+        ap_ant = _evaluate_ap(model, tokenizer, df_pos[df_pos["Relation"].str.lower() == "ANT"], device, use_pseudo_sent)
 
         results.append({
             "POS": pos_tag,
