@@ -73,32 +73,32 @@ class PolyBERT(nn.Module):
         rFg = rg.unsqueeze(1).repeat(1, self.polym, 1)  # [B, polym, H]
         return rFg
 
-    def batch_contrastive_loss_with_id(self, rF_wt, rF_g, word_id):
-        """
-        rF_wt: [B, polym, H]  - context embeddings
-        rF_g:  [B, polym, H]  - gloss embeddings
-        word_id: [B] long tensor, global word_id
-                samples with same word_id are positives
-        """
+    def batch_contrastive_loss_with_id(self, rF_wt, rF_g, word_id, temperature=0.05):
         B = rF_wt.size(0)
-        rF_wt_flat = rF_wt.reshape(B, -1)  # [B, polym*H]
-        rF_g_flat  = rF_g.reshape(B, -1)   # [B, polym*H]
-
-        # similarity matrix [B, B]
-        sim = torch.matmul(rF_wt_flat.float(), rF_g_flat.T.float())
-
-        # softmax over rows
-        P = F.softmax(sim, dim=1)
-
-        # positive mask [B, B]: same global word_id
-        word_id_row = word_id.unsqueeze(0)  # [1, B]
-        word_id_col = word_id.unsqueeze(1)  # [B, 1]
-        pos_mask = (word_id_row == word_id_col).float()  # [B, B]
-
-        # compute probability of positives
-        pos_probs = (P * pos_mask).sum(dim=1) / pos_mask.sum(dim=1).clamp(min=1.0)
-        loss = -torch.log(pos_probs + 1e-8).mean()
-
+        # Flatten and normalize vectors
+        rF_wt_flat = F.normalize(rF_wt.reshape(B, -1), p=2, dim=1)
+        rF_g_flat = F.normalize(rF_g.reshape(B, -1), p=2, dim=1)
+        
+        # Compute similarity matrix with temperature scaling
+        sim = torch.mm(rF_wt_flat, rF_g_flat.t()) / temperature
+        
+        # Create positive mask (same word_id)
+        pos_mask = word_id.unsqueeze(0) == word_id.unsqueeze(1)
+        pos_mask = pos_mask.to(sim.device)
+        
+        # Compute logits for positive pairs
+        pos_sim = sim.masked_select(pos_mask).view(B, -1)
+        
+        # Compute logits for negative pairs
+        neg_sim = sim.masked_select(~pos_mask).view(B, -1)
+        
+        # Concatenate for cross entropy: positive is always index 0
+        logits = torch.cat([pos_sim, neg_sim], dim=1)
+        
+        # Targets: positive at index 0
+        targets = torch.zeros(B, dtype=torch.long, device=sim.device)
+        
+        loss = F.cross_entropy(logits, targets)
         return loss, sim
     def batch_contrastive_loss(self, rF_wt, rF_g):
         """
