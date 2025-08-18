@@ -199,8 +199,8 @@ def train_model_bc(
 
             # optional metrics
             B = rF_wt.size(0)
-            rF_wt_flat = rF_wt.reshape(B, -1)  # [B, polym*H]
-            rF_g_flat  = rF_g.reshape(B, -1)   # [B, polym*H]
+            rF_wt_flat = rF_wt.reshape(B, -1).float()  # [B, polym*H]
+            rF_g_flat  = rF_g.reshape(B, -1).float()   # [B, polym*H]
 
             # similarity matrix [B, B]
             sim = torch.matmul(rF_wt_flat, rF_g_flat.T)
