@@ -248,6 +248,8 @@ class PolyBERTtDataseV2(Dataset):
 
     def collate_fn(self, batch):
         sentences = [b["sentence"] for b in batch]
+        gold_glosses = [b["gloss"] for b in batch]
+
         spans = [b["target_span"] for b in batch]
         synset_ids = torch.tensor([b["synset_ids"] for b in batch], dtype=torch.long)
         word_id = torch.tensor([b["word_id"] for b in batch], dtype=torch.long)
@@ -291,6 +293,7 @@ class PolyBERTtDataseV2(Dataset):
             "target_spans": torch.tensor(spans, dtype=torch.long),
             "synset_ids": synset_ids,
             "word_id": word_id,
+            "gold_glosses": gold_glosses ,
             "target_words": target_words,
             "candidate_glosses": candidate_glosses,
             "gloss_id": gloss_id
