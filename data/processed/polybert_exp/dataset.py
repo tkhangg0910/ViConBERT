@@ -364,7 +364,7 @@ class PolyBERTtDatasetV3(Dataset):
             candidate_glosses = [b["candidate_glosses"] for b in batch]
         
             return {
-                "sentences":sentences,
+                "sentence":sentences,
                 "target_spans": torch.tensor(spans, dtype=torch.long),  # [B,2]
                 "synset_ids": synset_ids,
                 "word_id": word_id,
@@ -394,7 +394,7 @@ class PolyBERTtDatasetV3(Dataset):
             self.global_gloss_pool.index(g) for g in glosses
         ], dtype=torch.long)
         return {
-            "sentences":sentences,
+            "sentence":sentences,
             "target_spans": torch.tensor(spans, dtype=torch.long) if spans else None,
             "synset_ids": labels,
             "word_id":word_id,
