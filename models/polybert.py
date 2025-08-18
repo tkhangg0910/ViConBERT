@@ -54,6 +54,16 @@ class PolyBERT(nn.Module):
         fused, _ = self.attn(Q, K, V)  # [B, polym, H]
 
         return fused
+    def contrastive_classification_loss(self, logits, label):
+        """
+        rF_wt: [B, polym, H]  - context embeddings
+        rF_g:  [B, polym, H]  - gloss embeddings
+        label: [B] long tensor - (0..B-1).
+        """
+        # CrossEntropyLoss trực tiếp
+        loss = F.cross_entropy(logits, label)
+
+        return loss, logits
 
     def forward_gloss(self, input_ids, attention_mask):
         outputs = self.gloss_encoder(input_ids=input_ids, attention_mask=attention_mask)
@@ -63,14 +73,34 @@ class PolyBERT(nn.Module):
         rFg = rg.unsqueeze(1).repeat(1, self.polym, 1)  # [B, polym, H]
         return rFg
 
-    def batch_contrastive_loss(self, rF_wt, rF_g):
-        rF_wt_mean = rF_wt.mean(dim=1)  # [B, H]
-        rF_g_mean = rF_g.mean(dim=1)    # [B, H]
-        MF = torch.matmul(rF_wt_mean, rF_g_mean.T)  # [B, B]
-        P = F.softmax(MF, dim=1)
-        Pd = P[torch.arange(P.size(0)), torch.arange(P.size(0))]
-        loss = -torch.log(Pd).mean()
-        return loss, MF
+    def batch_contrastive_loss(self, rF_wt, rF_g, word_id):
+        """
+        rF_wt: [B, polym, H]  - context embeddings
+        rF_g:  [B, polym, H]  - gloss embeddings
+        word_id: [B] long tensor, global word_id
+                samples with same word_id are positives
+        """
+        B = rF_wt.size(0)
+        rF_wt_flat = rF_wt.reshape(B, -1)  # [B, polym*H]
+        rF_g_flat  = rF_g.reshape(B, -1)   # [B, polym*H]
+
+        # similarity matrix [B, B]
+        sim = torch.matmul(rF_wt_flat, rF_g_flat.T)
+
+        # softmax over rows
+        P = F.softmax(sim, dim=1)
+
+        # positive mask [B, B]: same global word_id
+        word_id_row = word_id.unsqueeze(0)  # [1, B]
+        word_id_col = word_id.unsqueeze(1)  # [B, 1]
+        pos_mask = (word_id_row == word_id_col).float()  # [B, B]
+
+        # compute probability of positives
+        pos_probs = (P * pos_mask).sum(dim=1) / pos_mask.sum(dim=1).clamp(min=1.0)
+        loss = -torch.log(pos_probs + 1e-8).mean()
+
+        return loss, sim
+
 
     def forward(self, context_inputs, gloss_inputs, target_idx):
         rF_wt = self.forward_context(
@@ -82,8 +112,7 @@ class PolyBERT(nn.Module):
             gloss_inputs["input_ids"],
             gloss_inputs["attention_mask"]
         )
-        loss, MF = self.batch_contrastive_loss(rF_wt, rF_g)
-        return loss, MF
+        return rF_wt, rF_g
 
     def save_pretrained(self, save_directory):
         os.makedirs(save_directory, exist_ok=True)

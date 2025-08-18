@@ -10,7 +10,7 @@ output_dir: "./checkpoints/xlm-roberta-large"
 data:
   train_path: "data/processed/stage1_pseudo_sents/train_data_v4.json"
   valid_path: "data/processed/stage1_pseudo_sents/valid_data_v4.json"
-  emd_path: "data/processed/gloss_embeddings.pt"
+  emd_path: "data/processed/sup_SimCSE_gloss_embeddings.pt"
   num_workers: 16
 
 model:  
@@ -26,14 +26,14 @@ model:
 training:
   ckpt_interval: 10
   shuffle: False
-  batch_size: 416
+  batch_size: 320
   epochs: 100
   early_stopping_patience: 5
   save_steps: 1000
   optimizer:
     name: "adamw"
-    lr_base: 3e-5
-    lr_custom: 2e-4 
+    lr_base: 2e-5
+    lr_custom: 1e-4 
     weight_decay: 0.01
     eps: 1e-6
     betas: [0.9, 0.999]

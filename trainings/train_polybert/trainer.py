@@ -55,15 +55,16 @@ if __name__=="__main__":
     if tokenizer.pad_token is None:
         tokenizer.add_special_tokens({'pad_token': '[PAD]'})
     
-    batch_size = config['batch_size']
+    batch_size = config["training"]['batch_size']
     train_dataset = PolyBERTtDataset(train_sample, tokenizer)
     valid_dataset = PolyBERTtDataset(valid_sample, tokenizer, val_mode=True)
     
-    sampler = ContrastiveBatchSampler(train_dataset,batch_size=batch_size)
+    # sampler = ContrastiveBatchSampler(train_dataset,batch_size=batch_size)
     
     train_dataloader = DataLoader(
             train_dataset,
-            batch_sampler=sampler,
+            batch_size=batch_size,
+            # batch_sampler=sampler,
             collate_fn=train_dataset.collate_fn,
             num_workers=config["data"]["num_workers"],
             pin_memory=True
@@ -86,7 +87,6 @@ if __name__=="__main__":
             bert_model_name=config["base_model"],
             tokenizer=tokenizer,
             ).to(device)
-    
     total_steps = len(train_dataloader) * config["training"]["epochs"] 
     steps_per_epoch = len(train_dataloader)
     print(f"Steps per epoch: {steps_per_epoch}")
@@ -94,7 +94,7 @@ if __name__=="__main__":
     warmup_steps = int(0.1 * total_steps)
     
     optim = create_optimizer(model, config)
-    
+
     scheduler = ReduceLROnPlateau(
         optimizer = optim,
         mode='min',         
