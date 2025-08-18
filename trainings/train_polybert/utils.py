@@ -258,8 +258,7 @@ def train_model(
         
         avg_train_loss = running_loss / max(1, train_steps)
         history["train_loss"].append(avg_train_loss)
-
-        # ============= VALIDATION =============
+        # ============= VALIDATION (Cross-Entropy) =============
         valid_loss = 0.0
         TP, FP, FN = 0, 0, 0
         valid_steps = 0
@@ -267,8 +266,9 @@ def train_model(
         model.eval()
         with torch.no_grad():
             val_pbar = tqdm(valid_data_loader, 
-                         desc=f"Validating {epoch+1}/{num_epochs}",
-                         position=1, leave=True, ascii=True)
+                            desc=f"Validating {epoch+1}/{num_epochs}",
+                            position=1, leave=True, ascii=True)
+
             for batch in val_pbar:
                 batch_size = len(batch["context_input_ids"])
                 context_inputs = {
@@ -277,36 +277,58 @@ def train_model(
                 }
 
                 target_spans = batch["target_spans"].to(device)
-                rF_wt = model.forward_context(context_inputs["input_ids"],
-                                            context_inputs["attention_mask"],
-                                            target_spans)  # [B, polym, H]
+                rF_wt = model.forward_context(
+                    context_inputs["input_ids"],
+                    context_inputs["attention_mask"],
+                    target_spans
+                )  # [B, polym, H]
 
-                for i in range(batch_size):
-                    candidates = batch["candidate_glosses"][i]  # list of N gloss strings
-                    gold_gloss = batch["gold_glosses"][i]
+                # --- Tokenize all candidate glosses and compute max length ---
+                all_candidates = [c for cands in batch["candidate_glosses"] for c in cands]
+                g_toks = model.tokenizer(
+                    all_candidates,
+                    return_tensors="pt",
+                    padding=True,
+                    truncation=True,
+                    max_length=256
+                ).to(device)
 
-                    # tokenize candidate glosses
-                    g_toks = model.tokenizer(candidates,
-                                            return_tensors="pt",
-                                            padding=True,
-                                            truncation=True,
-                                            max_length=256).to(device)
+                rF_g = model.forward_gloss(g_toks["input_ids"], g_toks["attention_mask"])  # [total_cands, polym, H]
 
-                    rF_g = model.forward_gloss(g_toks["input_ids"],
-                                            g_toks["attention_mask"])  # [N, polym, H]
+                # --- Build sim matrix with padding ---
+                sims_list, gold_indices = [], []
+                start = 0
+                max_cands = max(len(c) for c in batch["candidate_glosses"])
 
-                    # similarity context_i vs N candidate glosses
-                    sim = torch.matmul(rF_wt[i].flatten().unsqueeze(0), rF_g.reshape(len(candidates),-1).T)  # [1, N]
-                    P = F.softmax(sim, dim=1)  # [1, N]
+                for i, cands in enumerate(batch["candidate_glosses"]):
+                    end = start + len(cands)
+                    gloss_vecs = rF_g[start:end].reshape(len(cands), -1)  # [N_i, D]
+                    ctx_vec = rF_wt[i].flatten().unsqueeze(0)            # [1, D]
 
-                    gold_idx = candidates.index(gold_gloss)
-                    loss_i = -torch.log(P[0, gold_idx] + 1e-8)
-                    valid_loss += loss_i.item()
-                    valid_steps += 1
+                    sim = torch.matmul(ctx_vec, gloss_vecs.T)             # [1, N_i]
 
-                    # prediction
-                    pred_idx = P.argmax(dim=1).item()
-                    if pred_idx == gold_idx:
+                    # pad sim to max_cands
+                    if len(cands) < max_cands:
+                        pad_size = max_cands - len(cands)
+                        sim = F.pad(sim, (0, pad_size), value=-1e9)  # large negative to ignore in softmax
+
+                    sims_list.append(sim)
+                    gold_indices.append(cands.index(batch["gold_glosses"][i]))
+                    start = end
+
+                # [B, max_cands]
+                sims_batch = torch.cat(sims_list, dim=0)
+                gold_indices = torch.tensor(gold_indices, dtype=torch.long, device=device)
+
+                # Compute CE loss for the batch
+                loss = F.cross_entropy(sims_batch, gold_indices)
+                valid_loss += loss.item()
+                valid_steps += 1
+
+                # Predictions
+                preds = sims_batch.argmax(dim=1)
+                for pred, gold in zip(preds, gold_indices):
+                    if pred == gold:
                         TP += 1
                     else:
                         FP += 1
@@ -315,7 +337,7 @@ def train_model(
         # compute metrics
         valid_precision = TP / (TP + FP) if (TP + FP) > 0 else 0.0
         valid_recall    = TP / (TP + FN) if (TP + FN) > 0 else 0.0
-        valid_f1        = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+        valid_f1 = 2 * valid_precision * valid_recall / (valid_precision + valid_recall + 1e-8)
         avg_valid_loss  = valid_loss / max(1, valid_steps)
 
         
