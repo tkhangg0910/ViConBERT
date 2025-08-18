@@ -168,7 +168,7 @@ def train_model(
                 return_tensors="pt",
                 padding=True,
                 truncation=True,
-                max_length=64
+                max_length=256
             ).to(device)
 
 
