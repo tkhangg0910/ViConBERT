@@ -172,7 +172,7 @@ class PolyBERTtDataset(Dataset):
         }
 
 class PolyBERTtDataseV2(Dataset):
-    def __init__(self, samples, tokenizer, train_gloss_size=None, val_mode=False):
+    def __init__(self, samples, tokenizer, train_gloss_size=256, val_mode=False):
         self.tokenizer = tokenizer
         if self.tokenizer.pad_token is None:
             self.tokenizer.add_special_tokens({'pad_token': '[PAD]'})
@@ -266,24 +266,24 @@ class PolyBERTtDataseV2(Dataset):
         if self.val_mode:
             candidate_glosses = [b["candidate_glosses"] for b in batch]
         else:
-            # train mode: pad candidate glosses to batch size
             candidate_glosses = []
             for b in batch:
                 gold_gloss = b["gloss"]
-                cands = set(b["candidate_glosses"])  
+                cands = set(b["candidate_glosses"])  # unique
+                # đảm bảo gold gloss luôn có mặt
                 cands.add(gold_gloss)
-
                 needed = self.train_gloss_size - len(cands)
-
                 if needed > 0:
-            extra = random.sample(
-                [g for g in self.global_gloss_pool if g not in cands],
-                k=min(needed, len(self.global_gloss_pool) - len(cands))
-            )
-            cands.update(extra)
-            if len(cands) > self.train_gloss_size:
-                cands = set(random.sample(list(cands), self.train_gloss_size))
-            candidate_glosses.append(list(cands))
+                    extra = random.sample(
+                        [g for g in self.global_gloss_pool if g not in cands],
+                        k=min(needed, len(self.global_gloss_pool) - len(cands))
+                    )
+                    cands.update(extra)
+                # nếu cands > train_gloss_size thì random truncate
+                if len(cands) > self.train_gloss_size:
+                    cands = set(random.sample(list(cands), self.train_gloss_size))
+                candidate_glosses.append(list(cands))
+
 
         return {
             "context_input_ids": c_toks["input_ids"],
