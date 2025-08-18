@@ -354,7 +354,7 @@ class PolyBERTtDatasetV3(Dataset):
             # batch: list of items (each item has candidate_glosses list)
             sentences = [b["sentence"] for b in batch]          # B
             spans     = [b["target_spans"] for b in batch]       # B x (2)
-            synset_ids = torch.tensor([b["synset_ids"] for b in batch], dtype=torch.long)
+            synset_ids = torch.tensor([b["synset_id"] for b in batch], dtype=torch.long)
             word_id = torch.tensor([(b["word_id"]) for b in batch], dtype=torch.long)
             target_words = [b["target_word"] for b in batch]
             gold_glosses = [b["gloss"] for b in batch]
@@ -377,7 +377,7 @@ class PolyBERTtDatasetV3(Dataset):
         sentences = [b["sentence"] for b in batch]
         target_words = [b["target_word"] for b in batch]
         spans     = [b["target_spans"] for b in batch]
-        labels    = torch.tensor([b["synset_ids"] for b in batch], dtype=torch.long)
+        labels    = torch.tensor([b["synset_id"] for b in batch], dtype=torch.long)
         word_id = torch.tensor([b["word_id"] for b in batch], dtype=torch.long)
         glosses = [b["gloss"] for b in batch]
         gloss_id = torch.tensor([(b["gloss_id"]) for b in batch], dtype=torch.long)
