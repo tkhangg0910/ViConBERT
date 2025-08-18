@@ -349,6 +349,61 @@ class PolyBERTtDatasetV3(Dataset):
             item["candidate_glosses"] = list(set(self.word2gloss[s["target_word"]]))
         return item
 
+    def collate_fn(self, batch):
+        if self.val_mode:
+            # batch: list of items (each item has candidate_glosses list)
+            sentences = [b["sentence"] for b in batch]          # B
+            spans     = [b["target_spans"] for b in batch]       # B x (2)
+            synset_ids = torch.tensor([b["synset_ids"] for b in batch], dtype=torch.long)
+            word_id = torch.tensor([(b["word_id"]) for b in batch], dtype=torch.long)
+            target_words = [b["target_word"] for b in batch]
+            gold_glosses = [b["gloss"] for b in batch]
+            gloss_id = torch.tensor([(b["gloss_id"]) for b in batch], dtype=torch.long)
+
+
+            candidate_glosses = [b["candidate_glosses"] for b in batch]
+        
+            return {
+                "sentences":sentences,
+                "target_spans": torch.tensor(spans, dtype=torch.long),  # [B,2]
+                "synset_ids": synset_ids,
+                "word_id": word_id,
+                "target_words": target_words,
+                "gold_glosses": gold_glosses,                
+                "candidate_glosses": candidate_glosses,
+                "gloss_id":gloss_id 
+            }
+
+        sentences = [b["sentence"] for b in batch]
+        target_words = [b["target_word"] for b in batch]
+        spans     = [b["target_span"] for b in batch]
+        labels    = torch.tensor([b["synset_ids"] for b in batch], dtype=torch.long)
+        word_id = torch.tensor([b["word_id"] for b in batch], dtype=torch.long)
+        glosses = [b["gloss"] for b in batch]
+        gloss_id = torch.tensor([(b["gloss_id"]) for b in batch], dtype=torch.long)
+        # g_tokes = self.tokenizer(
+        #     glosses,
+        #     return_tensors="pt",
+        #     padding=True,
+        #     truncation=True,
+        #     max_length=256,
+        #     return_attention_mask=True,
+        #     return_offsets_mapping=True
+        # )
+        gold_glosses_idx = torch.tensor([
+            self.global_gloss_pool.index(g) for g in glosses
+        ], dtype=torch.long)
+        return {
+            "sentences":sentences,
+            "target_spans": torch.tensor(spans, dtype=torch.long) if spans else None,
+            "synset_ids": labels,
+            "word_id":word_id,
+            "gold_glosses_idx": gold_glosses_idx,
+            "target_words":target_words,
+            # "gloss_input_ids": self.g_tokes["input_ids"],
+            # "gloss_attn_mask": self.g_tokes["attention_mask"],
+            "gloss_id":gloss_id
+        }
 
 class ContrastiveBatchSampler(Sampler):
     def __init__(self, dataset, batch_size, num_negatives=16, drop_last=True):
