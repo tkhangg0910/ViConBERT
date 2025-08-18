@@ -191,7 +191,8 @@ def train_model(
 
                     # [D]
                     ctx_vec = rF_wt[i].unsqueeze(0)
-
+                    print(ctx_vec.shape)
+                    print(gloss_vecs.shape)
                     sim = torch.matmul(ctx_vec, gloss_vecs.T)  # [1, cand_size]
                     sims.append(sim)
 
