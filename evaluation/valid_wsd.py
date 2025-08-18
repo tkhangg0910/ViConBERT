@@ -6,7 +6,6 @@ from transformers import PhobertTokenizerFast, XLMRobertaTokenizerFast
 from torch.utils.data import DataLoader
 from data.processed.polybert_exp.dataset import PolyBERTtDatasetV3
 from models.base_model import ViSynoSenseEmbedding
-from sentence_transformers import SentenceTransformer
 from utils.load_config import load_config
 import torch
 from tqdm import tqdm
