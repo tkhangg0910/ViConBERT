@@ -26,6 +26,8 @@ def setup_args():
     parser.add_argument('--grad_clip', action='store_true', help='Gradient clipping')
     # parser.add_argument('--dataset_mode',  type=str, default='flat', help='dataset_mode')
     parser.add_argument('--grad_accum_steps',  type=int, default=1, help='dataset_mode')
+    parser.add_argument('--train_gloss_size',  type=int, default=5, help='train_gloss_size')
+
     parser.add_argument('--train_mode',  type=str, default="bc", help='dataset_mode')
 
     args = parser.parse_args()
@@ -82,7 +84,7 @@ if __name__=="__main__":
             )
 
     else:
-        train_dataset = PolyBERTtDataseV2(train_sample, tokenizer, train_gloss_size= 10 )
+        train_dataset = PolyBERTtDataseV2(train_sample, tokenizer, train_gloss_size= 9 )
         valid_dataset = PolyBERTtDataseV2(valid_sample, tokenizer,val_mode=True)
     
     # sampler = ContrastiveBatchSampler(train_dataset,batch_size=batch_size)
