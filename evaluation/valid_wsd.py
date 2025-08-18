@@ -6,6 +6,7 @@ from transformers import PhobertTokenizerFast, XLMRobertaTokenizerFast
 from torch.utils.data import DataLoader
 from data.processed.polybert_exp.dataset import PolyBERTtDatasetV3
 from models.base_model import ViSynoSenseEmbedding
+from sentence_transformers import SentenceTransformer
 
 from utils.load_config import load_config
 from models.polybert import PolyBERT
@@ -28,20 +29,21 @@ def setup_args():
     args = parser.parse_args()
     return args 
 import torch.nn.functional as F
+from pyvi.ViTokenizer import tokenize
 
-def evaluate_model(model, data_loader, device):
+def evaluate_model(context_model,gloss_model, data_loader, device):
     """Enhanced evaluation with detailed metrics"""
     valid_loss = 0.0
     TP, FP, FN = 0, 0, 0
     valid_steps = 0
 
-    model.eval()
+    context_model.eval()
     with torch.no_grad():
         val_pbar = tqdm(data_loader, 
                         desc=f"Validating",
                         position=1, leave=True, ascii=True)
         for batch in val_pbar:
-            c_toks = model.tokenizer(
+            c_toks = context_model.tokenizer(
                 batch["sentence"],
                 return_tensors="pt",
                 padding=True,
@@ -52,23 +54,18 @@ def evaluate_model(model, data_loader, device):
 
 
             target_spans = batch["target_spans"].to(device)
-            rF_wt = model.forward_context(c_toks["input_ids"],
+            rF_wt = context_model.forward_context(c_toks["input_ids"],
                                         c_toks["attention_mask"],
                                         target_spans)  # [B, polym, H]
 
             for i in range(len(batch)):
-                candidates = batch["candidate_glosses"][i]  # list of N gloss strings
+                candidates = batch["candidate_glosses"][i] 
                 gold_gloss = batch["gloss"][i]
 
                 # tokenize candidate glosses
-                g_toks = model.tokenizer(candidates,
-                                        return_tensors="pt",
-                                        padding=True,
-                                        truncation=True,
-                                        max_length=256).to(device)
+                sentences = [tokenize(sentence) for sentence in candidates]
 
-                rF_g = model.forward_gloss(g_toks["input_ids"],
-                                        g_toks["attention_mask"])  # [N, polym, H]
+                rF_g = gloss_model.encode(sentences)
 
                 # similarity context_i vs N candidate glosses
                 sim = torch.matmul(rF_wt[i].flatten().unsqueeze(0), rF_g.reshape(len(candidates),-1).T)  # [1, N]
@@ -128,9 +125,10 @@ if __name__=="__main__":
         pin_memory=True
     )
     
-    model = ViSynoSenseEmbedding.from_pretrained(args.model_path).to(device)
+    context_model = ViSynoSenseEmbedding.from_pretrained(args.model_path).to(device)
+    gloss_model = SentenceTransformer('dangvantuan/vietnamese-embedding')
     print("\nValidating epoch...")
-    valid_metrics = evaluate_model(model, valid_dataloader, device)
+    valid_metrics = evaluate_model(context_model,gloss_model, valid_dataloader, device)
     
     print("\n  VALIDATION METRICS:")
     print(f"    Loss: {valid_metrics['loss']:.4f}")
