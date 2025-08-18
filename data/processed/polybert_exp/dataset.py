@@ -339,7 +339,7 @@ class PolyBERTtDatasetV3(Dataset):
         item = {
             "sentence": s["sentence"],
             "target_word": s["target_word"],
-            "target_span": self.span_indices[idx],
+            "target_spans": self.span_indices[idx],
             "gloss": s["gloss"],
             "gloss_id": s["gloss_id"],
             "word_id": s["word_id"],
