@@ -296,7 +296,7 @@ def train_model_bc(
         # compute metrics
         valid_precision = TP / (TP + FP) if (TP + FP) > 0 else 0.0
         valid_recall    = TP / (TP + FN) if (TP + FN) > 0 else 0.0
-        valid_f1        = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+        valid_f1        = 2 * valid_precision * valid_recall / (valid_precision + valid_recall) if (valid_precision + valid_recall) > 0 else 0.0
         avg_valid_loss  = valid_loss / max(1, valid_steps)
 
         
