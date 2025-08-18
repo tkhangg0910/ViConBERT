@@ -182,7 +182,7 @@ def train_model_bc(
             with autocast(device_type=device):
                 rF_wt, rF_g = model(context_inputs ,gloss_inputs,target_idx)  
 
-                loss, sim  =model.batch_contrastive_loss(rF_wt, rF_g, gid)
+                loss, sim  =model.batch_contrastive_loss(rF_wt, rF_g)
                 loss = loss / float(grad_accum_steps)
 
 
@@ -264,7 +264,7 @@ def train_model_bc(
 
                 for i in range(len(batch)):
                     candidates = batch["candidate_glosses"][i]  # list of N gloss strings
-                    gold_gloss = batch["gold_glosses"][i]
+                    gold_gloss = batch["gloss"][i]
 
                     # tokenize candidate glosses
                     g_toks = model.tokenizer(candidates,

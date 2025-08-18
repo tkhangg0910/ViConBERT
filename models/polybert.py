@@ -73,7 +73,7 @@ class PolyBERT(nn.Module):
         rFg = rg.unsqueeze(1).repeat(1, self.polym, 1)  # [B, polym, H]
         return rFg
 
-    def batch_contrastive_loss(self, rF_wt, rF_g, word_id):
+    def batch_contrastive_loss_with_id(self, rF_wt, rF_g, word_id):
         """
         rF_wt: [B, polym, H]  - context embeddings
         rF_g:  [B, polym, H]  - gloss embeddings
@@ -100,6 +100,31 @@ class PolyBERT(nn.Module):
         loss = -torch.log(pos_probs + 1e-8).mean()
 
         return loss, sim
+    def batch_contrastive_loss(self, rF_wt, rF_g):
+        """
+        rF_wt: [B, polym, H]  - context embeddings
+        rF_g:  [B, polym, H]  - gloss embeddings
+        word_id: [B] long tensor, global word_id
+                samples with same word_id are positives
+        """
+        B = rF_wt.size(0)
+        rF_wt_flat = rF_wt.reshape(B, -1)  # [B, polym*H]
+        rF_g_flat  = rF_g.reshape(B, -1)   # [B, polym*H]
+
+        # similarity matrix [B, B]
+        sim = torch.matmul(rF_wt_flat.float(), rF_g_flat.T.float())
+
+        # softmax over rows
+        sim_matrix = torch.mm(rF_wt, rF_g.t())  # [B, B]
+    
+        # Create target: diagonal should be high similarity
+        targets = torch.arange(sim_matrix.size(0)).to(sim_matrix.device)
+        
+        # Compute cross-entropy loss
+        loss = F.cross_entropy(sim_matrix, targets)
+        
+        return loss, sim_matrix
+
 
 
     def forward(self, context_inputs, gloss_inputs, target_idx):
