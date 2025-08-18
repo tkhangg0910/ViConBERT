@@ -333,7 +333,8 @@ class PolyBERTtDatasetV3(Dataset):
 
     def __len__(self):
         return len(self.all_samples)
-    def _get_single(self, idx):
+
+    def __getitem__(self, idx):
         s = self.all_samples[idx]
         item = {
             "sentence": s["sentence"],
@@ -347,12 +348,6 @@ class PolyBERTtDatasetV3(Dataset):
         if self.val_mode:
             item["candidate_glosses"] = list(set(self.word2gloss[s["target_word"]]))
         return item
-
-    def __getitem__(self, idx):
-        if isinstance(idx, (list, tuple)):
-            return [self._get_single(i) for i in idx]
-        else:
-            return self._get_single(idx)
 
 
 class ContrastiveBatchSampler(Sampler):
@@ -381,7 +376,7 @@ class ContrastiveBatchSampler(Sampler):
                     cands = [gold] + negs
                     batch_candidates.append(cands)
 
-                yield batch, batch_candidates
+                yield batch
                 batch = []
         if batch and not self.drop_last:
             yield batch
