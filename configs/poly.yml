@@ -19,8 +19,8 @@ model:
 training:
   ckpt_interval: 10
   shuffle: False
-  batch_size: 5
-  epochs: 128
+  batch_size: 128
+  epochs: 100
   early_stopping_patience: 5
   save_steps: 1000
   optimizer:
