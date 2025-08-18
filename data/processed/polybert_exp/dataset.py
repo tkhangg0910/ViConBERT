@@ -369,7 +369,7 @@ class PolyBERTtDatasetV3(Dataset):
                 "synset_ids": synset_ids,
                 "word_id": word_id,
                 "target_words": target_words,
-                "gold_glosses": gold_glosses,                
+                "gloss": gold_glosses,                
                 "candidate_glosses": candidate_glosses,
                 "gloss_id":gloss_id 
             }
@@ -398,7 +398,7 @@ class PolyBERTtDatasetV3(Dataset):
             "target_spans": torch.tensor(spans, dtype=torch.long) if spans else None,
             "synset_ids": labels,
             "word_id":word_id,
-            "gold_glosses_idx": gold_glosses_idx,
+            "gloss": glosses,
             "target_words":target_words,
             # "gloss_input_ids": self.g_tokes["input_ids"],
             # "gloss_attn_mask": self.g_tokes["attention_mask"],
