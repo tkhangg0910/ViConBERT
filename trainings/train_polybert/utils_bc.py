@@ -174,7 +174,7 @@ def train_model_bc(
             with autocast(device_type=device):
                 rF_wt, rF_g = model(c_toks, g_toks ,target_idx)  
 
-                loss  =model.batch_contrastive_loss(rF_wt, rF_g, gid)
+                loss, sim  =model.batch_contrastive_loss(rF_wt, rF_g, gid)
                 loss = loss / float(grad_accum_steps)
 
 
