@@ -295,9 +295,8 @@ class PolyBERTtDataseV2(Dataset):
             "candidate_glosses": candidate_glosses,
             "gloss_id": gloss_id
         }
-
 class PolyBERTtDatasetV3(Dataset):
-    def __init__(self, samples, tokenizer):
+    def __init__(self, samples, tokenizer, val_mode=False):
         self.tokenizer = tokenizer
         if self.tokenizer.pad_token is None:
             self.tokenizer.add_special_tokens({'pad_token': '[PAD]'})
@@ -306,6 +305,7 @@ class PolyBERTtDatasetV3(Dataset):
         self.all_samples = []
         self.global_gloss_pool = []
         self.word2gloss = defaultdict(list)
+        self.val_mode = val_mode
 
         for sample in samples:
             sent = text_normalize(sample["sentence"])
@@ -336,7 +336,7 @@ class PolyBERTtDatasetV3(Dataset):
 
     def __getitem__(self, idx):
         s = self.all_samples[idx]
-        return {
+        item = {
             "sentence": s["sentence"],
             "target_word": s["target_word"],
             "target_span": self.span_indices[idx],
@@ -345,6 +345,9 @@ class PolyBERTtDatasetV3(Dataset):
             "word_id": s["word_id"],
             "synset_id": s["synset_id"]
         }
+        if self.val_mode:
+            item["candidate_glosses"] = list(set(self.word2gloss[s["target_word"]]))
+        return item
 
 
 class ContrastiveBatchSampler(Sampler):

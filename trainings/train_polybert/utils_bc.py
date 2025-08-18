@@ -205,7 +205,7 @@ def train_model_bc(
             # similarity matrix [B, B]
             sim = torch.matmul(rF_wt_flat, rF_g_flat.T)
 
-            preds = sims.argmax(dim=1)
+            preds = sim.argmax(dim=1)
             correct = (preds == torch.arange(B, device=device))
             train_tp += correct.sum().item()
             train_fp += (B - correct.sum().item())
@@ -243,18 +243,22 @@ def train_model_bc(
                          desc=f"Validating {epoch+1}/{num_epochs}",
                          position=1, leave=True, ascii=True)
             for batch in val_pbar:
-                batch_size = len(batch["context_input_ids"])
-                context_inputs = {
-                    "input_ids": batch["context_input_ids"].to(device),
-                    "attention_mask": batch["context_attn_mask"].to(device)
-                }
+                c_toks = model.tokenizer(
+                    batch["sentence"],
+                    return_tensors="pt",
+                    padding=True,
+                    truncation=True,
+                    max_length=256,
+                    return_attention_mask=True
+                ).to(device)
+   
 
                 target_spans = batch["target_spans"].to(device)
-                rF_wt = model.forward_context(context_inputs["input_ids"],
-                                            context_inputs["attention_mask"],
+                rF_wt = model.forward_context(c_toks["input_ids"],
+                                            c_toks["attention_mask"],
                                             target_spans)  # [B, polym, H]
 
-                for i in range(batch_size):
+                for i in range(len(batch)):
                     candidates = batch["candidate_glosses"][i]  # list of N gloss strings
                     gold_gloss = batch["gold_glosses"][i]
 

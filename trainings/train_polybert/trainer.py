@@ -66,7 +66,7 @@ if __name__=="__main__":
 
         train_dataloader = DataLoader(
             train_dataset,
-            batch_size=batch_size,
+            # batch_size=batch_size,
             batch_sampler=sampler,
             num_workers=config["data"]["num_workers"],
             pin_memory=True
@@ -127,7 +127,7 @@ if __name__=="__main__":
         patience=2,         
         min_lr=1e-6          
     )
-    Trainer = train_model_bc if arg.train_mode == "bc" else train_model
+    Trainer = train_model_bc if args.train_mode == "bc" else train_model
     history, trained_model = Trainer(
         num_epochs=config["training"]["epochs"],
         train_data_loader=train_dataloader,
