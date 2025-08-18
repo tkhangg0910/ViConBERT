@@ -169,12 +169,12 @@ def train_model_bc(
                 return_attention_mask=True
             )
             context_inputs = {
-                "input_ids": c_toks["context_input_ids"].to(device),
-                "attention_mask": c_toks["context_attn_mask"].to(device)
+                "input_ids": c_toks["input_ids"].to(device),
+                "attention_mask": c_toks["attention_mask"].to(device)
             }
             gloss_inputs = {
-                "input_ids": g_toks["context_input_ids"].to(device),
-                "attention_mask": g_toks["context_attn_mask"].to(device)
+                "input_ids": g_toks["input_ids"].to(device),
+                "attention_mask": g_toks["attention_mask"].to(device)
             }
             gid = batch["gloss_id"].to(device)
             target_idx = batch["target_spans"].to(device)  # shape [B]
