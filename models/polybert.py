@@ -85,7 +85,7 @@ class PolyBERT(nn.Module):
         rF_g_flat  = rF_g.reshape(B, -1)   # [B, polym*H]
 
         # similarity matrix [B, B]
-        sim = torch.matmul(rF_wt_flat, rF_g_flat.T)
+        sim = torch.matmul(rF_wt_flat.float(), rF_g_flat.T.float())
 
         # softmax over rows
         P = F.softmax(sim, dim=1)
