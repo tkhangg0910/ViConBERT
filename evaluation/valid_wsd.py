@@ -79,11 +79,21 @@ class WSD_ViConDataset(Dataset):
 
         # candidate gloss IDs và vector embedding
         if self.val_mode:
-            candidate_samples = list(set(self.word2gloss[s["target_word"]]))
-            candidate_ids = [c["gloss_id"] for c in candidate_samples]
+            candidate_samples = self.word2gloss[s["target_word"]]
+            # Lấy unique gloss_id
+            seen = set()
+            unique_candidates = []
+            for c in candidate_samples:
+                if c["gloss_id"] not in seen:
+                    seen.add(c["gloss_id"])
+                    unique_candidates.append(c)
+
+            candidate_ids = [c["gloss_id"] for c in unique_candidates]
             candidate_vectors = [self.gloss_emd[cid] for cid in candidate_ids]
+
             item["candidate_gloss_ids"] = candidate_ids
             item["candidate_gloss_vectors"] = candidate_vectors
+
 
         return item
 
