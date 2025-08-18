@@ -59,9 +59,9 @@ if __name__=="__main__":
         tokenizer.add_special_tokens({'pad_token': '[PAD]'})
     
     batch_size = config["training"]['batch_size']
-    if arg.train_mode == "bc":
-        train_dataset = PolyBERTtDataseV3(train_sample, tokenizer )
-        valid_dataset = PolyBERTtDataseV3(valid_sample, tokenizer)
+    if args.train_mode == "bc":
+        train_dataset = PolyBERTtDatasetV3(train_sample, tokenizer )
+        valid_dataset = PolyBERTtDatasetV3(valid_sample, tokenizer)
         sampler = ContrastiveBatchSampler(train_dataset,batch_size=batch_size)
 
         train_dataloader = DataLoader(
