@@ -56,7 +56,7 @@ if __name__=="__main__":
         tokenizer.add_special_tokens({'pad_token': '[PAD]'})
     
     batch_size = config["training"]['batch_size']
-    train_dataset = PolyBERTtDataseV2(train_sample, tokenizer, train_gloss_size= 128)
+    train_dataset = PolyBERTtDataseV2(train_sample, tokenizer, train_gloss_size= 128 )
     valid_dataset = PolyBERTtDataseV2(valid_sample, tokenizer,val_mode=True)
     
     # sampler = ContrastiveBatchSampler(train_dataset,batch_size=batch_size)
