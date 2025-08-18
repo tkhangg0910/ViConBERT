@@ -296,8 +296,9 @@ class PolyBERTtDataseV2(Dataset):
             "gloss_id": gloss_id
         }
 class PolyBERTtDatasetV3(Dataset):
-    def __init__(self, samples, tokenizer, val_mode=False):
+    def __init__(self, samples, tokenizer,num_negatives=16, val_mode=False):
         self.tokenizer = tokenizer
+        self.num_negatives= num_negatives
         if self.tokenizer.pad_token is None:
             self.tokenizer.add_special_tokens({'pad_token': '[PAD]'})
         self.span_extractor = SpanExtractor(tokenizer)
@@ -335,9 +336,6 @@ class PolyBERTtDatasetV3(Dataset):
         return len(self.all_samples)
 
     def __getitem__(self, idx):
-        if isinstance(idx, (list, tuple, np.ndarray)):
-            return [self.__getitem__(i) for i in idx]
-
         s = self.all_samples[idx]
         item = {
             "sentence": s["sentence"],
@@ -351,6 +349,26 @@ class PolyBERTtDatasetV3(Dataset):
         if self.val_mode:
             item["candidate_glosses"] = list(set(self.word2gloss[s["target_word"]]))
         return item
+    def collate_fn(self,batch_samples):
+        # batch_samples: list of dicts returned by Dataset.__getitem__
+        batch_candidates = []
+        pool = self.global_gloss_pool
+        pool_size = len(pool)
+        for s in batch_samples:
+            gold = s["gloss"]
+            # đảm bảo đủ negatives
+            negatives_pool = [g for g in pool if g != gold]
+            k = min(self.num_negatives, len(negatives_pool))
+            if k > 0:
+                negs = random.sample(negatives_pool, k=k)
+            else:
+                negs = []  # fallback nếu pool quá nhỏ
+            cands = [gold] + negs
+            batch_candidates.append(cands)
+        return {
+            "samples": batch_samples,
+            "batch_candidates": batch_candidates
+        }
 
 
 class ContrastiveBatchSampler(Sampler):
@@ -367,19 +385,7 @@ class ContrastiveBatchSampler(Sampler):
         for idx in self.indices:
             batch.append(idx)
             if len(batch) == self.batch_size:
-                # build candidate glosses cho batch
-                batch_candidates = []
-                for i in batch:
-                    gold = self.dataset[i]["gloss"]
-                    # lấy negatives từ global pool
-                    negs = random.sample(
-                        [g for g in self.dataset.global_gloss_pool if g != gold],
-                        k=self.num_negatives
-                    )
-                    cands = [gold] + negs
-                    batch_candidates.append(cands)
-
-                yield batch, batch_candidates
+                yield batch            # CHỈ yield list of indices
                 batch = []
         if batch and not self.drop_last:
             yield batch
@@ -389,3 +395,4 @@ class ContrastiveBatchSampler(Sampler):
             return len(self.indices) // self.batch_size
         else:
             return math.ceil(len(self.indices) / self.batch_size)
+
