@@ -112,10 +112,8 @@ class PolyBERT(nn.Module):
         rF_g_flat  = rF_g.reshape(B, -1)   # [B, polym*H]
 
         # similarity matrix [B, B]
-        sim = torch.matmul(rF_wt_flat.float(), rF_g_flat.T.float())
+        sim_matrix = torch.matmul(rF_wt_flat.float(), rF_g_flat.T.float())
 
-        # softmax over rows
-        sim_matrix = torch.mm(rF_wt, rF_g.t())  # [B, B]
     
         # Create target: diagonal should be high similarity
         targets = torch.arange(sim_matrix.size(0)).to(sim_matrix.device)
