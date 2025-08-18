@@ -148,9 +148,11 @@ def evaluate_model(context_model, data_loader, device):
             ).to(device)
 
             target_spans = batch["target_spans"].to(device)
-            rF_wt = context_model.forward_context(
-                c_toks["input_ids"],
-                c_toks["attention_mask"],
+            rF_wt = context_model(
+                {
+                "input_ids":c_toks["input_ids"],
+                "attention_mask":c_toks["attention_mask"],
+                    },
                 target_spans
             )  # [B, polym, H]
 
