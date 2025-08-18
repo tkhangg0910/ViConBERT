@@ -159,7 +159,7 @@ def train_model_bc(
                 truncation=True,
                 max_length=256,
                 return_attention_mask=True
-            ).to(device)
+            )
             g_toks = model.tokenizer(
                 batch["gloss"],
                 return_tensors="pt",
@@ -167,12 +167,20 @@ def train_model_bc(
                 truncation=True,
                 max_length=256,
                 return_attention_mask=True
-            ).to(device)
+            )
+            context_inputs = {
+                "input_ids": c_toks["context_input_ids"].to(device),
+                "attention_mask": c_toks["context_attn_mask"].to(device)
+            }
+            gloss_inputs = {
+                "input_ids": g_toks["context_input_ids"].to(device),
+                "attention_mask": g_toks["context_attn_mask"].to(device)
+            }
             gid = batch["gloss_id"].to(device)
             target_idx = batch["target_spans"].to(device)  # shape [B]
             # forward + loss (use AMP if available)
             with autocast(device_type=device):
-                rF_wt, rF_g = model(c_toks, g_toks ,target_idx)  
+                rF_wt, rF_g = model(context_inputs ,gloss_inputs,target_idx)  
 
                 loss, sim  =model.batch_contrastive_loss(rF_wt, rF_g, gid)
                 loss = loss / float(grad_accum_steps)
@@ -189,6 +197,7 @@ def train_model_bc(
                 scaler.step(optimizer)
                 scaler.update()
                 optimizer.zero_grad()
+                torch.cuda.empty_cache()
                 if scheduler is not None:
                     try:
                         scheduler.step()
@@ -199,11 +208,6 @@ def train_model_bc(
 
             # optional metrics
             B = rF_wt.size(0)
-            rF_wt_flat = rF_wt.reshape(B, -1).float()  # [B, polym*H]
-            rF_g_flat  = rF_g.reshape(B, -1).float()   # [B, polym*H]
-
-            # similarity matrix [B, B]
-            sim = torch.matmul(rF_wt_flat, rF_g_flat.T)
 
             preds = sim.argmax(dim=1)
             correct = (preds == torch.arange(B, device=device))
