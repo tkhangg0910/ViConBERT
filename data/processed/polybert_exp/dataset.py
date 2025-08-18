@@ -335,6 +335,8 @@ class PolyBERTtDatasetV3(Dataset):
         return len(self.all_samples)
 
     def __getitem__(self, idx):
+        if isinstance(idx, list):  # batch sampler trả về list indices
+            return [self.__getitem__(i) for i in idx]
         s = self.all_samples[idx]
         item = {
             "sentence": s["sentence"],
