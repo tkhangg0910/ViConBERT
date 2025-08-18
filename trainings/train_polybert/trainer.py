@@ -60,9 +60,8 @@ if __name__=="__main__":
     
     batch_size = config["training"]['batch_size']
     if args.train_mode == "bc":
-        train_dataset = PolyBERTtDatasetV3(train_sample, tokenizer, num_negatives=16, val_mode=False)
-
-        valid_dataset = PolyBERTtDatasetV3(valid_sample, tokenizer,num_negatives=0,val_mode=True)
+        train_dataset = PolyBERTtDatasetV3(train_sample, tokenizer )
+        valid_dataset = PolyBERTtDatasetV3(valid_sample, tokenizer)
         sampler = ContrastiveBatchSampler(train_dataset,batch_size=batch_size)
 
         train_dataloader = DataLoader(
