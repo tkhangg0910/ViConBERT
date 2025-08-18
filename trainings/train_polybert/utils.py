@@ -174,10 +174,10 @@ def train_model(
 
             # forward + loss (use AMP if available)
             with autocast(device_type=device):
-                rF_wt = model.forward_context(context_inputs, target_idx)  
+                rF_wt = model.forward_context(target_span=target_idx,**context_inputs)  
 
                 # gloss embedding [sum(cands), D]
-                rF_g = model.forward_gloss(gloss_toks)
+                rF_g = model.forward_gloss(**gloss_toks)
 
                 gloss_offsets, start = [], 0
                 for cands in candidate_glosses:
