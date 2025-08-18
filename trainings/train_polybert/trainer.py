@@ -67,6 +67,7 @@ if __name__=="__main__":
         train_dataloader = DataLoader(
             train_dataset,
             # batch_size=batch_size,
+            collate_fn=train_dataset.collate_fn,
             batch_sampler=sampler,
             num_workers=config["data"]["num_workers"],
             pin_memory=True
@@ -75,7 +76,7 @@ if __name__=="__main__":
                 valid_dataset,
                 batch_size=batch_size,
                 shuffle=False,
-                # collate_fn=valid_dataset.collate_fn,
+                collate_fn=valid_dataset.collate_fn,
                 num_workers=config["data"]["num_workers"],
                 pin_memory=True
             )
