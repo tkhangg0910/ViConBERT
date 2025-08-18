@@ -9,7 +9,7 @@ from transformers import PreTrainedTokenizerFast, PhobertTokenizerFast, XLMRober
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import pandas as pd
 
-from data.processed.polybert_exp.dataset import PolyBERTtDataset, ContrastiveBatchSampler
+from data.processed.polybert_exp.dataset import PolyBERTtDataset, ContrastiveBatchSampler, PolyBERTtDataseV2
 from models.polybert import PolyBERT
 from utils.load_config import load_config
 from utils.optimizer import create_optimizer
@@ -56,8 +56,8 @@ if __name__=="__main__":
         tokenizer.add_special_tokens({'pad_token': '[PAD]'})
     
     batch_size = config["training"]['batch_size']
-    train_dataset = PolyBERTtDataset(train_sample, tokenizer)
-    valid_dataset = PolyBERTtDataset(valid_sample, tokenizer, val_mode=True)
+    train_dataset = PolyBERTtDataseV2(train_sample, tokenizer, train_gloss_size= 256)
+    valid_dataset = PolyBERTtDataseV2(valid_sample, tokenizer,val_mode=True)
     
     # sampler = ContrastiveBatchSampler(train_dataset,batch_size=batch_size)
     

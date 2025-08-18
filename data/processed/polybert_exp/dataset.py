@@ -171,6 +171,130 @@ class PolyBERTtDataset(Dataset):
             "gloss_id":gloss_id
         }
 
+class PolyBERTtDataseV2(Dataset):
+    def __init__(self, samples, tokenizer, train_gloss_size=None, val_mode=False):
+        self.tokenizer = tokenizer
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+        self.span_extractor = SpanExtractor(tokenizer)
+        self.val_mode = val_mode
+        self.train_gloss_size = train_gloss_size
+
+        self.targetword2glosses = defaultdict(list)
+
+        word_set = set()
+        self.all_samples = []
+        gloss_set = set()
+
+        for sample in samples:
+            sent = text_normalize(sample["sentence"])
+            word_id = sample["word_id"]
+            target = sample["target_word"]
+            sid = sample["synset_id"]
+            gloss = sample["gloss"]
+            gloss_id = sample["gloss_id"]
+
+            self.all_samples.append({
+                "sentence": sent,
+                "target_word": target,
+                "synset_id": sid,
+                "gloss": gloss,
+                "word_id": int(word_id),
+                "gloss_id": gloss_id
+            })
+
+            if gloss not in self.targetword2glosses[target]:
+                self.targetword2glosses[target].append(gloss)
+
+            word_set.add(int(word_id))
+            gloss_set.add(gloss)
+
+        sorted_wids = sorted(word_set)
+        self.global_word_to_label = {wid: i for i, wid in enumerate(sorted_wids)}
+
+        # global gloss pool for random sampling
+        self.global_gloss_pool = list(gloss_set)
+
+        self.span_indices = []
+        for s in tqdm(self.all_samples, desc="Computing spans", ascii=True):
+            idxs = self.span_extractor.get_span_indices(
+                s["sentence"], s["target_word"]
+            )
+            self.span_indices.append(idxs or (0, 0))
+
+    def __len__(self):
+        return len(self.all_samples)
+
+    def __getitem__(self, idx):
+        s = self.all_samples[idx]
+        sid = s["synset_id"]
+        wid = s["word_id"]
+        gid = s["gloss_id"]
+        label = self.global_word_to_label[int(wid)]
+        item = {
+            "sentence": s["sentence"],
+            "target_span": self.span_indices[idx],
+            "word_id": label,
+            "target_word": s["target_word"],
+            "gloss": s["gloss"],
+            "synset_ids": sid,
+            "gloss_id": gid
+        }
+
+        gold_gloss = s["gloss"]
+        item["candidate_glosses"] = list(set(self.targetword2glosses[s["target_word"]] + [gold_gloss]))
+
+        return item
+
+    def collate_fn(self, batch):
+        sentences = [b["sentence"] for b in batch]
+        spans = [b["target_span"] for b in batch]
+        synset_ids = torch.tensor([b["synset_ids"] for b in batch], dtype=torch.long)
+        word_id = torch.tensor([b["word_id"] for b in batch], dtype=torch.long)
+        target_words = [b["target_word"] for b in batch]
+        gloss_id = torch.tensor([b["gloss_id"] for b in batch], dtype=torch.long)
+
+        c_toks = self.tokenizer(
+            sentences,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=256,
+            return_attention_mask=True
+        )
+
+        if self.val_mode:
+            candidate_glosses = [b["candidate_glosses"] for b in batch]
+        else:
+            # train mode: pad candidate glosses to batch size
+            candidate_glosses = []
+            for b in batch:
+                gold_gloss = b["gloss"]
+                cands = set(b["candidate_glosses"])  
+                cands.add(gold_gloss)
+
+                needed = self.train_gloss_size - len(cands)
+
+                if needed > 0:
+            extra = random.sample(
+                [g for g in self.global_gloss_pool if g not in cands],
+                k=min(needed, len(self.global_gloss_pool) - len(cands))
+            )
+            cands.update(extra)
+            if len(cands) > self.train_gloss_size:
+                cands = set(random.sample(list(cands), self.train_gloss_size))
+            candidate_glosses.append(list(cands))
+
+        return {
+            "context_input_ids": c_toks["input_ids"],
+            "context_attn_mask": c_toks["attention_mask"],
+            "target_spans": torch.tensor(spans, dtype=torch.long),
+            "synset_ids": synset_ids,
+            "word_id": word_id,
+            "target_words": target_words,
+            "candidate_glosses": candidate_glosses,
+            "gloss_id": gloss_id
+        }
 
 class ContrastiveBatchSampler(Sampler):
     """

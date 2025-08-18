@@ -157,41 +157,65 @@ def train_model(
                 "input_ids": batch["context_input_ids"].to(device),
                 "attention_mask": batch["context_attn_mask"].to(device)
             }
-            
-            gloss_inputs = {
-                "input_ids": train_data_loader.dataset.gloss_input_ids.to(device),
-                "attention_mask": train_data_loader.dataset.gloss_attn_mask.to(device)
-            }
+        
             target_idx = batch["target_spans"].to(device)  # shape [B]
 
-            gloss_id = batch.get("gloss_id", None)
-            if gloss_id is not None:
-                gloss_id = gloss_id.to(device)
-            
-            gold_glosses_idx = batch.get("gold_glosses_idx", None)
-            if gold_glosses_idx is not None:
-                gold_glosses_idx = gold_glosses_idx.to(device)
+            candidate_glosses = batch["candidate_glosses"]
+            gloss_id = batch["gloss_id"].to(device)
+            flat_glosses = sum(candidate_glosses, [])
+            gloss_toks = model.tokenizer(
+                flat_glosses,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=64
+            ).to(device)
+
 
             # forward + loss (use AMP if available)
             with autocast(device_type=device):
-                # batch_glosses = [train_data_loader.dataset.gloss_list[i] for i in range(len(train_data_loader.dataset.gloss_list))]
-                sim = compute_context_vs_gloss_similarity(model, context_inputs, 
-                                                          target_idx,
-                                                          train_data_loader.dataset.gloss_input_ids,
-                                                          train_data_loader.dataset.gloss_attn_mask, device=device,
-                                                          chunk_size=256)
-                # rF_wt, rF_g = model(context_inputs, gloss_inputs, target_idx)
-                # allow user to override loss (e.g., add reg or custom objective)
-                # sim = torch.matmul(rF_wt[i].flatten().unsqueeze(0), rF_g.reshape(len(train_data_loader.dataset.gloss_list),-1).T) 
-                loss, MF = model.contrastive_classification_loss(sim, gold_glosses_idx)
+                rF_wt = model.encode_context(context_inputs, target_idx)  
 
+                # gloss embedding [sum(cands), D]
+                rF_g = model.encode_gloss(gloss_toks)
+
+                gloss_offsets, start = [], 0
+                for cands in candidate_glosses:
+                    gloss_offsets.append((start, start + len(cands)))
+                    start += len(cands)
+
+                sims, gold_indices = [], []
+                for i, (start, end) in enumerate(gloss_offsets):
+                    # [cand_size, D]
+                    gloss_vecs = rF_g[start:end]
+
+                    # [D]
+                    ctx_vec = rF_wt[i].unsqueeze(0)
+
+                    sim = torch.matmul(ctx_vec, gloss_vecs.T)  # [1, cand_size]
+                    sims.append(sim)
+
+                    # gold gloss index in candidate list
+                    gold_gloss_str = model.tokenizer.decode([batch["gloss_id"][i].item()])
+                    try:
+                        gold_idx = candidate_glosses[i].index(gold_gloss_str)
+                    except:
+                        gold_idx = 0
+                    gold_indices.append(gold_idx)
+
+                sims = torch.cat(sims, dim=0)  # [B, cand_size_varies → pad]
+                gold_indices = torch.tensor(gold_indices, dtype=torch.long, device=device)
+
+                # loss
+                loss = F.cross_entropy(sims, gold_indices)
                 loss = loss / float(grad_accum_steps)
+
+
 
             scaler.scale(loss).backward()
 
             # gradient accumulation step
             if (batch_idx + 1) % grad_accum_steps == 0:
-                # unscale for clipping
                 scaler.unscale_(optimizer)
                 if grad_clip:
                     current_norm = grad_clipper.clip(model)
@@ -199,24 +223,22 @@ def train_model(
                 scaler.update()
                 optimizer.zero_grad()
                 if scheduler is not None:
-                    # scheduler.step() policy depends on scheduler (per-step or per-epoch)
                     try:
                         scheduler.step()
-                    except Exception:
+                    except:
                         pass
 
-            running_loss += loss.item() * float(grad_accum_steps)  # accumulate true loss
-            # optional metrics
-            pred_indices = MF.argmax(dim=1)        
+            running_loss += loss.item() * float(grad_accum_steps)
 
-            for pred, gold in zip(pred_indices, gold_glosses_idx):
+            # optional metrics
+            preds = sims.argmax(dim=1)
+            for pred, gold in zip(preds, gold_indices):
                 if pred == gold:
                     train_tp += 1
                 else:
                     train_fp += 1
                     train_fn += 1
 
-            # logging
             if global_step % metric_log_interval == 0:
                 postfix = {"Loss": f"{(running_loss / max(1, train_steps)):.4f}"}
                 if grad_clip:
