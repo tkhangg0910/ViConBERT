@@ -5,6 +5,8 @@ import torch
 from transformers import PhobertTokenizerFast, XLMRobertaTokenizerFast
 from torch.utils.data import DataLoader
 from data.processed.polybert_exp.dataset import PolyBERTtDatasetV3
+from models.base_model import ViSynoSenseEmbedding
+
 from utils.load_config import load_config
 from models.polybert import PolyBERT
 import torch
@@ -126,7 +128,7 @@ if __name__=="__main__":
         pin_memory=True
     )
     
-    model = PolyBERT.from_pretrained(args.model_path).to(device)
+    model = ViSynoSenseEmbedding.from_pretrained(args.model_path).to(device)
     print("\nValidating epoch...")
     valid_metrics = evaluate_model(model, valid_dataloader, device)
     
