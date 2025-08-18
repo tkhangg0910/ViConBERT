@@ -84,7 +84,7 @@ if __name__=="__main__":
             )
 
     else:
-        train_dataset = PolyBERTtDataseV2(train_sample, tokenizer, train_gloss_size= 9 )
+        train_dataset = PolyBERTtDataseV2(train_sample, tokenizer, train_gloss_size= args.train_gloss_size )
         valid_dataset = PolyBERTtDataseV2(valid_sample, tokenizer,val_mode=True)
     
     # sampler = ContrastiveBatchSampler(train_dataset,batch_size=batch_size)
