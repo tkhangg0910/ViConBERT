@@ -191,9 +191,7 @@ def train_model(
 
                     # [D]
                     ctx_vec = rF_wt[i].unsqueeze(0)
-                    print(ctx_vec.shape)
-                    print(gloss_vecs.shape)
-                    sim = torch.matmul(ctx_vec, gloss_vecs.T)  # [1, cand_size]
+                    sim = torch.matmul(ctx_vec[i].flatten().unsqueeze(0), gloss_vecs.reshape(len(candidates),-1).T)
                     sims.append(sim)
 
                     # gold gloss index in candidate list
