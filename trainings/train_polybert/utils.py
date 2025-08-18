@@ -128,7 +128,7 @@ def train_model(
         "valid_metrics":[]
     }
 
-    best_valid_loss = float("inf")
+    best_valid_f1 = 0.0  # Changed from best_valid_loss to best_valid_f1
     patience_counter = 0
     global_step = 0
 
@@ -374,9 +374,9 @@ def train_model(
                 pass
             print(f"[Checkpoint] saved to {ckpt_path}")
 
-        # early stopping
-        if avg_valid_loss < best_valid_loss:
-            best_valid_loss = avg_valid_loss
+        # Early stopping based on validation F1
+        if valid_f1 > best_valid_f1:
+            best_valid_f1 = valid_f1
             patience_counter = 0
             # save best model
             best_path = os.path.join(run_dir, "best_model.pt")
@@ -388,7 +388,7 @@ def train_model(
                 model.save_pretrained(os.path.join(run_dir, "best_model_pretrained"))
             except Exception:
                 pass
-            print(f"[Best] new best valid loss {best_valid_loss:.4f} -> saved best model.")
+            print(f"[Best] new best valid F1 {best_valid_f1:.4f} -> saved best model.")
         else:
             patience_counter += 1
             print(f"[Patience] {patience_counter}/{early_stopping_patience}")
