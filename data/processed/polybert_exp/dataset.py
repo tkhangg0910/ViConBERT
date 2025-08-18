@@ -295,6 +295,7 @@ class PolyBERTtDataseV2(Dataset):
             "candidate_glosses": candidate_glosses,
             "gloss_id": gloss_id
         }
+        
 class PolyBERTtDatasetV3(Dataset):
     def __init__(self, samples, tokenizer, val_mode=False):
         self.tokenizer = tokenizer
@@ -351,7 +352,6 @@ class PolyBERTtDatasetV3(Dataset):
 
     def collate_fn(self, batch):
         if self.val_mode:
-            # batch: list of items (each item has candidate_glosses list)
             sentences = [b["sentence"] for b in batch]          # B
             spans     = [b["target_spans"] for b in batch]       # B x (2)
             synset_ids = torch.tensor([b["synset_id"] for b in batch], dtype=torch.long)
@@ -359,8 +359,6 @@ class PolyBERTtDatasetV3(Dataset):
             target_words = [b["target_word"] for b in batch]
             gold_glosses = [b["gloss"] for b in batch]
             gloss_id = torch.tensor([(b["gloss_id"]) for b in batch], dtype=torch.long)
-
-
             candidate_glosses = [b["candidate_glosses"] for b in batch]
         
             return {
@@ -381,18 +379,6 @@ class PolyBERTtDatasetV3(Dataset):
         word_id = torch.tensor([b["word_id"] for b in batch], dtype=torch.long)
         glosses = [b["gloss"] for b in batch]
         gloss_id = torch.tensor([(b["gloss_id"]) for b in batch], dtype=torch.long)
-        # g_tokes = self.tokenizer(
-        #     glosses,
-        #     return_tensors="pt",
-        #     padding=True,
-        #     truncation=True,
-        #     max_length=256,
-        #     return_attention_mask=True,
-        #     return_offsets_mapping=True
-        # )
-        gold_glosses_idx = torch.tensor([
-            self.global_gloss_pool.index(g) for g in glosses
-        ], dtype=torch.long)
         return {
             "sentence":sentences,
             "target_spans": torch.tensor(spans, dtype=torch.long) if spans else None,
@@ -400,44 +386,210 @@ class PolyBERTtDatasetV3(Dataset):
             "word_id":word_id,
             "gloss": glosses,
             "target_words":target_words,
-            # "gloss_input_ids": self.g_tokes["input_ids"],
-            # "gloss_attn_mask": self.g_tokes["attention_mask"],
             "gloss_id":gloss_id
         }
-
 class ContrastiveBatchSampler(Sampler):
-    def __init__(self, dataset, batch_size, num_negatives=16, drop_last=True):
+    """
+    Batch sampler for contrastive WSD batches.
+
+    For batch_size = N (must be even):
+      - choose N/2 anchor indices with distinct glosses
+      - for each anchor, choose one "candidate" index:
+          - prefer an index whose gloss is in dataset.word2gloss[anchor_target_word]
+            (and != anchor.gloss) if such sample exists and gloss not already used
+          - otherwise fallback to a random sample whose gloss is not used yet
+      - ensure *no gloss duplicates* inside the returned batch
+
+    Args:
+      dataset: instance of PolyBERTtDatasetV3 (or similar)
+      batch_size: even integer
+      shuffle: whether to shuffle anchors each epoch
+      max_tries: how many attempts to find valid batch before restarting attempt
+    """
+    def __init__(self, dataset, batch_size, shuffle=True, max_tries=100):
+        assert batch_size % 2 == 0, "batch_size must be even"
         self.dataset = dataset
-        self.batch_size = batch_size
-        self.num_negatives = num_negatives
-        self.drop_last = drop_last
-        self.indices = list(range(len(dataset)))
+        self.bs = batch_size
+        self.half = batch_size // 2
+        self.shuffle = shuffle
+        self.max_tries = max_tries
 
-    def __iter__(self):
-        random.shuffle(self.indices)
-        batch = []
-        for idx in self.indices:
-            batch.append(idx)
-            if len(batch) == self.batch_size:
-                # build candidate glosses cho batch
-                batch_candidates = []
-                for i in batch:
-                    gold = self.dataset[i]["gloss"]
-                    # lấy negatives từ global pool
-                    negs = random.sample(
-                        [g for g in self.dataset.global_gloss_pool if g != gold],
-                        k=self.num_negatives
-                    )
-                    cands = [gold] + negs
-                    batch_candidates.append(cands)
+        # build gloss -> indices mapping for quick lookup
+        self.gloss_to_indices = defaultdict(list)
+        for idx, item in enumerate(self.dataset.all_samples):
+            gloss = item["gloss"]
+            self.gloss_to_indices[gloss].append(idx)
 
-                yield batch
-                batch = []
-        if batch and not self.drop_last:
-            yield batch
+        # list of all dataset indices
+        self.indices = list(range(len(self.dataset)))
+
+        # list of all unique glosses (strings)
+        self.unique_glosses = list(self.gloss_to_indices.keys())
+
+        # precompute index -> gloss mapping for speed
+        self.idx2gloss = {idx: self.dataset.all_samples[idx]["gloss"] for idx in self.indices}
+        # maps index -> target_word (used to get candidate glosses)
+        self.idx2word = {idx: self.dataset.all_samples[idx]["target_word"] for idx in self.indices}
 
     def __len__(self):
-        if self.drop_last:
-            return len(self.indices) // self.batch_size
-        else:
-            return math.ceil(len(self.indices) / self.batch_size)
+        # number of batches per epoch
+        return len(self.dataset) // self.bs
+
+    def __iter__(self):
+        # anchors candidate order
+        anchors_pool = self.indices.copy()
+        if self.shuffle:
+            random.shuffle(anchors_pool)
+
+        # We'll iterate until we produce floor(N_samples / bs) batches
+        produced = 0
+        i = 0
+        total_batches = len(self)
+
+        while produced < total_batches:
+            tries = 0
+            batch = None
+
+            while tries < self.max_tries:
+                tries += 1
+                # pick N/2 anchors ensuring distinct glosses
+                anchors = []
+                used_glosses = set()
+
+                # try scanning anchors_pool from current pos to pick half anchors
+                j = i
+                while len(anchors) < self.half and j < len(anchors_pool):
+                    cand_idx = anchors_pool[j]
+                    cand_gloss = self.idx2gloss[cand_idx]
+                    if cand_gloss not in used_glosses:
+                        anchors.append(cand_idx)
+                        used_glosses.add(cand_gloss)
+                    j += 1
+
+                # if not enough anchors available in the tail, reshuffle and restart selection
+                if len(anchors) < self.half:
+                    # reshuffle anchors and restart picking
+                    if self.shuffle:
+                        random.shuffle(anchors_pool)
+                    i = 0
+                    continue
+
+                # Now for each anchor pick a candidate index whose gloss is from anchor's word's gloss pool
+                candidates = []
+                success = True
+                for a_idx in anchors:
+                    a_word = self.idx2word[a_idx]
+                    a_gloss = self.idx2gloss[a_idx]
+
+                    # candidate gloss strings available for this word
+                    word_glosses = list(self.dataset.word2gloss.get(a_word, []))
+                    # remove the anchor's gloss itself
+                    word_glosses = [g for g in word_glosses if g != a_gloss]
+
+                    # shuffle to randomize selection
+                    random.shuffle(word_glosses)
+
+                    found = False
+                    # try to pick a gloss from word_glosses that's not yet used in batch and has a sample
+                    for g in word_glosses:
+                        if g in used_glosses:
+                            continue
+                        idx_list = self.gloss_to_indices.get(g, [])
+                        if not idx_list:
+                            continue
+                        # pick random sample index with gloss g
+                        cand_sample = random.choice(idx_list)
+                        # ensure it's not the same as anchor
+                        if cand_sample == a_idx:
+                            # try another from list
+                            if len(idx_list) == 1:
+                                continue
+                            else:
+                                # pick until different or skip
+                                tries_inner = 0
+                                while cand_sample == a_idx and tries_inner < 5:
+                                    cand_sample = random.choice(idx_list)
+                                    tries_inner += 1
+                                if cand_sample == a_idx:
+                                    continue
+                        # accept
+                        candidates.append(cand_sample)
+                        used_glosses.add(g)
+                        found = True
+                        break
+
+                    if not found:
+                        # fallback: pick any random index whose gloss is not used yet
+                        # sample from global_gloss_pool list of glosses
+                        fallback_found = False
+                        random.shuffle(self.unique_glosses)
+                        for g in self.unique_glosses:
+                            if g in used_glosses:
+                                continue
+                            idx_list = self.gloss_to_indices.get(g, [])
+                            if not idx_list:
+                                continue
+                            cand_sample = random.choice(idx_list)
+                            if cand_sample == a_idx:
+                                continue
+                            candidates.append(cand_sample)
+                            used_glosses.add(g)
+                            fallback_found = True
+                            break
+
+                        if not fallback_found:
+                            success = False
+                            break
+
+                if not success:
+                    # try again
+                    if self.shuffle:
+                        random.shuffle(anchors_pool)
+                    i = 0
+                    continue
+
+                # combine anchors + candidates => final batch indices
+                batch = []
+                for a, c in zip(anchors, candidates):
+                    batch.append(a)
+                    batch.append(c)
+
+                # final check: ensure batch length == bs and gloss uniqueness
+                if len(batch) == self.bs and len(used_glosses) == self.bs:
+                    # optionally shuffle the order inside batch to avoid anchor-candidate pairing fixed positions
+                    random.shuffle(batch)
+                    # advance i so we don't repeatedly pick same anchors (simple stride)
+                    i = j
+                    break
+                else:
+                    # try again
+                    if self.shuffle:
+                        random.shuffle(anchors_pool)
+                    i = 0
+                    continue
+
+            if batch is None:
+                # If after many tries failed, fallback to random batch with unique gloss constraint best-effort
+                used_glosses = set()
+                batch = []
+                random.shuffle(self.indices)
+                for idx in self.indices:
+                    g = self.idx2gloss[idx]
+                    if g in used_glosses:
+                        continue
+                    batch.append(idx)
+                    used_glosses.add(g)
+                    if len(batch) >= self.bs:
+                        break
+                if len(batch) < self.bs:
+                    # pad with random indices (less safe)
+                    while len(batch) < self.bs:
+                        batch.append(random.choice(self.indices))
+
+            produced += 1
+            yield batch
+
+    def set_epoch(self, epoch):
+        # optional: reseed/reshuffle per epoch externally if needed
+        if self.shuffle:
+            random.shuffle(self.indices)
