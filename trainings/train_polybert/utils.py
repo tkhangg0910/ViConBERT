@@ -89,8 +89,6 @@ def train_model(
     metric_log_interval=500,
     grad_clip=False,
     grad_accum_steps=1,
-    loss_fn=None,               
-    save_optimizer_state=True
 ):
     os.makedirs(checkpoint_dir, exist_ok=True)
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -179,12 +177,10 @@ def train_model(
                 max_candidates = max(len(candidates) for candidates in candidate_glosses)
                 
                 for i, (start_idx, end_idx) in enumerate(gloss_offsets):
-                    ctx_emb = rF_wt[i].flatten()  # [hidden_dim]
-                    gloss_embs = rF_g[start_idx:end_idx]  # [num_candidates, hidden_dim]
-                    gloss_embs_flat = gloss_embs.reshape(gloss_embs.size(0), -1)
-                    ctx_emb = ctx_emb.unsqueeze(0)
+                    ctx_emb = rF_wt[i].mean(dim=0).unsqueeze(0)           # [hidden_dim]
+                    gloss_embs = rF_g[start_idx:end_idx].mean(dim=1)  # [num_candidates, hidden_dim]
                     # Compute similarity scores
-                    similarities = torch.matmul(ctx_emb, gloss_embs_flat.T)  # [1, num_candidates]
+                    similarities = torch.matmul(ctx_emb, gloss_embs.T)  # [1, num_candidates]
                     
                     # Pad to max_candidates for batching
                     if similarities.size(1) < max_candidates:
@@ -285,12 +281,10 @@ def train_model(
                 max_candidates = max(len(candidates) for candidates in candidate_glosses)
                 
                 for i, (start_idx, end_idx) in enumerate(gloss_offsets):
-                    ctx_emb = rF_wt[i].flatten()
-                    gloss_embs = rF_g[start_idx:end_idx]
-                    gloss_embs_flat = gloss_embs.reshape(gloss_embs.size(0), -1)
-                    ctx_emb = ctx_emb.unsqueeze(0)
+                    ctx_emb = rF_wt[i].mean(dim=0).unsqueeze(0)           # [hidden_dim]
+                    gloss_embs = rF_g[start_idx:end_idx].mean(dim=1) 
                     # Compute similarity scores
-                    similarities = torch.matmul(ctx_emb, gloss_embs_flat.T) 
+                    similarities = torch.matmul(ctx_emb, gloss_embs.T) 
                     
                     if similarities.size(1) < max_candidates:
                         pad_size = max_candidates - similarities.size(1)

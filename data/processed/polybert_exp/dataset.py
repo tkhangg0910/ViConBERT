@@ -311,7 +311,9 @@ class PolyBERTtDataseV2(Dataset):
             
             final_candidates.append(candidates)
             gold_indices.append(gold_idx)
-
+        assert all(0 <= gi < len(final_candidates[i]) for i, gi in enumerate(gold_indices))
+        assert all(final_candidates[i][gold_indices[i]] == gold_glosses[i] 
+                for i in range(len(batch)))
         return {
             "context_input_ids": c_toks["input_ids"],
             "context_attn_mask": c_toks["attention_mask"],
