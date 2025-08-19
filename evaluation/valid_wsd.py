@@ -367,8 +367,6 @@ if __name__ == "__main__":
                                    gloss_emd=gloss_emd, val_mode=True)
         gloss_model = None
     else:  # gloss_model mode
-        print(f"Loading gloss model from: {args.gloss_model_path}")
-        gloss_model = ViSynoSenseEmbedding.from_pretrained(args.gloss_model_path).to(device)
         valid_set = WSD_ViConDataset(valid_sample, tokenizer, mode="gloss_model", val_mode=True)
         gloss_emd = None
     
@@ -390,7 +388,7 @@ if __name__ == "__main__":
     if args.mode == "precomputed":
         valid_metrics = evaluate_model_precomputed(context_model, valid_dataloader, device)
     else:
-        valid_metrics = evaluate_model_with_gloss_encoder(model, valid_dataloader, device)
+        valid_metrics = evaluate_model_with_gloss_encoder(context_model, valid_dataloader, device)
     
     print("\n" + "="*50)
     print("  VALIDATION METRICS:")
