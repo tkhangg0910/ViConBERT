@@ -181,7 +181,8 @@ class PolyBERTtDataseV2(Dataset):
         self.train_gloss_size = train_gloss_size
 
         self.targetword2glosses = defaultdict(list)
-
+        self.gloss_to_id = {}  # Map gloss text to ID
+        
         word_set = set()
         self.all_samples = []
         gloss_set = set()
@@ -205,14 +206,15 @@ class PolyBERTtDataseV2(Dataset):
 
             if gloss not in self.targetword2glosses[target]:
                 self.targetword2glosses[target].append(gloss)
-
+            
+            # FIXED: Build proper gloss mapping
+            self.gloss_to_id[gloss] = gloss_id
+            
             word_set.add(int(word_id))
             gloss_set.add(gloss)
 
         sorted_wids = sorted(word_set)
         self.global_word_to_label = {wid: i for i, wid in enumerate(sorted_wids)}
-
-        # global gloss pool for random sampling
         self.global_gloss_pool = list(gloss_set)
 
         self.span_indices = []
@@ -231,31 +233,40 @@ class PolyBERTtDataseV2(Dataset):
         wid = s["word_id"]
         gid = s["gloss_id"]
         label = self.global_word_to_label[int(wid)]
+        
+        gold_gloss = s["gloss"]
+        target_word = s["target_word"]
+        
+        # Get all possible glosses for this target word
+        all_candidates = list(set(self.targetword2glosses[target_word]))
+        
+        # Ensure gold gloss is always included
+        if gold_gloss not in all_candidates:
+            all_candidates.append(gold_gloss)
+        
         item = {
             "sentence": s["sentence"],
             "target_span": self.span_indices[idx],
             "word_id": label,
-            "target_word": s["target_word"],
-            "gloss": s["gloss"],
+            "target_word": target_word,
+            "gold_gloss": gold_gloss,
             "synset_ids": sid,
-            "gloss_id": gid
+            "gloss_id": gid,
+            "candidate_glosses": all_candidates
         }
-
-        gold_gloss = s["gloss"]
-        item["candidate_glosses"] = list(set(self.targetword2glosses[s["target_word"]] + [gold_gloss]))
 
         return item
 
     def collate_fn(self, batch):
         sentences = [b["sentence"] for b in batch]
-        gold_glosses = [b["gloss"] for b in batch]
-
+        gold_glosses = [b["gold_gloss"] for b in batch]
         spans = [b["target_span"] for b in batch]
         synset_ids = torch.tensor([b["synset_ids"] for b in batch], dtype=torch.long)
         word_id = torch.tensor([b["word_id"] for b in batch], dtype=torch.long)
         target_words = [b["target_word"] for b in batch]
-        gloss_id = torch.tensor([b["gloss_id"] for b in batch], dtype=torch.long)
+        gloss_ids = torch.tensor([b["gloss_id"] for b in batch], dtype=torch.long)
 
+        # Tokenize contexts
         c_toks = self.tokenizer(
             sentences,
             return_tensors="pt",
@@ -265,27 +276,40 @@ class PolyBERTtDataseV2(Dataset):
             return_attention_mask=True
         )
 
-        if self.val_mode:
-            candidate_glosses = [b["candidate_glosses"] for b in batch]
-        else:
-            candidate_glosses = []
-            for b in batch:
-                gold_gloss = b["gloss"]
-                cands = set(b["candidate_glosses"])  # unique
-                # đảm bảo gold gloss luôn có mặt
-                cands.add(gold_gloss)
-                needed = self.train_gloss_size - len(cands)
-                if needed > 0:
-                    extra = random.sample(
-                        [g for g in self.global_gloss_pool if g not in cands],
-                        k=min(needed, len(self.global_gloss_pool) - len(cands))
-                    )
-                    cands.update(extra)
-                # nếu cands > train_gloss_size thì random truncate
-                if len(cands) > self.train_gloss_size:
-                    cands = set(random.sample(list(cands), self.train_gloss_size))
-                candidate_glosses.append(list(cands))
-
+        # Handle candidate glosses
+        final_candidates = []
+        gold_indices = []  # Store gold position in each candidate list
+        
+        for i, b in enumerate(batch):
+            gold_gloss = b["gold_gloss"]
+            candidates = b["candidate_glosses"].copy()
+            
+            if not self.val_mode:
+                # Training: sample random glosses but ensure gold is included
+                if len(candidates) > self.train_gloss_size:
+                    # Keep gold + random sample of others
+                    others = [c for c in candidates if c != gold_gloss]
+                    sampled_others = random.sample(others, self.train_gloss_size - 1)
+                    candidates = [gold_gloss] + sampled_others
+                elif len(candidates) < self.train_gloss_size:
+                    # Add random glosses from global pool
+                    needed = self.train_gloss_size - len(candidates)
+                    available = [g for g in self.global_gloss_pool if g not in candidates]
+                    if len(available) >= needed:
+                        extra = random.sample(available, needed)
+                        candidates.extend(extra)
+            
+            # Shuffle candidates but remember gold position
+            random.shuffle(candidates)
+            try:
+                gold_idx = candidates.index(gold_gloss)
+            except ValueError:
+                # Fallback: put gold at index 0
+                candidates = [gold_gloss] + [c for c in candidates if c != gold_gloss]
+                gold_idx = 0
+            
+            final_candidates.append(candidates)
+            gold_indices.append(gold_idx)
 
         return {
             "context_input_ids": c_toks["input_ids"],
@@ -293,10 +317,11 @@ class PolyBERTtDataseV2(Dataset):
             "target_spans": torch.tensor(spans, dtype=torch.long),
             "synset_ids": synset_ids,
             "word_id": word_id,
-            "gold_glosses": gold_glosses ,
+            "gold_glosses": gold_glosses,
             "target_words": target_words,
-            "candidate_glosses": candidate_glosses,
-            "gloss_id": gloss_id
+            "candidate_glosses": final_candidates,
+            "gloss_ids": gloss_ids,
+            "gold_indices": torch.tensor(gold_indices, dtype=torch.long) 
         }
         
 class PolyBERTtDatasetV3(Dataset):

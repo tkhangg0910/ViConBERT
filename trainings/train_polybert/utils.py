@@ -92,23 +92,6 @@ def train_model(
     loss_fn=None,               
     save_optimizer_state=True
 ):
-    """
-    Training loop adapted for PolyBERT.
-
-    Expects each batch from train_data_loader to contain at least:
-      - context_input_ids: LongTensor [B, Lc]
-      - context_attn_mask:  LongTensor [B, Lc]
-      - gloss_input_ids:    LongTensor [B, Lg]
-      - gloss_attn_mask:    LongTensor [B, Lg]
-      - target_idx:         LongTensor [B]  (position index of target token in context)
-    Optionally:
-      - synset_ids or labels for metric computation
-
-    Model.forward should accept:
-      model(context_inputs_dict, gloss_inputs_dict, target_idx)
-    and return (loss_tensor, MF_matrix)
-    """
-
     os.makedirs(checkpoint_dir, exist_ok=True)
     run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = os.path.join(checkpoint_dir, f"run_{run_id}")
@@ -118,283 +101,251 @@ def train_model(
     scaler = GradScaler(enabled=use_amp)
 
     if grad_clip:
-        grad_clipper = AdaptiveGradientClipper(initial_max_norm=2.0)
+        grad_clipper = AdaptiveGradientClipper(initial_max_norm=1.0)  # Lower initial norm
 
     history = {
         "train_loss": [],
         "valid_loss": [],
-        "step_metrics": [],
-        "epoch_times": [],
-        "valid_metrics":[]
+        "valid_metrics": [],
+        "epoch_times": []
     }
 
-    best_valid_f1 = 0.0  # Changed from best_valid_loss to best_valid_f1
+    best_valid_f1 = 0.0
     patience_counter = 0
     global_step = 0
 
     model.to(device)
-    
-    print(f"[train] run_dir: {run_dir}  | device: {device} | AMP: {use_amp}")
+    print(f"[train] run_dir: {run_dir} | device: {device} | AMP: {use_amp}")
 
     for epoch in range(num_epochs):
         epoch_start = datetime.now()
         model.train()
-        train_tp, train_fp, train_fn = 0, 0, 0  # accumulate for epoch
-
+        
         running_loss = 0.0
-        train_steps = 0
+        train_correct = 0
+        train_total = 0
 
         pbar = tqdm(train_data_loader, 
-                         desc=f"Training Epoch {epoch+1}/{num_epochs}",
-                         position=0, leave=True, ascii=True)
+                   desc=f"Training Epoch {epoch+1}/{num_epochs}",
+                   ascii=True)
         optimizer.zero_grad()
 
         for batch_idx, batch in enumerate(pbar):
             global_step += 1
-            train_steps += 1
 
             context_inputs = {
                 "input_ids": batch["context_input_ids"].to(device),
                 "attention_mask": batch["context_attn_mask"].to(device)
             }
-        
-            target_idx = batch["target_spans"].to(device)  # shape [B]
-
+            target_spans = batch["target_spans"].to(device)
             candidate_glosses = batch["candidate_glosses"]
-            gloss_id = batch["gloss_id"].to(device)
-            flat_glosses = sum(candidate_glosses, [])
+            gold_indices = batch["gold_indices"].to(device)  # FIXED: Use proper gold indices
+
+            # Flatten all candidate glosses for batch tokenization
+            all_glosses = []
+            gloss_offsets = []
+            start = 0
+            
+            for candidates in candidate_glosses:
+                all_glosses.extend(candidates)
+                gloss_offsets.append((start, start + len(candidates)))
+                start += len(candidates)
+
+            # Tokenize all glosses at once (more efficient)
             gloss_toks = model.tokenizer(
-                flat_glosses,
+                all_glosses,
                 return_tensors="pt",
                 padding=True,
                 truncation=True,
                 max_length=256
             ).to(device)
 
-
-            # forward + loss (use AMP if available)
             with autocast(device_type=device):
-                rF_wt = model.forward_context(target_span=target_idx,**context_inputs)  
+                # Get context embeddings
+                rF_wt = model.forward_context(
+                    context_inputs["input_ids"],
+                    context_inputs["attention_mask"], 
+                    target_spans
+                )  # [B, hidden_dim]
 
-                # gloss embedding [sum(cands), D]
-                rF_g = model.forward_gloss(**gloss_toks)
+                # Get gloss embeddings
+                rF_g = model.forward_gloss(
+                    gloss_toks["input_ids"], 
+                    gloss_toks["attention_mask"]
+                )  # [total_glosses, hidden_dim]
 
-                gloss_offsets, start = [], 0
-                for cands in candidate_glosses:
-                    gloss_offsets.append((start, start + len(cands)))
-                    start += len(cands)
+                # Compute similarities for each instance
+                batch_similarities = []
+                max_candidates = max(len(candidates) for candidates in candidate_glosses)
+                
+                for i, (start_idx, end_idx) in enumerate(gloss_offsets):
+                    ctx_emb = rF_wt[i].flatten()  # [hidden_dim]
+                    gloss_embs = rF_g[start_idx:end_idx]  # [num_candidates, hidden_dim]
+                    gloss_embs_flat = gloss_embs.reshape(gloss_embs.size(0), -1)
+                    
+                    # Compute similarity scores
+                    similarities = torch.matmul(ctx_emb.unsqueeze(0), gloss_embs_flat.T)  # [1, num_candidates]
+                    
+                    # Pad to max_candidates for batching
+                    if similarities.size(1) < max_candidates:
+                        pad_size = max_candidates - similarities.size(1)
+                        similarities = F.pad(similarities, (0, pad_size), value=-1e9)
+                    
+                    batch_similarities.append(similarities)
 
-                sims, gold_indices = [], []
-                for i, (start, end) in enumerate(gloss_offsets):
-                    # [cand_size, D]
-                    gloss_vecs = rF_g[start:end]
+                # Stack similarities: [B, max_candidates]
+                similarities_batch = torch.cat(batch_similarities, dim=0)
+                
+                # Compute loss
+                loss = F.cross_entropy(similarities_batch, gold_indices)
+                loss = loss / grad_accum_steps
 
-                    # [D]
-                    ctx_vec = rF_wt[i].unsqueeze(0)
-                    sim = torch.matmul(ctx_vec.flatten().unsqueeze(0), gloss_vecs.reshape(gloss_vecs.shape[0],-1).T)
-                    sims.append(sim)
-
-                    # gold gloss index in candidate list
-                    gold_gloss_str = model.tokenizer.decode([batch["gloss_id"][i].item()])
-                    try:
-                        gold_idx = candidate_glosses[i].index(gold_gloss_str)
-                    except:
-                        gold_idx = 0
-                    gold_indices.append(gold_idx)
-
-                sims = torch.cat(sims, dim=0)  # [B, cand_size_varies → pad]
-                gold_indices = torch.tensor(gold_indices, dtype=torch.long, device=device)
-
-                # loss
-                loss = F.cross_entropy(sims, gold_indices)
-                loss = loss / float(grad_accum_steps)
-
-
-
+            # Backward pass
             scaler.scale(loss).backward()
 
-            # gradient accumulation step
             if (batch_idx + 1) % grad_accum_steps == 0:
                 scaler.unscale_(optimizer)
                 if grad_clip:
-                    current_norm = grad_clipper.clip(model)
+                    grad_clipper.clip(model)
                 scaler.step(optimizer)
                 scaler.update()
                 optimizer.zero_grad()
                 if scheduler is not None:
-                    try:
-                        scheduler.step()
-                    except:
-                        pass
+                    scheduler.step()
 
-            running_loss += loss.item() * float(grad_accum_steps)
-
-            # optional metrics
-            preds = sims.argmax(dim=1)
-            for pred, gold in zip(preds, gold_indices):
-                if pred == gold:
-                    train_tp += 1
-                else:
-                    train_fp += 1
-                    train_fn += 1
+            running_loss += loss.item() * grad_accum_steps
+            
+            # Calculate accuracy
+            preds = similarities_batch.argmax(dim=1)
+            train_correct += (preds == gold_indices).sum().item()
+            train_total += len(gold_indices)
 
             if global_step % metric_log_interval == 0:
-                postfix = {"Loss": f"{(running_loss / max(1, train_steps)):.4f}"}
-                if grad_clip:
-                    postfix["GradMax"] = f"{grad_clipper.max_norm:.2f}"
-                pbar.set_postfix(postfix)
+                current_acc = train_correct / max(train_total, 1)
+                pbar.set_postfix({
+                    "Loss": f"{running_loss / (batch_idx + 1):.4f}",
+                    "Acc": f"{current_acc:.4f}"
+                })
             else:
-                pbar.set_postfix({"loss": f"{loss.item()*grad_accum_steps:.4f}"})
-        
-        precision = train_tp / (train_tp + train_fp) if (train_tp + train_fp) > 0 else 0.0
-        recall    = train_tp / (train_tp + train_fn) if (train_tp + train_fn) > 0 else 0.0
-        f1        = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+                pbar.set_postfix({"loss": f"{loss.item() * grad_accum_steps:.4f}"})
 
-        train_metrics = {
-            "precision": precision,
-            "recall": recall,
-            "f1": f1
-        }
-        
-        avg_train_loss = running_loss / max(1, train_steps)
+        # Training metrics
+        train_accuracy = train_correct / max(train_total, 1)
+        avg_train_loss = running_loss / len(train_data_loader)
         history["train_loss"].append(avg_train_loss)
-        # ============= VALIDATION (Cross-Entropy) =============
-        valid_loss = 0.0
-        TP, FP, FN = 0, 0, 0
-        valid_steps = 0
 
+        # Validation
         model.eval()
-        with torch.no_grad():
-            val_pbar = tqdm(valid_data_loader, 
-                            desc=f"Validating {epoch+1}/{num_epochs}",
-                            position=1, leave=True, ascii=True)
+        valid_loss = 0.0
+        valid_correct = 0
+        valid_total = 0
 
+        with torch.no_grad():
+            val_pbar = tqdm(valid_data_loader, desc=f"Validating {epoch+1}/{num_epochs}", ascii=True)
+            
             for batch in val_pbar:
-                batch_size = len(batch["context_input_ids"])
                 context_inputs = {
                     "input_ids": batch["context_input_ids"].to(device),
                     "attention_mask": batch["context_attn_mask"].to(device)
                 }
-
                 target_spans = batch["target_spans"].to(device)
-                rF_wt = model.forward_context(
-                    context_inputs["input_ids"],
-                    context_inputs["attention_mask"],
-                    target_spans
-                )  # [B, polym, H]
+                candidate_glosses = batch["candidate_glosses"]
+                gold_indices = batch["gold_indices"].to(device)
 
-                # --- Tokenize all candidate glosses and compute max length ---
-                all_candidates = [c for cands in batch["candidate_glosses"] for c in cands]
-                g_toks = model.tokenizer(
-                    all_candidates,
+                # Same processing as training
+                all_glosses = []
+                gloss_offsets = []
+                start = 0
+                
+                for candidates in candidate_glosses:
+                    all_glosses.extend(candidates)
+                    gloss_offsets.append((start, start + len(candidates)))
+                    start += len(candidates)
+
+                gloss_toks = model.tokenizer(
+                    all_glosses,
                     return_tensors="pt",
                     padding=True,
                     truncation=True,
                     max_length=256
                 ).to(device)
 
-                rF_g = model.forward_gloss(g_toks["input_ids"], g_toks["attention_mask"])  # [total_cands, polym, H]
+                rF_wt = model.forward_context(
+                    context_inputs["input_ids"],
+                    context_inputs["attention_mask"], 
+                    target_spans
+                )
 
-                # --- Build sim matrix with padding ---
-                sims_list, gold_indices = [], []
-                start = 0
-                max_cands = max(len(c) for c in batch["candidate_glosses"])
+                rF_g = model.forward_gloss(
+                    gloss_toks["input_ids"], 
+                    gloss_toks["attention_mask"]
+                )
 
-                for i, cands in enumerate(batch["candidate_glosses"]):
-                    end = start + len(cands)
-                    gloss_vecs = rF_g[start:end].reshape(len(cands), -1)  # [N_i, D]
-                    ctx_vec = rF_wt[i].flatten().unsqueeze(0)            # [1, D]
+                batch_similarities = []
+                max_candidates = max(len(candidates) for candidates in candidate_glosses)
+                
+                for i, (start_idx, end_idx) in enumerate(gloss_offsets):
+                    ctx_emb = rF_wt[i].flatten()
+                    gloss_embs = rF_g[start_idx:end_idx]
+                    gloss_embs_flat = gloss_embs.reshape(gloss_embs.size(0), -1)
+                    
+                    similarities = torch.matmul(ctx_emb.unsqueeze(0), gloss_embs_flat.T)
+                    
+                    if similarities.size(1) < max_candidates:
+                        pad_size = max_candidates - similarities.size(1)
+                        similarities = F.pad(similarities, (0, pad_size), value=-1e9)
+                    
+                    batch_similarities.append(similarities)
 
-                    sim = torch.matmul(ctx_vec, gloss_vecs.T)             # [1, N_i]
-
-                    # pad sim to max_cands
-                    if len(cands) < max_cands:
-                        pad_size = max_cands - len(cands)
-                        sim = F.pad(sim, (0, pad_size), value=-1e9)  # large negative to ignore in softmax
-
-                    sims_list.append(sim)
-                    gold_indices.append(cands.index(batch["gold_glosses"][i]))
-                    start = end
-
-                # [B, max_cands]
-                sims_batch = torch.cat(sims_list, dim=0)
-                gold_indices = torch.tensor(gold_indices, dtype=torch.long, device=device)
-
-                # Compute CE loss for the batch
-                loss = F.cross_entropy(sims_batch, gold_indices)
+                similarities_batch = torch.cat(batch_similarities, dim=0)
+                
+                loss = F.cross_entropy(similarities_batch, gold_indices)
                 valid_loss += loss.item()
-                valid_steps += 1
+                
+                preds = similarities_batch.argmax(dim=1)
+                valid_correct += (preds == gold_indices).sum().item()
+                valid_total += len(gold_indices)
 
-                # Predictions
-                preds = sims_batch.argmax(dim=1)
-                for pred, gold in zip(preds, gold_indices):
-                    if pred == gold:
-                        TP += 1
-                    else:
-                        FP += 1
-                        FN += 1
-
-        # compute metrics
-        valid_precision = TP / (TP + FP) if (TP + FP) > 0 else 0.0
-        valid_recall    = TP / (TP + FN) if (TP + FN) > 0 else 0.0
-        valid_f1 = 2 * valid_precision * valid_recall / (valid_precision + valid_recall + 1e-8)
-        avg_valid_loss  = valid_loss / max(1, valid_steps)
-
-        
+        valid_accuracy = valid_correct / max(valid_total, 1)
+        avg_valid_loss = valid_loss / len(valid_data_loader)
         history["valid_loss"].append(avg_valid_loss)
-        history["valid_metrics"].append({
-            "precision": valid_precision,
-            "recall": valid_recall,
-            "f1": valid_f1
-        })
-
+        history["valid_metrics"].append({"accuracy": valid_accuracy})
 
         epoch_time = (datetime.now() - epoch_start).total_seconds()
         history["epoch_times"].append(epoch_time)
-        print()
-        print("===============================================================================")
-        print(f"[Epoch {epoch+1}] Train Loss: {avg_train_loss:.4f} | time: {epoch_time:.1f}s")
-        print(f"Train Recall: {train_metrics['recall']:.4f} | Train Precision: {train_metrics['precision']:.4f} | Train F1: {train_metrics['f1']:.4f} | ")
-        print()
-        print(f"[Epoch {epoch+1}] Valid Loss: {avg_valid_loss:.4f} | time: {epoch_time:.1f}s")
-        print(f"Valid Recall: {valid_recall:.4f} | Valid Precision: {valid_precision:.4f} | Valid F1: {valid_f1:.4f} | ")
-        print("===============================================================================")
-        print()
-        # checkpointing
-        ckpt_path = os.path.join(run_dir, f"epoch_{epoch+1}.pt")
-        if (epoch + 1) % ckpt_interval == 0:
-            save_obj = {"epoch": epoch + 1, "model_state": model.state_dict()}
-            if save_optimizer_state:
-                save_obj["optimizer_state"] = optimizer.state_dict()
-            torch.save(save_obj, ckpt_path)
-            # also save model.pretrained format if you want
-            try:
-                model.save_pretrained(os.path.join(run_dir, f"model_epoch_{epoch+1}"))
-            except Exception:
-                pass
-            print(f"[Checkpoint] saved to {ckpt_path}")
 
-        # Early stopping based on validation F1
-        if valid_f1 > best_valid_f1:
-            best_valid_f1 = valid_f1
+        print()
+        print("=" * 80)
+        print(f"[Epoch {epoch+1}] Train Loss: {avg_train_loss:.4f} | Train Acc: {train_accuracy:.4f} | Time: {epoch_time:.1f}s")
+        print(f"[Epoch {epoch+1}] Valid Loss: {avg_valid_loss:.4f} | Valid Acc: {valid_accuracy:.4f}")
+        print("=" * 80)
+
+        # Early stopping based on validation accuracy
+        if valid_accuracy > best_valid_f1:
+            best_valid_f1 = valid_accuracy
             patience_counter = 0
-            # save best model
+            
             best_path = os.path.join(run_dir, "best_model.pt")
             save_obj = {"epoch": epoch + 1, "model_state": model.state_dict()}
             if save_optimizer_state:
                 save_obj["optimizer_state"] = optimizer.state_dict()
             torch.save(save_obj, best_path)
-            try:
-                model.save_pretrained(os.path.join(run_dir, "best_model_pretrained"))
-            except Exception:
-                pass
-            print(f"[Best] new best valid F1 {best_valid_f1:.4f} -> saved best model.")
+            print(f"[Best] New best valid accuracy: {best_valid_f1:.4f}")
         else:
             patience_counter += 1
             print(f"[Patience] {patience_counter}/{early_stopping_patience}")
 
         if patience_counter >= early_stopping_patience:
-            print("[EarlyStopping] stopping training.")
+            print("[EarlyStopping] Stopping training.")
             break
+
+        # Regular checkpointing
+        if (epoch + 1) % ckpt_interval == 0:
+            ckpt_path = os.path.join(run_dir, f"epoch_{epoch+1}.pt")
+            save_obj = {"epoch": epoch + 1, "model_state": model.state_dict()}
+            if save_optimizer_state:
+                save_obj["optimizer_state"] = optimizer.state_dict()
+            torch.save(save_obj, ckpt_path)
+            print(f"[Checkpoint] Saved to {ckpt_path}")
 
     return history
