@@ -36,10 +36,6 @@ def setup_args():
     parser.add_argument("--mode", type=str, choices=["gloss_model", "precomputed"], 
                        required=True, help="Evaluation mode: use gloss_model or precomputed embeddings")
     
-    # For gloss_model mode
-    parser.add_argument("--gloss_model_path", type=str, 
-                       help="Path to gloss encoder model (required for gloss_model mode)")
-    
     # For precomputed mode
     parser.add_argument("--gloss_embeddings_path", type=str,
                        help="Path to precomputed gloss embeddings (required for precomputed mode)")
