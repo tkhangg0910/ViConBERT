@@ -373,7 +373,7 @@ if __name__ == "__main__":
     # Create dataloader
     valid_dataloader = DataLoader(
         valid_set,
-        batch_size=768,
+        batch_size=args.batch_size,
         shuffle=False,
         collate_fn=valid_set.collate_fn,
         num_workers=config["data"]["num_workers"],
