@@ -10,12 +10,13 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 # from sentence_transformers import SentenceTransformer
 import pandas as pd
 
-from data.processed.stage1_pseudo_sents.pseudo_sent_datasets import PseudoSents_Dataset, PseudoSentsFlatDataset, SynsetBatchSampler
+from data.processed.stage1_pseudo_sents.pseudo_sent_datasets import PseudoSents_Dataset, PseudoSentsFlatDataset, SynsetBatchSampler,WSD_ViConDataset
 from models.base_model import ViSynoSenseEmbedding
 from utils.load_config import load_config
 from utils.optimizer import create__diff_optimizer
 from utils.loss_fn import InfonceDistillLoss
 from trainings.train_viconbert.utils import train_model
+from trainings.train_viconbert.utils_wsd import train_model as wsd_train
 
 if is_torch_available() and torch.multiprocessing.get_start_method() == "fork":
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -62,33 +63,34 @@ if __name__=="__main__":
         tokenizer = DebertaV2TokenizerFast.from_pretrained(config["base_model"])
     if tokenizer.pad_token is None:
         tokenizer.add_special_tokens({'pad_token': '[PAD]'})
-    if args.dataset_mode == "sampling":
-        train_set = PseudoSents_Dataset(config["data"]["emd_path"],
+    if args.dataset_mode == "wsd":
+        train_set = WSD_ViConDataset(config["data"]["emd_path"],
                                         # gloss_enc,
-                                        train_sample, tokenizer
-                                        , is_training=True, 
-                                        num_synsets_per_batch=96,samples_per_synset=4,
-                                        only_multiple_el=bool(args.only_multiple_el))
+                                        train_sample, tokenizer 
+                                        )
 
-        valid_set = PseudoSents_Dataset(config["data"]["emd_path"],
+        valid_set = WSD_ViConDataset(config["data"]["emd_path"],
                                         # gloss_enc,
-                                        valid_sample, tokenizer, is_training=False
-                                        ,only_multiple_el=bool(args.only_multiple_el))
-        
-        train_dataloader = DataLoader(train_set,
-                                    1,
-                                    shuffle=False,
-                                    collate_fn=train_set.custom_collate_fn,
-                                    num_workers=config["data"]["num_workers"],
-                                    pin_memory=True
-                                    )
-        valid_dataloader = DataLoader(valid_set,
-                                    1,
-                                    shuffle=False,
-                                    collate_fn=valid_set.custom_collate_fn,
-                                    num_workers=config["data"]["num_workers"],
-                                    pin_memory=True
-                                    )
+                                        train_sample, tokenizer , val_mode=True
+                                        )
+        batch_size = config["training"]["batch_size"]
+        labels = [ train_set[i]["synset_ids"] for i in range(len(train_set)) ]
+        sampler = SynsetBatchSampler(labels, batch_size,shuffle=True)
+        train_dataloader = DataLoader(
+            train_set,
+            batch_sampler=sampler,
+            collate_fn=train_set.collate_fn,
+            num_workers=config["data"]["num_workers"],
+            pin_memory=True
+        )
+        valid_dataloader = DataLoader(
+            valid_set,
+            batch_size=batch_size,
+            shuffle=False,
+            collate_fn=valid_set.collate_fn,
+            num_workers=config["data"]["num_workers"],
+            pin_memory=True
+        )
     elif args.dataset_mode == "flat":
         train_set = PseudoSentsFlatDataset(config["data"]["emd_path"],
                                         # gloss_enc,
@@ -158,19 +160,34 @@ if __name__=="__main__":
 
     
     loss_fn = InfonceDistillLoss(aux_weight=1)
-
-    history, trained_model = train_model(
-        num_epochs=config["training"]["epochs"],
-        train_data_loader=train_dataloader,
-        valid_data_loader=valid_dataloader,
-        loss_fn=loss_fn,
-        optimizer=optim,
-        model=model,
-        device=device,
-        checkpoint_dir=config["output_dir"],
-        early_stopping_patience=config["training"]["early_stopping_patience"],
-        ckpt_interval=config["training"]["ckpt_interval"],
-        ndcg_eval_interval=5,
-        grad_clip=args.grad_clip,
-        grad_accum_steps=args.grad_accum_steps
-    )
+    if args.dataset_mode == "wsd":
+        history, trained_model = wsd_train(
+            num_epochs=config["training"]["epochs"],
+            train_data_loader=train_dataloader,
+            valid_data_loader=valid_dataloader,
+            loss_fn=loss_fn,
+            optimizer=optim,
+            model=model,
+            device=device,
+            checkpoint_dir=config["output_dir"],
+            early_stopping_patience=config["training"]["early_stopping_patience"],
+            ckpt_interval=config["training"]["ckpt_interval"],
+            grad_clip=args.grad_clip,
+            grad_accum_steps=args.grad_accum_steps
+        )
+    else :
+        history, trained_model = train_model(
+            num_epochs=config["training"]["epochs"],
+            train_data_loader=train_dataloader,
+            valid_data_loader=valid_dataloader,
+            loss_fn=loss_fn,
+            optimizer=optim,
+            model=model,
+            device=device,
+            checkpoint_dir=config["output_dir"],
+            early_stopping_patience=config["training"]["early_stopping_patience"],
+            ckpt_interval=config["training"]["ckpt_interval"],
+            ndcg_eval_interval=5,
+            grad_clip=args.grad_clip,
+            grad_accum_steps=args.grad_accum_steps
+        )
