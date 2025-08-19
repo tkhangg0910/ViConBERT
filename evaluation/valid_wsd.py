@@ -376,7 +376,7 @@ if __name__ == "__main__":
         batch_size=1028,
         shuffle=False,
         collate_fn=valid_set.collate_fn,
-        num_workers=0,
+        num_workers=1,
         pin_memory=True
     )
     
