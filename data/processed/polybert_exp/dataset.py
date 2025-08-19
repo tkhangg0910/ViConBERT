@@ -305,6 +305,7 @@ class PolyBERTtDataseV2(Dataset):
                 gold_idx = candidates.index(gold_gloss)
             except ValueError:
                 # Fallback: put gold at index 0
+                print("Fallback")
                 candidates = [gold_gloss] + [c for c in candidates if c != gold_gloss]
                 gold_idx = 0
             
