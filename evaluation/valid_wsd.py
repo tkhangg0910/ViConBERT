@@ -251,7 +251,6 @@ def evaluate_model_with_gloss_encoder(model, data_loader, device):
     valid_steps = 0
 
     model.eval()
-    gloss_model.eval()
     
     with torch.no_grad():
         val_pbar = tqdm(data_loader, desc="Validating (Gloss Model)", ascii=True)
