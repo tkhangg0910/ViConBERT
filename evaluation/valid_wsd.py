@@ -43,8 +43,6 @@ def setup_args():
     args = parser.parse_args()
     
     # Validate arguments
-    if args.mode == "gloss_model" and not args.gloss_model_path:
-        parser.error("--gloss_model_path is required when mode is 'gloss_model'")
     if args.mode == "precomputed" and not args.gloss_embeddings_path:
         parser.error("--gloss_embeddings_path is required when mode is 'precomputed'")
     
