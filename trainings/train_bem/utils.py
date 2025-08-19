@@ -184,7 +184,10 @@ def train_model(
                     gloss_embs_flat = gloss_embs.reshape(gloss_embs.size(0), -1)
                     
                     # Compute similarity scores
-                    similarities = torch.matmul(ctx_emb.unsqueeze(0), gloss_embs_flat.T)  # [1, num_candidates]
+                    ctx_emb = F.normalize(ctx_emb.unsqueeze(0), p=2, dim=1)
+                    gloss_embs_flat = F.normalize(rF_g, p=2, dim=1)
+                    # Compute similarity scores
+                    similarities = torch.matmul(ctx_emb, gloss_embs_flat.T) 
                     
                     # Pad to max_candidates for batching
                     if similarities.size(1) < max_candidates:
@@ -289,7 +292,10 @@ def train_model(
                     gloss_embs = rF_g[start_idx:end_idx]
                     gloss_embs_flat = gloss_embs.reshape(gloss_embs.size(0), -1)
                     
-                    similarities = torch.matmul(ctx_emb.unsqueeze(0), gloss_embs_flat.T)
+                    ctx_emb = F.normalize(ctx_emb.unsqueeze(0), p=2, dim=1)
+                    gloss_embs_flat = F.normalize(rF_g, p=2, dim=1)
+                    # Compute similarity scores
+                    similarities = torch.matmul(ctx_emb, gloss_embs_flat.T) 
                     
                     if similarities.size(1) < max_candidates:
                         pad_size = max_candidates - similarities.size(1)
