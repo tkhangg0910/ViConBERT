@@ -182,8 +182,7 @@ def train_model(
                     ctx_emb = rF_wt[i].flatten()  # [hidden_dim]
                     gloss_embs = rF_g[start_idx:end_idx]  # [num_candidates, hidden_dim]
                     gloss_embs_flat = gloss_embs.reshape(gloss_embs.size(0), -1)
-                    ctx_emb = F.normalize(ctx_emb.unsqueeze(0), p=2, dim=1)
-                    gloss_embs_flat = F.normalize(gloss_embs_flat, p=2, dim=1)
+                    ctx_emb = ctx_emb.unsqueeze(0)
                     # Compute similarity scores
                     similarities = torch.matmul(ctx_emb, gloss_embs_flat.T)  # [1, num_candidates]
                     
@@ -289,8 +288,7 @@ def train_model(
                     ctx_emb = rF_wt[i].flatten()
                     gloss_embs = rF_g[start_idx:end_idx]
                     gloss_embs_flat = gloss_embs.reshape(gloss_embs.size(0), -1)
-                    ctx_emb = F.normalize(ctx_emb.unsqueeze(0), p=2, dim=1)
-                    gloss_embs_flat = F.normalize(gloss_embs_flat, p=2, dim=1)
+                    ctx_emb = ctx_emb.unsqueeze(0)
                     # Compute similarity scores
                     similarities = torch.matmul(ctx_emb, gloss_embs_flat.T) 
                     
