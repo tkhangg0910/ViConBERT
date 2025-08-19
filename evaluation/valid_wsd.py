@@ -6,6 +6,8 @@ from transformers import PhobertTokenizerFast, XLMRobertaTokenizerFast
 from torch.utils.data import DataLoader
 from data.processed.polybert_exp.dataset import PolyBERTtDatasetV3
 from models.base_model import ViSynoSenseEmbedding
+from models.polybert import PolyBERT
+from models.bem import BiEncoderModel
 from utils.load_config import load_config
 import torch
 from tqdm import tqdm
@@ -26,6 +28,8 @@ if is_torch_available() and torch.multiprocessing.get_start_method() == "fork":
 def setup_args():
     parser = argparse.ArgumentParser(description="Evaluate WSD model")
     parser.add_argument("--model_path", type=str, required=True, help="Context model path")
+    parser.add_argument("--model_type", type=str, required=True, help="Context model path")
+
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size")
     
     # Two modes
@@ -352,7 +356,12 @@ if __name__ == "__main__":
     print(f"Context model path: {args.model_path}")
     
     # Load context model
-    context_model = ViSynoSenseEmbedding.from_pretrained(args.model_path).to(device)
+    if args.model_type == 'vicon':
+        context_model = ViSynoSenseEmbedding.from_pretrained(args.model_path).to(device)
+    elif args.model_type == 'poly':
+        context_model = PolyBERT.from_pretrained(args.model_path).to(device)
+    elif args.model_type == 'bem':
+        context_model = BiEncoderModel.from_pretrained(args.model_path).to(device)
     tokenizer = context_model.tokenizer
     
     if tokenizer.pad_token is None:
