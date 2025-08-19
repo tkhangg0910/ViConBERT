@@ -328,11 +328,23 @@ def train_model(
             best_valid_f1 = valid_accuracy
             patience_counter = 0
             
-            best_path = os.path.join(run_dir, "best_model.pt")
-            save_obj = {"epoch": epoch + 1, "model_state": model.state_dict()}
-            if save_optimizer_state:
-                save_obj["optimizer_state"] = optimizer.state_dict()
-            torch.save(save_obj, best_path)
+            best_model_dir = os.path.join(run_dir, "best_model")
+            os.makedirs(best_model_dir, exist_ok=True)
+            
+            # Save model using HuggingFace method
+            model.save_pretrained(best_model_dir)
+            
+            # Save training state
+            torch.save({
+                'epoch': epoch + 1,
+                'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': scheduler.state_dict() if scheduler else None,
+                'best_valid_f1': best_valid_f1,
+                'global_step': global_step
+            }, os.path.join(best_model_dir, "training_state.pt"))
+            
+            patience_counter = 0
+
             print(f"[Best] New best valid accuracy: {best_valid_f1:.4f}")
         else:
             patience_counter += 1
@@ -344,11 +356,21 @@ def train_model(
 
         # Regular checkpointing
         if (epoch + 1) % ckpt_interval == 0:
-            ckpt_path = os.path.join(run_dir, f"epoch_{epoch+1}.pt")
-            save_obj = {"epoch": epoch + 1, "model_state": model.state_dict()}
-            if save_optimizer_state:
-                save_obj["optimizer_state"] = optimizer.state_dict()
-            torch.save(save_obj, ckpt_path)
-            print(f"[Checkpoint] Saved to {ckpt_path}")
+            final_model_dir = os.path.join(run_dir, "final_model")
+            os.makedirs(final_model_dir, exist_ok=True)
+
+            # Save model using HuggingFace method
+            model.save_pretrained(final_model_dir)
+
+            # Save training state
+            torch.save({
+                'epoch': epoch + 1,
+                'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': scheduler.state_dict() if scheduler else None,
+                'best_valid_f1': best_valid_f1,
+                'global_step': global_step
+            }, os.path.join(final_model_dir, "training_state.pt"))
+
+            print(f"[Checkpoint] Saved to final_model")
 
     return history
