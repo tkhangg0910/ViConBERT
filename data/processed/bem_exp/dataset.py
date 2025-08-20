@@ -4,7 +4,7 @@ from torch.utils.data import Dataset
 import torch
 from tqdm import tqdm
 import numpy as np
-from utils.mask_extractor import TargetWordMaskExtractor  # Updated import
+from utils.span_extractor import TargetWordMaskExtractor  # Updated import
 from utils.process_data import text_normalize
 from collections import defaultdict
 
