@@ -8,8 +8,8 @@ base_model_cache_dir: "embeddings/vinai/phobert-base"
 output_dir: "./checkpoints/phobert-base-bem"
 
 data:
-  train_path: "data/processed/polybert_exp/train_data.json"
-  valid_path: "data/processed/polybert_exp/valid_data.json"
+  train_path: "data/processed/polybert_exp/train_data_v2.json"
+  valid_path: "data/processed/polybert_exp/valid_data_v2.json"
   num_workers: 16
 
 training:
