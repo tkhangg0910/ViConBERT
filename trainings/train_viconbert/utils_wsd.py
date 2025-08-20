@@ -131,7 +131,7 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
             
 
             batch_metrics = compute_step_metrics(outputs, synset_ids, 
-                                               k_vals=1, 
+                                               k_vals=(1), 
                                                device=device, ndcg=False)
             
 
