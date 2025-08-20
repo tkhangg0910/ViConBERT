@@ -13,7 +13,7 @@ from data.processed.bem_exp.dataset import BEMDataset  # Updated dataset with ma
 from models.bem import BiEncoderModel
 from utils.load_config import load_config
 from utils.optimizer import create_optimizer
-from trainings.train_polybert.utils import train_model
+from trainings.train_bem.utils import train_model
 
 if is_torch_available() and torch.multiprocessing.get_start_method() == "fork":
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
