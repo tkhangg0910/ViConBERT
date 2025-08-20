@@ -2,7 +2,7 @@ import logging
 from typing import Optional, Tuple
 import re
 from transformers import PreTrainedTokenizerFast
-
+import torch
 class SpanExtractor:
     """Extracts start and end indices for target phrases in Vietnamese text"""
 
