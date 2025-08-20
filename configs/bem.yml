@@ -21,7 +21,7 @@ training:
   save_steps: 1000
   optimizer:
     name: "adamw"
-    lr: 2e-4 
+    lr: 1e-4 
     weight_decay: 0.01
     eps: 1e-6
     betas: [0.9, 0.999]
