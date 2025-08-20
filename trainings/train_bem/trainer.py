@@ -6,7 +6,7 @@ import torch
 from torch.utils.data import DataLoader
 from transformers.utils import is_torch_available
 from transformers import PreTrainedTokenizerFast, PhobertTokenizerFast, XLMRobertaTokenizerFast, DebertaV2TokenizerFast
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import ReduceLROnPlateau, get_linear_schedule_with_warmup
 import pandas as pd
 
 from data.processed.bem_exp.dataset import BEMDataset  # Updated dataset with mask extractor
@@ -49,7 +49,7 @@ if __name__=="__main__":
     with open(config["data"]["valid_path"], "r", encoding="utf-8") as f:
         valid_sample = json.load(f)
 
-    # Initialize tokenizer based on model type
+    # Initialize tokenizer
     if config["base_model"].startswith("vinai"):
         print("using PhobertTokenizerFast")
         tokenizer = PhobertTokenizerFast.from_pretrained(config["base_model"])
@@ -65,24 +65,11 @@ if __name__=="__main__":
     
     batch_size = config["training"]['batch_size']
     
-    # Initialize datasets with mask extractor
+    # Initialize datasets with FIXED parameters
     print("Initializing training dataset...")
     train_dataset = BEMDataset(train_sample, tokenizer, train_gloss_size=args.train_gloss_size)
     print("Initializing validation dataset...")
     valid_dataset = BEMDataset(valid_sample, tokenizer, val_mode=True)
-    
-    # Debug: Check a few samples
-    if args.debug:
-        print("\n=== Debug Information ===")
-        for i in range(min(3, len(train_dataset))):
-            debug_info = train_dataset.get_sample_for_debug(i)
-            print(f"\nSample {i}:")
-            print(f"Sentence: {debug_info['sentence']}")
-            print(f"Target: {debug_info['target_word']}")
-            print(f"Mask sum: {sum(debug_info['target_mask'])}")
-            print("Mask visualization:")
-            print(debug_info['mask_visualization'])
-            print("-" * 50)
     
     train_dataloader = DataLoader(
         train_dataset,
@@ -119,15 +106,14 @@ if __name__=="__main__":
     
     optim = create_optimizer(model, config)
     
-    scheduler = ReduceLROnPlateau(
+    # FIXED: Use warmup + linear schedule như code gốc
+    scheduler = get_linear_schedule_with_warmup(
         optimizer=optim,
-        mode='min',         
-        factor=0.5,         
-        patience=2,         
-        min_lr=1e-6          
+        num_warmup_steps=warmup_steps,
+        num_training_steps=total_steps
     )
 
-    # Test a batch to ensure everything works
+    # Debug batch processing
     if args.debug:
         print("\n=== Testing batch processing ===")
         test_batch = next(iter(train_dataloader))
@@ -136,22 +122,9 @@ if __name__=="__main__":
         print(f"context_attn_mask shape: {test_batch['context_attn_mask'].shape}")
         print(f"target_masks shape: {test_batch['target_masks'].shape}")
         print(f"Number of candidate_glosses: {len(test_batch['candidate_glosses'])}")
-        print(f"gold_indices shape: {test_batch['gold_indices'].shape}")
-        
-        # Test forward pass
-        try:
-            with torch.no_grad():
-                model.eval()
-                ctx_vecs = model.forward_context(
-                    test_batch['context_input_ids'][:2].to(device),
-                    test_batch['context_attn_mask'][:2].to(device),
-                    test_batch['target_masks'][:2].to(device)
-                )
-                print(f"Context vectors shape: {ctx_vecs.shape}")
-                print("✓ Forward pass successful!")
-        except Exception as e:
-            print(f"✗ Forward pass failed: {e}")
-            raise
+        print(f"gold_indices: {test_batch['gold_indices']}")
+        print(f"sense_weights length: {len(test_batch['sense_weights'])}")
+
 
     print("\n=== Starting Training ===")
     history, trained_model = train_model(

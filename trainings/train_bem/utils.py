@@ -95,14 +95,15 @@ def train_model(
         for batch_idx, batch in enumerate(pbar):
             global_step += 1
 
-            # Extract batch data - Updated for target_masks
+            # Extract batch data
             context_inputs = {
                 "input_ids": batch["context_input_ids"].to(device),
                 "attention_mask": batch["context_attn_mask"].to(device)
             }
-            target_masks = batch["target_masks"].to(device)  # Changed from target_spans
+            target_masks = batch["target_masks"].to(device)
             candidate_glosses = batch["candidate_glosses"]
             gold_indices = batch["gold_indices"].to(device)
+            sense_weights = batch["sense_weights"]
 
             # Flatten all candidate glosses for batch tokenization
             all_glosses = []
@@ -114,7 +115,7 @@ def train_model(
                 gloss_offsets.append((start, start + len(candidates)))
                 start += len(candidates)
 
-            # Tokenize all glosses at once (more efficient)
+            # Tokenize all glosses at once
             gloss_toks = model.tokenizer(
                 all_glosses,
                 return_tensors="pt",
@@ -129,11 +130,11 @@ def train_model(
             }
 
             with autocast(device_type=device):
-                # Get context embeddings using target masks
+                # Get context embeddings
                 rF_wt = model.forward_context(
                     context_inputs["input_ids"],
                     context_inputs["attention_mask"], 
-                    target_masks  # Using masks instead of spans
+                    target_masks
                 )  # [B, hidden_dim]
 
                 # Get gloss embeddings
@@ -142,16 +143,17 @@ def train_model(
                     gloss_inputs["attention_mask"]
                 )  # [total_glosses, hidden_dim]
 
-                # Compute similarities for each instance
+                # FIXED: Compute similarities như code gốc (dot product after normalization)
                 batch_similarities = []
+                batch_losses = []
                 max_candidates = max(len(candidates) for candidates in candidate_glosses)
                 
                 for i, (start_idx, end_idx) in enumerate(gloss_offsets):
                     ctx_emb = rF_wt[i].unsqueeze(0)  # [1, hidden_dim]
                     gloss_embs = rF_g[start_idx:end_idx]  # [num_candidates, hidden_dim]
                     
-                    # Compute similarity scores
-                    similarities = torch.matmul(ctx_emb, gloss_embs.T)  # [1, num_candidates]
+                    # FIXED: Dot product similarity như code gốc
+                    similarities = torch.mm(ctx_emb, gloss_embs.T)  # [1, num_candidates]
                     
                     # Pad to max_candidates for batching
                     if similarities.size(1) < max_candidates:
@@ -163,8 +165,20 @@ def train_model(
                 # Stack similarities: [B, max_candidates]
                 similarities_batch = torch.cat(batch_similarities, dim=0)
                 
-                # Compute loss
-                loss = F.cross_entropy(similarities_batch, gold_indices)
+                # FIXED: Weighted loss như code gốc
+                total_loss = 0.0
+                for i in range(len(gold_indices)):
+                    # Get valid similarities for this example
+                    valid_len = len(candidate_glosses[i])
+                    sim_scores = similarities_batch[i, :valid_len].unsqueeze(0)
+                    target = gold_indices[i].unsqueeze(0)
+                    weights = sense_weights[i][:valid_len].to(device)
+                    
+                    # Weighted cross entropy
+                    example_loss = F.cross_entropy(sim_scores, target, weight=weights)
+                    total_loss += example_loss
+                
+                loss = total_loss / len(gold_indices)
                 loss = loss / grad_accum_steps
 
             # Backward pass
@@ -176,6 +190,11 @@ def train_model(
                     grad_clipper.clip(model)
                 scaler.step(optimizer)
                 scaler.update()
+                
+                # FIXED: Update scheduler after each step như code gốc
+                if scheduler is not None:
+                    scheduler.step()
+                    
                 optimizer.zero_grad()
 
             running_loss += loss.item() * grad_accum_steps
@@ -187,9 +206,11 @@ def train_model(
 
             if global_step % metric_log_interval == 0:
                 current_acc = train_correct / max(train_total, 1)
+                current_lr = scheduler.get_last_lr()[0] if scheduler else optimizer.param_groups[0]['lr']
                 pbar.set_postfix({
                     "Loss": f"{running_loss / (batch_idx + 1):.4f}",
-                    "Acc": f"{current_acc:.4f}"
+                    "Acc": f"{current_acc:.4f}",
+                    "LR": f"{current_lr:.2e}"
                 })
             else:
                 pbar.set_postfix({"loss": f"{loss.item() * grad_accum_steps:.4f}"})
@@ -199,7 +220,7 @@ def train_model(
         avg_train_loss = running_loss / len(train_data_loader)
         history["train_loss"].append(avg_train_loss)
 
-        # Validation
+        # Validation - SAME LOGIC as training
         model.eval()
         valid_loss = 0.0
         valid_correct = 0
@@ -213,9 +234,10 @@ def train_model(
                     "input_ids": batch["context_input_ids"].to(device),
                     "attention_mask": batch["context_attn_mask"].to(device)
                 }
-                target_masks = batch["target_masks"].to(device)  # Changed from target_spans
+                target_masks = batch["target_masks"].to(device)
                 candidate_glosses = batch["candidate_glosses"]
                 gold_indices = batch["gold_indices"].to(device)
+                sense_weights = batch["sense_weights"]
 
                 # Same processing as training
                 all_glosses = []
@@ -240,11 +262,11 @@ def train_model(
                     "attention_mask": gloss_toks["attention_mask"].to(device)
                 }
 
-                # Forward pass with target masks
+                # Forward pass
                 rF_wt = model.forward_context(
                     context_inputs["input_ids"],
                     context_inputs["attention_mask"], 
-                    target_masks  # Using masks instead of spans
+                    target_masks
                 )
 
                 rF_g = model.forward_gloss(
@@ -258,8 +280,7 @@ def train_model(
                 for i, (start_idx, end_idx) in enumerate(gloss_offsets):
                     ctx_emb = rF_wt[i].unsqueeze(0)
                     gloss_embs = rF_g[start_idx:end_idx]
-                    # Compute similarity scores
-                    similarities = torch.matmul(ctx_emb, gloss_embs.T) 
+                    similarities = torch.mm(ctx_emb, gloss_embs.T)
                     
                     if similarities.size(1) < max_candidates:
                         pad_size = max_candidates - similarities.size(1)
@@ -269,7 +290,18 @@ def train_model(
 
                 similarities_batch = torch.cat(batch_similarities, dim=0)
                 
-                loss = F.cross_entropy(similarities_batch, gold_indices)
+                # Same weighted loss computation
+                total_loss = 0.0
+                for i in range(len(gold_indices)):
+                    valid_len = len(candidate_glosses[i])
+                    sim_scores = similarities_batch[i, :valid_len].unsqueeze(0)
+                    target = gold_indices[i].unsqueeze(0)
+                    weights = sense_weights[i][:valid_len].to(device)
+                    
+                    example_loss = F.cross_entropy(sim_scores, target, weight=weights)
+                    total_loss += example_loss
+                
+                loss = total_loss / len(gold_indices)
                 valid_loss += loss.item()
                 
                 preds = similarities_batch.argmax(dim=1)
@@ -288,15 +320,9 @@ def train_model(
         print("=" * 80)
         print(f"[Epoch {epoch+1}] Train Loss: {avg_train_loss:.4f} | Train Acc: {train_accuracy:.4f} | Time: {epoch_time:.1f}s")
         print(f"[Epoch {epoch+1}] Valid Loss: {avg_valid_loss:.4f} | Valid Acc: {valid_accuracy:.4f}")
+        current_lr = scheduler.get_last_lr()[0] if scheduler else optimizer.param_groups[0]['lr']
+        print(f"[Epoch {epoch+1}] Learning Rate: {current_lr:.2e}")
         print("=" * 80)
-
-        # Learning rate scheduling
-        if scheduler is not None:
-            if hasattr(scheduler, 'step'):
-                if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                    scheduler.step(avg_valid_loss)
-                else:
-                    scheduler.step()
 
         # Early stopping based on validation accuracy
         if valid_accuracy > best_valid_acc:
@@ -306,10 +332,8 @@ def train_model(
             best_model_dir = os.path.join(run_dir, "best_model")
             os.makedirs(best_model_dir, exist_ok=True)
             
-            # Save model using custom method
             model.save_pretrained(best_model_dir)
             
-            # Save training state
             if save_optimizer_state:
                 torch.save({
                     'epoch': epoch + 1,
@@ -332,11 +356,8 @@ def train_model(
         if (epoch + 1) % ckpt_interval == 0:
             final_model_dir = os.path.join(run_dir, "final_model")
             os.makedirs(final_model_dir, exist_ok=True)
-
-            # Save model using custom method
             model.save_pretrained(final_model_dir)
 
-            # Save training state
             if save_optimizer_state:
                 torch.save({
                     'epoch': epoch + 1,
@@ -350,3 +371,4 @@ def train_model(
 
     print(f"Training completed! Best validation accuracy: {best_valid_acc:.4f}")
     return history, model
+

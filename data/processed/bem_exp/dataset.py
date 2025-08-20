@@ -7,25 +7,30 @@ import numpy as np
 from utils.span_extractor import TargetWordMaskExtractor  # Updated import
 from utils.process_data import text_normalize
 from collections import defaultdict
+from collections import defaultdict
+import random
 
 class BEMDataset(Dataset):
-    def __init__(self, samples, tokenizer, train_gloss_size=256, val_mode=False):
+    def __init__(self, samples, tokenizer, train_gloss_size=5, val_mode=False):  # Giảm từ 256 xuống 5
         self.tokenizer = tokenizer
         if self.tokenizer.pad_token is None:
             self.tokenizer.add_special_tokens({'pad_token': '[PAD]'})
         
-        # Use mask extractor instead of span extractor
         self.mask_extractor = TargetWordMaskExtractor(tokenizer)
         self.val_mode = val_mode
         self.train_gloss_size = train_gloss_size
 
         self.targetword2glosses = defaultdict(list)
-        self.gloss_to_id = {}  # Map gloss text to ID
+        self.gloss_to_id = {}
+        self.sense_weights = {}  # Thêm sense weights như code gốc
         
         word_set = set()
         self.all_samples = []
         gloss_set = set()
 
+        # Count glosses per target word for weighting
+        gloss_counts = defaultdict(lambda: defaultdict(int))
+        
         for sample in samples:
             sent = text_normalize(sample["sentence"])
             word_id = sample["word_id"]
@@ -47,32 +52,36 @@ class BEMDataset(Dataset):
                 self.targetword2glosses[target].append(gloss)
             
             self.gloss_to_id[gloss] = gloss_id
+            gloss_counts[target][gloss] += 1
             
             word_set.add(int(word_id))
             gloss_set.add(gloss)
+
+        # Compute sense weights như code gốc
+        for target_word in self.targetword2glosses:
+            glosses = self.targetword2glosses[target_word]
+            counts = [gloss_counts[target_word][gloss] for gloss in glosses]
+            total_count = sum(counts)
+            # Inverse frequency weighting
+            weights = [total_count / count for count in counts]
+            self.sense_weights[target_word] = torch.FloatTensor(weights)
 
         sorted_wids = sorted(word_set)
         self.global_word_to_label = {wid: i for i, wid in enumerate(sorted_wids)}
         self.global_gloss_pool = list(gloss_set)
 
-        # Pre-compute target masks instead of spans
+        # Pre-compute target masks
         self.target_masks = []
         print("Computing target masks...")
         for s in tqdm(self.all_samples, desc="Computing target masks", ascii=True):
             try:
-                # Extract target mask for the sentence and target word
                 input_ids, attention_mask, target_mask = self.mask_extractor.extract_target_mask(
                     s["sentence"], s["target_word"], case_sensitive=False
                 )
                 self.target_masks.append(target_mask)
             except Exception as e:
-                # Fallback: create zero mask if extraction fails
                 print(f"Warning: Failed to extract mask for '{s['target_word']}' in '{s['sentence']}': {e}")
-                # Create a dummy mask - will be handled in collate_fn
                 self.target_masks.append(torch.zeros(1, dtype=torch.long))
-
-    def __len__(self):
-        return len(self.all_samples)
 
     def __getitem__(self, idx):
         s = self.all_samples[idx]
@@ -93,7 +102,7 @@ class BEMDataset(Dataset):
         
         item = {
             "sentence": s["sentence"],
-            "target_mask": self.target_masks[idx],  # Use pre-computed mask
+            "target_mask": self.target_masks[idx],
             "word_id": label,
             "target_word": target_word,
             "gold_gloss": gold_gloss,
@@ -107,7 +116,7 @@ class BEMDataset(Dataset):
     def collate_fn(self, batch):
         sentences = [b["sentence"] for b in batch]
         gold_glosses = [b["gold_gloss"] for b in batch]
-        target_masks = [b["target_mask"] for b in batch]  # Changed from spans
+        target_masks = [b["target_mask"] for b in batch]
         synset_ids = torch.tensor([b["synset_ids"] for b in batch], dtype=torch.long)
         word_id = torch.tensor([b["word_id"] for b in batch], dtype=torch.long)
         target_words = [b["target_word"] for b in batch]
@@ -123,23 +132,25 @@ class BEMDataset(Dataset):
             return_attention_mask=True
         )
 
-        # Process target masks to match tokenized sequences
+        # Process target masks
         batch_target_masks = self._align_target_masks_with_tokens(
             sentences, target_words, c_toks["input_ids"], target_masks
         )
 
-        # Handle candidate glosses
+        # Handle candidate glosses - FIXED STRATEGY
         final_candidates = []
-        gold_indices = []  # Store gold position in each candidate list
+        gold_indices = []
+        sense_weights_batch = []
         
         for i, b in enumerate(batch):
             gold_gloss = b["gold_gloss"]
+            target_word = b["target_word"]
             candidates = b["candidate_glosses"].copy()
             
             if not self.val_mode:
-                # Training: sample random glosses but ensure gold is included
+                # Training: FIXED sampling strategy
                 if len(candidates) > self.train_gloss_size:
-                    # Keep gold + random sample of others
+                    # Always keep gold at position 0
                     others = [c for c in candidates if c != gold_gloss]
                     sampled_others = random.sample(others, self.train_gloss_size - 1)
                     candidates = [gold_gloss] + sampled_others
@@ -149,82 +160,64 @@ class BEMDataset(Dataset):
                     available = [g for g in self.global_gloss_pool if g not in candidates]
                     if len(available) >= needed:
                         extra = random.sample(available, needed)
-                        candidates.extend(extra)
-            
-            # Shuffle candidates but remember gold position
-            random.shuffle(candidates)
-            try:
-                gold_idx = candidates.index(gold_gloss)
-            except ValueError:
-                # Fallback: put gold at index 0
-                candidates = [gold_gloss] + [c for c in candidates if c != gold_gloss]
+                        # Gold vẫn ở đầu
+                        non_gold = [c for c in candidates if c != gold_gloss]
+                        candidates = [gold_gloss] + non_gold + extra
+                
+                # KHÔNG shuffle - gold luôn ở position 0
+                gold_idx = 0
+            else:
+                # Validation: không shuffle
+                if gold_gloss != candidates[0]:
+                    candidates.remove(gold_gloss)
+                    candidates.insert(0, gold_gloss)
                 gold_idx = 0
             
             final_candidates.append(candidates)
             gold_indices.append(gold_idx)
+            
+            # Get sense weights for this target word
+            if target_word in self.sense_weights:
+                weights = self.sense_weights[target_word]
+                # Align weights with current candidates
+                candidate_weights = []
+                for cand in candidates:
+                    try:
+                        cand_idx = self.targetword2glosses[target_word].index(cand)
+                        candidate_weights.append(weights[cand_idx].item())
+                    except (ValueError, IndexError):
+                        candidate_weights.append(1.0)  # Default weight
+                sense_weights_batch.append(torch.FloatTensor(candidate_weights))
+            else:
+                sense_weights_batch.append(torch.ones(len(candidates)))
 
         return {
             "context_input_ids": c_toks["input_ids"],
             "context_attn_mask": c_toks["attention_mask"],
-            "target_masks": batch_target_masks,  # Changed from target_spans
+            "target_masks": batch_target_masks,
             "synset_ids": synset_ids,
             "word_id": word_id,
             "gold_glosses": gold_glosses,
             "target_words": target_words,
             "candidate_glosses": final_candidates,
             "gloss_ids": gloss_ids,
-            "gold_indices": torch.tensor(gold_indices, dtype=torch.long) 
+            "gold_indices": torch.tensor(gold_indices, dtype=torch.long),
+            "sense_weights": sense_weights_batch  # Thêm weights
         }
 
     def _align_target_masks_with_tokens(self, sentences, target_words, tokenized_input_ids, pre_computed_masks):
-        """
-        Align pre-computed target masks with the actual tokenized sequences from collate_fn.
-        This handles cases where tokenization in collate_fn might differ from individual tokenization.
-        """
         batch_size, seq_len = tokenized_input_ids.shape
         aligned_masks = torch.zeros((batch_size, seq_len), dtype=torch.long)
         
         for i, (sentence, target_word) in enumerate(zip(sentences, target_words)):
             try:
-                # Re-extract mask to match the current tokenization
-                # This ensures consistency with the padded tokenized sequence
-                current_tokens = self.tokenizer.convert_ids_to_tokens(tokenized_input_ids[i])
-                
-                # Use the mask extractor to get properly aligned mask
                 _, _, target_mask = self.mask_extractor.extract_target_mask(
                     sentence, target_word, case_sensitive=False
                 )
-                
-                # Align with current sequence length
                 mask_len = min(len(target_mask), seq_len)
                 aligned_masks[i, :mask_len] = target_mask[:mask_len]
-                
             except Exception as e:
                 print(f"Warning: Failed to align mask for '{target_word}' in sentence {i}: {e}")
-                # Keep zero mask as fallback
                 continue
         
         return aligned_masks
-
-    def get_sample_for_debug(self, idx):
-        """
-        Get a sample with detailed information for debugging.
-        """
-        sample = self.all_samples[idx]
-        target_mask = self.target_masks[idx]
-        
-        # Tokenize for visualization
-        tokens = self.tokenizer(sample["sentence"], add_special_tokens=True)
-        token_strs = self.tokenizer.convert_ids_to_tokens(tokens["input_ids"])
-        
-        debug_info = {
-            "sentence": sample["sentence"],
-            "target_word": sample["target_word"],
-            "tokens": token_strs,
-            "target_mask": target_mask.tolist(),
-            "mask_visualization": self.mask_extractor.visualize_mask(
-                sample["sentence"], sample["target_word"]
-            )
-        }
-        
-        return debug_info
