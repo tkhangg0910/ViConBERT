@@ -24,6 +24,22 @@ from pyvi.ViTokenizer import tokenize
 
 if is_torch_available() and torch.multiprocessing.get_start_method() == "fork":
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+def extract_pos_from_supersense(supersense):
+    """Extract POS tag from supersense"""
+    if supersense.startswith('verb'):
+        return 'verb'
+    elif supersense.startswith('noun'):
+        return 'noun' 
+    elif supersense.startswith('adj'):
+        return 'adj'
+    elif supersense.startswith('adv'):
+        return 'adv'
+    else:
+        # Handle other cases
+        if '.' in supersense:
+            return supersense.split('.')[0]
+        return supersense
     
 def setup_args():
     parser = argparse.ArgumentParser(description="Evaluate WSD model")
@@ -69,7 +85,9 @@ class WSD_ViConDataset(Dataset):
                 "synset_id": sample["synset_id"],
                 "gloss": sample["gloss"],
                 "gloss_id": sample["gloss_id"],
-                "word_id": int(sample["word_id"])
+                "word_id": int(sample["word_id"]),
+                "supersense": sample.get("supersense", "unknown"),  # Add supersense
+                "pos": extract_pos_from_supersense(sample.get("supersense", "unknown"))  # Extract POS
             }
             self.all_samples.append(item)
             self.word2gloss[item["target_word"]].append(item)
@@ -94,7 +112,9 @@ class WSD_ViConDataset(Dataset):
             "gloss": s["gloss"],
             "gloss_id": s["gloss_id"],
             "word_id": s["word_id"],
-            "synset_id": s["synset_id"]
+            "synset_id": s["synset_id"],
+            "supersense": s["supersense"],
+            "pos": s["pos"]
         }
 
         if self.val_mode:
@@ -129,6 +149,8 @@ class WSD_ViConDataset(Dataset):
         target_words = [b["target_word"] for b in batch]
         gold_glosses = [b["gloss"] for b in batch]
         gloss_id = torch.tensor([b["gloss_id"] for b in batch], dtype=torch.long)
+        supersenses = [b["supersense"] for b in batch]
+        pos_tags = [b["pos"] for b in batch]
 
         result = {
             "sentence": sentences,
@@ -138,6 +160,8 @@ class WSD_ViConDataset(Dataset):
             "target_words": target_words,
             "gloss": gold_glosses,
             "gloss_id": gloss_id,
+            "supersense": supersenses,
+            "pos": pos_tags
         }
 
         if self.val_mode:
@@ -165,11 +189,50 @@ class WSD_ViConDataset(Dataset):
         return result
 
 
+def compute_metrics_by_pos(pos_metrics):
+    """Compute precision, recall, F1 for each POS and overall"""
+    results = {}
+    
+    # Compute metrics for each POS
+    for pos, metrics in pos_metrics.items():
+        TP, FP, FN = metrics['TP'], metrics['FP'], metrics['FN']
+        precision = TP / (TP + FP) if (TP + FP) > 0 else 0.0
+        recall = TP / (TP + FN) if (TP + FN) > 0 else 0.0
+        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+        
+        results[pos] = {
+            'precision': precision,
+            'recall': recall,
+            'f1': f1,
+            'count': TP + FN,  # Total instances for this POS
+            'loss': metrics['loss'] / max(1, metrics['steps'])
+        }
+    
+    # Compute overall metrics
+    total_TP = sum(metrics['TP'] for metrics in pos_metrics.values())
+    total_FP = sum(metrics['FP'] for metrics in pos_metrics.values())
+    total_FN = sum(metrics['FN'] for metrics in pos_metrics.values())
+    total_loss = sum(metrics['loss'] for metrics in pos_metrics.values())
+    total_steps = sum(metrics['steps'] for metrics in pos_metrics.values())
+    
+    overall_precision = total_TP / (total_TP + total_FP) if (total_TP + total_FP) > 0 else 0.0
+    overall_recall = total_TP / (total_TP + total_FN) if (total_TP + total_FN) > 0 else 0.0
+    overall_f1 = 2 * overall_precision * overall_recall / (overall_precision + overall_recall) if (overall_precision + overall_recall) > 0 else 0.0
+    
+    results['overall'] = {
+        'precision': overall_precision,
+        'recall': overall_recall,
+        'f1': overall_f1,
+        'count': total_TP + total_FN,
+        'loss': total_loss / max(1, total_steps)
+    }
+    
+    return results
+
+
 def evaluate_model_precomputed(context_model, data_loader, device):
     """Evaluation using precomputed gloss embeddings"""
-    valid_loss = 0.0
-    TP, FP, FN = 0, 0, 0
-    valid_steps = 0
+    pos_metrics = defaultdict(lambda: {'TP': 0, 'FP': 0, 'FN': 0, 'loss': 0.0, 'steps': 0})
 
     context_model.eval()
     with torch.no_grad():
@@ -196,6 +259,8 @@ def evaluate_model_precomputed(context_model, data_loader, device):
 
             for i in range(len(batch["sentence"])):
                 gold_gloss_id = batch["gloss_id"][i].item()
+                pos = batch["pos"][i]  # Get POS for this sample
+                
                 rF_g = batch["candidate_gloss_vectors"][i].to(device)  # [N_candidates, H]
 
                 # Compute similarity: context_i vs N candidate glosses
@@ -217,36 +282,23 @@ def evaluate_model_precomputed(context_model, data_loader, device):
 
                 # Compute loss
                 loss_i = -torch.log(P[0, gold_idx] + 1e-8)
-                valid_loss += loss_i.item()
-                valid_steps += 1
+                pos_metrics[pos]['loss'] += loss_i.item()
+                pos_metrics[pos]['steps'] += 1
 
                 # Prediction
                 pred_idx = P.argmax(dim=1).item()
                 if pred_idx == gold_idx:
-                    TP += 1
+                    pos_metrics[pos]['TP'] += 1
                 else:
-                    FP += 1
-                    FN += 1
+                    pos_metrics[pos]['FP'] += 1
+                    pos_metrics[pos]['FN'] += 1
 
-    # Compute metrics
-    valid_precision = TP / (TP + FP) if (TP + FP) > 0 else 0.0
-    valid_recall = TP / (TP + FN) if (TP + FN) > 0 else 0.0
-    valid_f1 = 2 * valid_precision * valid_recall / (valid_precision + valid_recall) if (valid_precision + valid_recall) > 0 else 0.0
-    avg_valid_loss = valid_loss / max(1, valid_steps)
-
-    return {
-        "loss": avg_valid_loss,
-        "valid_f1": valid_f1,
-        "valid_recall": valid_recall,
-        "valid_precision": valid_precision
-    }
+    return compute_metrics_by_pos(pos_metrics)
 
 
 def evaluate_model_with_gloss_encoder(model, data_loader, device):
     """Evaluation using gloss encoder model"""
-    valid_loss = 0.0
-    TP, FP, FN = 0, 0, 0
-    valid_steps = 0
+    pos_metrics = defaultdict(lambda: {'TP': 0, 'FP': 0, 'FN': 0, 'loss': 0.0, 'steps': 0})
 
     model.eval()
     
@@ -273,6 +325,8 @@ def evaluate_model_with_gloss_encoder(model, data_loader, device):
 
             for i in range(len(batch["sentence"])):
                 gold_gloss_id = batch["gloss_id"][i].item()
+                pos = batch["pos"][i]  # Get POS for this sample
+                
                 candidate_glosses = batch["candidate_glosses"][i]  # List of gloss texts
                 candidate_ids = batch["candidate_gloss_ids"][i].to(device)  # [N_candidates]
 
@@ -307,29 +361,50 @@ def evaluate_model_with_gloss_encoder(model, data_loader, device):
 
                 # Compute loss
                 loss_i = -torch.log(P[0, gold_idx] + 1e-8)
-                valid_loss += loss_i.item()
-                valid_steps += 1
+                pos_metrics[pos]['loss'] += loss_i.item()
+                pos_metrics[pos]['steps'] += 1
 
                 # Prediction
                 pred_idx = P.argmax(dim=1).item()
                 if pred_idx == gold_idx:
-                    TP += 1
+                    pos_metrics[pos]['TP'] += 1
                 else:
-                    FP += 1
-                    FN += 1
+                    pos_metrics[pos]['FP'] += 1
+                    pos_metrics[pos]['FN'] += 1
 
-    # Compute metrics
-    valid_precision = TP / (TP + FP) if (TP + FP) > 0 else 0.0
-    valid_recall = TP / (TP + FN) if (TP + FN) > 0 else 0.0
-    valid_f1 = 2 * valid_precision * valid_recall / (valid_precision + valid_recall) if (valid_precision + valid_recall) > 0 else 0.0
-    avg_valid_loss = valid_loss / max(1, valid_steps)
+    return compute_metrics_by_pos(pos_metrics)
 
-    return {
-        "loss": avg_valid_loss,
-        "valid_f1": valid_f1,
-        "valid_recall": valid_recall,
-        "valid_precision": valid_precision
-    }
+
+def print_results(results):
+    """Print evaluation results in a formatted way"""
+    print("\n" + "="*80)
+    print("  VALIDATION METRICS BY POS:")
+    print("="*80)
+    
+    # Print POS-specific results
+    pos_order = ['verb', 'noun', 'adj', 'adv']  # Common POS order
+    other_pos = [pos for pos in results.keys() if pos not in pos_order + ['overall']]
+    pos_order.extend(sorted(other_pos))
+    
+    for pos in pos_order:
+        if pos in results:
+            metrics = results[pos]
+            print(f"  {pos.upper():>8}: F1={metrics['f1']:.4f}, "
+                  f"Precision={metrics['precision']:.4f}, "
+                  f"Recall={metrics['recall']:.4f}, "
+                  f"Loss={metrics['loss']:.4f}, "
+                  f"Count={metrics['count']}")
+    
+    print("-"*80)
+    # Print overall results
+    if 'overall' in results:
+        overall = results['overall']
+        print(f"  {'OVERALL':>8}: F1={overall['f1']:.4f}, "
+              f"Precision={overall['precision']:.4f}, "
+              f"Recall={overall['recall']:.4f}, "
+              f"Loss={overall['loss']:.4f}, "
+              f"Count={overall['count']}")
+    print("="*80)
 
 
 if __name__ == "__main__":
@@ -365,10 +440,17 @@ if __name__ == "__main__":
         gloss_emd = torch.load(args.gloss_embeddings_path, map_location='cpu')  # {gloss_id: tensor}
         valid_set = WSD_ViConDataset(valid_sample, tokenizer, mode="precomputed", 
                                    gloss_emd=gloss_emd, val_mode=True)
-        gloss_model = None
     else:  # gloss_model mode
         valid_set = WSD_ViConDataset(valid_sample, tokenizer, mode="gloss_model", val_mode=True)
-        gloss_emd = None
+    
+    # Print POS distribution
+    pos_counts = defaultdict(int)
+    for sample in valid_set.all_samples:
+        pos_counts[sample['pos']] += 1
+    
+    print("\nPOS Distribution in validation set:")
+    for pos, count in sorted(pos_counts.items()):
+        print(f"  {pos}: {count}")
     
     # Create dataloader
     valid_dataloader = DataLoader(
@@ -386,15 +468,9 @@ if __name__ == "__main__":
     
     # Run evaluation based on mode
     if args.mode == "precomputed":
-        valid_metrics = evaluate_model_precomputed(context_model, valid_dataloader, device)
+        results = evaluate_model_precomputed(context_model, valid_dataloader, device)
     else:
-        valid_metrics = evaluate_model_with_gloss_encoder(context_model, valid_dataloader, device)
+        results = evaluate_model_with_gloss_encoder(context_model, valid_dataloader, device)
     
-    print("\n" + "="*50)
-    print("  VALIDATION METRICS:")
-    print("="*50)
-    print(f"    Loss: {valid_metrics['loss']:.4f}")
-    print(f"    F1: {valid_metrics['valid_f1']:.4f}")
-    print(f"    Recall: {valid_metrics['valid_recall']:.4f}")
-    print(f"    Precision: {valid_metrics['valid_precision']:.4f}")
-    print("="*50)
+    # Print results
+    print_results(results)
