@@ -243,7 +243,7 @@ class TargetWordMaskExtractor:
         
         return input_ids, attention_mask, target_mask
     
-    def extract_target_mask_batch(self, sentences: List[str], target_words: List[str], 
+    def extract_target_mask_batch(self, sentences, target_words, 
                                 case_sensitive: bool = False, max_length: Optional[int] = None) -> dict:
         """
         Extract masks for a batch of sentences and target words.
