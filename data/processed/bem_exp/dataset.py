@@ -220,7 +220,6 @@ class BEMDataset(Dataset):
                 print(f"Warning: Failed to align mask for '{target_word}' in sentence {i}: {e}")
                 continue
             
+        return aligned_masks
     def __len__(self):
         return len(self.all_samples)
-
-        return aligned_masks
