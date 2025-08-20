@@ -347,7 +347,7 @@ class TargetWordMaskExtractor:
         
         return target_mask
     
-    def _find_subword_sequence(self, tokens: List[str], target_tokens: List[str]) -> List[Tuple[int, int]]:
+    def _find_subword_sequence(self, tokens, target_tokens):
         """
         Find all occurrences of target token sequence in tokens list.
         
