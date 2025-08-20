@@ -87,7 +87,7 @@ if __name__ == "__main__":
 
     gloss_enc = SentenceTransformer(args.gloss_enc) 
     precompute_and_save(
-        "data/raw/stage_1_pseudo_sents/word_synsets_with_pos_with_gloss_v2.csv",
+        "data/raw/stage_1_pseudo_sents/poly_only.csv",
         args.gloss_path,
         gloss_enc
         )
