@@ -54,3 +54,54 @@ class BiEncoderModel(nn.Module):
         # L2 normalize như code gốc
         cls_vec = F.normalize(cls_vec, p=2, dim=-1)
         return cls_vec
+    
+    def save_pretrained(self, save_directory):
+        os.makedirs(save_directory, exist_ok=True)
+
+        # Save model weights
+        torch.save(self.state_dict(), os.path.join(save_directory, "pytorch_model.bin"))
+
+        # Save config
+        config = {
+            "encoder_name": self.encoder_name,
+            "freeze_context": self.freeze_context,
+            "freeze_gloss": self.freeze_gloss,
+            "tie_encoders": self.tie_encoders
+        }
+        with open(os.path.join(save_directory, "config.json"), "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+
+        # Save tokenizer if available
+        if self.tokenizer is not None:
+            self.tokenizer.save_pretrained(save_directory)
+
+    @classmethod
+    def from_pretrained(cls, save_directory, tokenizer=None):
+        # Load config
+        with open(os.path.join(save_directory, "config.json"), "r", encoding="utf-8") as f:
+            config = json.load(f)
+
+        # Load tokenizer if not provided
+        if tokenizer is None:
+            try:
+                tokenizer = AutoTokenizer.from_pretrained(save_directory)
+            except:
+                tokenizer = None
+
+        # Khởi tạo model
+        model = cls(
+            encoder_name=config["encoder_name"],
+            freeze_context=config.get("freeze_context", False),
+            freeze_gloss=config.get("freeze_gloss", False),
+            tie_encoders=config.get("tie_encoders", False),
+            tokenizer=tokenizer
+        )
+
+        # Load weights
+        state_dict = torch.load(
+            os.path.join(save_directory, "pytorch_model.bin"),
+            map_location=torch.device("cpu")
+        )
+        model.load_state_dict(state_dict)
+        return model
+
