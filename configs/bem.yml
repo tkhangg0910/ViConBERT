@@ -5,7 +5,7 @@ project:
 
 base_model: "vinai/phobert-base"
 base_model_cache_dir: "embeddings/vinai/phobert-base"
-output_dir: "./checkpoints/phobert-base"
+output_dir: "./checkpoints/phobert-base-bem"
 
 data:
   train_path: "data/processed/polybert_exp/train_data.json"
@@ -15,7 +15,7 @@ data:
 training:
   ckpt_interval: 10
   shuffle: False
-  batch_size: 256
+  batch_size: 128
   epochs: 100
   early_stopping_patience: 5
   save_steps: 1000
