@@ -49,13 +49,13 @@ if __name__=="__main__":
         valid_sample = json.load(f)
 
     # Initialize tokenizer
-    if config["base_model"].startswith("vinai"):
+    if config["base_model_cache_dir"].startswith("embeddings/vinai"):
         print("using PhobertTokenizerFast")
         tokenizer = PhobertTokenizerFast.from_pretrained(config["base_model"])
-    elif config["base_model"].startswith("FacebookAI"):
+    elif config["base_model_cache_dir"].startswith("embeddings/FacebookAI"):
         print("using XLMRobertaTokenizerFast")
         tokenizer = XLMRobertaTokenizerFast.from_pretrained(config["base_model"])
-    elif config["base_model"].startswith("Fsoft-AIC"):
+    elif config["base_model_cache_dir"].startswith("embeddings/Fsoft-AIC"):
         print("using DebertaTokenizerFast")
         tokenizer = DebertaV2TokenizerFast.from_pretrained(config["base_model"])
         
