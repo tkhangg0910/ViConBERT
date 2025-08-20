@@ -54,13 +54,13 @@ if __name__=="__main__":
             
     # gloss_enc = SentenceTransformer('dangvantuan/vietnamese-embedding'
                                     # ,cache_folder="embeddings/vietnamese_embedding")
-    if config["base_model"].startswith("embeddings/vinai"):
+    if config["base_model_cache_dir"].startswith("embeddings/vinai"):
         print("using PhobertTokenizerFast")
         tokenizer = PhobertTokenizerFast.from_pretrained(config["base_model"])
-    elif config["base_model"].startswith("embeddings/FacebookAI"):
+    elif config["base_model_cache_dir"].startswith("embeddings/FacebookAI"):
         print("using XLMRobertaTokenizerFast")
         tokenizer = XLMRobertaTokenizerFast.from_pretrained(config["base_model"])
-    elif config["base_model"].startswith("embeddings/Fsoft-AIC"):
+    elif config["base_model_cache_dir"].startswith("embeddings/Fsoft-AIC"):
         print("using DebertaTokenizerFast")
         tokenizer = DebertaV2TokenizerFast.from_pretrained(config["base_model"])
     if tokenizer.pad_token is None:
