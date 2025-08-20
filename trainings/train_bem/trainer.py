@@ -105,13 +105,19 @@ if __name__=="__main__":
     
     optim = create_optimizer(model, config)
     
-    # FIXED: Use warmup + linear schedule như code gốc
-    scheduler = get_linear_schedule_with_warmup(
-        optimizer=optim,
-        num_warmup_steps=warmup_steps,
-        num_training_steps=total_steps
+    # # FIXED: Use warmup + linear schedule như code gốc
+    # scheduler = get_linear_schedule_with_warmup(
+    #     optimizer=optim,
+    #     num_warmup_steps=warmup_steps,
+    #     num_training_steps=total_steps
+    # )
+    scheduler = ReduceLROnPlateau(
+        optimizer = optim,
+        mode='min',         
+        factor=0.5,         
+        patience=2,         
+        min_lr=1e-6          
     )
-
     # Debug batch processing
     if args.debug:
         print("\n=== Testing batch processing ===")
