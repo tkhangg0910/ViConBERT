@@ -90,7 +90,7 @@ if __name__=="__main__":
             batch_size=batch_size,
             shuffle=False,
             collate_fn=valid_set.collate_fn,
-            num_workers=config["data"]["num_workers"],
+            num_workers=0,
             pin_memory=True
         )
     elif args.dataset_mode == "flat":

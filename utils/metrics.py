@@ -112,7 +112,7 @@ def compute_step_metrics(embeddings, labels, k_vals=(1, 5, 10), device='cuda',nd
     Returns a dictionary of computed metrics
     """
     metrics = {}
-
+    
     for k in k_vals:
         metrics[f'recall@{k}'] = recall_at_k_batch(embeddings, labels, k, device=device)
         metrics[f'precision@{k}'] = precision_at_k_batch(embeddings, labels, k, device=device)
