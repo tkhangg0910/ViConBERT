@@ -13,7 +13,7 @@ data:
   num_workers: 16
 
 model:  
-  polym: 64
+  polym: 1
   num_heads: 8
 
 training:
