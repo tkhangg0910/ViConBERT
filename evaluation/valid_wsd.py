@@ -128,8 +128,7 @@ class WSD_BEMDataset(Dataset):
             "gloss_id": s["gloss_id"],
             "word_id": s["word_id"],
             "synset_id": s["synset_id"],
-            "supersense": s["supersense"],
-            "pos": s["pos"]
+            "pos": s["supersense"],
         }
 
         if self.val_mode:
