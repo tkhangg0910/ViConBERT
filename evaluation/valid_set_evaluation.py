@@ -116,7 +116,7 @@ if __name__=="__main__":
     with open(config["data"]["valid_path"], "r",encoding="utf-8") as f:
         valid_sample = json.load(f)
         
-    tokenizer = PhobertTokenizerFast.from_pretrained(config["base_model"])
+    tokenizer = PhobertTokenizerFast.from_pretrained(args.model_path)
         
     if tokenizer.pad_token is None:
         tokenizer.add_special_tokens({'pad_token': '[PAD]'})
