@@ -23,6 +23,7 @@ def setup_args():
     parser = argparse.ArgumentParser(description="Train a model")
     parser.add_argument("--model_path", type=str, help="Model path")
     parser.add_argument("--model_type", type=str, help="Model path")
+    parser.add_argument("--emd_path", type=str, help="Model path")
     parser.add_argument("--backbone", type=str, help="Batch size")
     parser.add_argument("--batch_size", type=int,default=768, help="Batch size")
     args = parser.parse_args()
@@ -130,7 +131,7 @@ if __name__=="__main__":
     if tokenizer.pad_token is None:
         tokenizer.add_special_tokens({'pad_token': '[PAD]'})
         
-    valid_set = PseudoSentsFlatDataset(config["data"]["emd_path"],
+    valid_set = PseudoSentsFlatDataset(args.emd_path,
                                 # gloss_enc,
                                 valid_sample, tokenizer)
     
