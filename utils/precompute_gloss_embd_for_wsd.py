@@ -2,6 +2,7 @@ import json
 import torch
 from sentence_transformers import SentenceTransformer
 from pyvi.ViTokenizer import tokenize
+import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--json_path", type=str, required=True, help="")
