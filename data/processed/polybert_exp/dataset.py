@@ -172,21 +172,26 @@ class PolyBERTtDataset(Dataset):
         }
 
 class PolyBERTtDataseV2(Dataset):
-    def __init__(self, samples, tokenizer, train_gloss_size=256, val_mode=False):
+    def __init__(self, samples, tokenizer, train_gloss_size=5, val_mode=False):
         self.tokenizer = tokenizer
         if self.tokenizer.pad_token is None:
             self.tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+        
         self.span_extractor = SpanExtractor(tokenizer)
         self.val_mode = val_mode
         self.train_gloss_size = train_gloss_size
 
         self.targetword2glosses = defaultdict(list)
-        self.gloss_to_id = {}  # Map gloss text to ID
+        self.gloss_to_id = {}
+        self.sense_weights = {}  # Add sense weights like BEM
         
         word_set = set()
         self.all_samples = []
         gloss_set = set()
 
+        # Count glosses per target word for weighting
+        gloss_counts = defaultdict(lambda: defaultdict(int))
+        
         for sample in samples:
             sent = text_normalize(sample["sentence"])
             word_id = sample["word_id"]
@@ -207,25 +212,37 @@ class PolyBERTtDataseV2(Dataset):
             if gloss not in self.targetword2glosses[target]:
                 self.targetword2glosses[target].append(gloss)
             
-            # FIXED: Build proper gloss mapping
             self.gloss_to_id[gloss] = gloss_id
+            gloss_counts[target][gloss] += 1
             
             word_set.add(int(word_id))
             gloss_set.add(gloss)
+
+        # Compute sense weights like BEM
+        for target_word in self.targetword2glosses:
+            glosses = self.targetword2glosses[target_word]
+            counts = [gloss_counts[target_word][gloss] for gloss in glosses]
+            total_count = sum(counts)
+            # Inverse frequency weighting
+            weights = [total_count / count for count in counts]
+            self.sense_weights[target_word] = torch.FloatTensor(weights)
 
         sorted_wids = sorted(word_set)
         self.global_word_to_label = {wid: i for i, wid in enumerate(sorted_wids)}
         self.global_gloss_pool = list(gloss_set)
 
-        self.span_indices = []
-        for s in tqdm(self.all_samples, desc="Computing spans", ascii=True):
-            idxs = self.span_extractor.get_span_indices(
-                s["sentence"], s["target_word"]
-            )
-            self.span_indices.append(idxs or (0, 0))
-
-    def __len__(self):
-        return len(self.all_samples)
+        # Pre-compute target spans
+        self.target_spans = []
+        print("Computing target spans...")
+        for s in tqdm(self.all_samples, desc="Computing target spans", ascii=True):
+            try:
+                span_indices = self.span_extractor.get_span_indices(
+                    s["sentence"], s["target_word"]
+                )
+                self.target_spans.append(span_indices or (0, 0))
+            except Exception as e:
+                print(f"Warning: Failed to extract span for '{s['target_word']}' in '{s['sentence']}': {e}")
+                self.target_spans.append((0, 0))
 
     def __getitem__(self, idx):
         s = self.all_samples[idx]
@@ -246,7 +263,7 @@ class PolyBERTtDataseV2(Dataset):
         
         item = {
             "sentence": s["sentence"],
-            "target_span": self.span_indices[idx],
+            "target_span": self.target_spans[idx],
             "word_id": label,
             "target_word": target_word,
             "gold_gloss": gold_gloss,
@@ -276,18 +293,20 @@ class PolyBERTtDataseV2(Dataset):
             return_attention_mask=True
         )
 
-        # Handle candidate glosses
+        # Handle candidate glosses - SAME STRATEGY AS BEM
         final_candidates = []
-        gold_indices = []  # Store gold position in each candidate list
+        gold_indices = []
+        sense_weights_batch = []
         
         for i, b in enumerate(batch):
             gold_gloss = b["gold_gloss"]
+            target_word = b["target_word"]
             candidates = b["candidate_glosses"].copy()
             
             if not self.val_mode:
-                # Training: sample random glosses but ensure gold is included
+                # Training: SAME sampling strategy as BEM
                 if len(candidates) > self.train_gloss_size:
-                    # Keep gold + random sample of others
+                    # Always keep gold at position 0
                     others = [c for c in candidates if c != gold_gloss]
                     sampled_others = random.sample(others, self.train_gloss_size - 1)
                     candidates = [gold_gloss] + sampled_others
@@ -297,23 +316,37 @@ class PolyBERTtDataseV2(Dataset):
                     available = [g for g in self.global_gloss_pool if g not in candidates]
                     if len(available) >= needed:
                         extra = random.sample(available, needed)
-                        candidates.extend(extra)
-            
-            # Shuffle candidates but remember gold position
-            random.shuffle(candidates)
-            try:
-                gold_idx = candidates.index(gold_gloss)
-            except ValueError:
-                # Fallback: put gold at index 0
-                print("Fallback")
-                candidates = [gold_gloss] + [c for c in candidates if c != gold_gloss]
+                        # Gold still at the beginning
+                        non_gold = [c for c in candidates if c != gold_gloss]
+                        candidates = [gold_gloss] + non_gold + extra
+                
+                # NO shuffle - gold always at position 0
+                gold_idx = 0
+            else:
+                # Validation: no shuffle
+                if gold_gloss != candidates[0]:
+                    candidates.remove(gold_gloss)
+                    candidates.insert(0, gold_gloss)
                 gold_idx = 0
             
             final_candidates.append(candidates)
             gold_indices.append(gold_idx)
-        assert all(0 <= gi < len(final_candidates[i]) for i, gi in enumerate(gold_indices))
-        assert all(final_candidates[i][gold_indices[i]] == gold_glosses[i] 
-                for i in range(len(batch)))
+            
+            # Get sense weights for this target word (same as BEM)
+            if target_word in self.sense_weights:
+                weights = self.sense_weights[target_word]
+                # Align weights with current candidates
+                candidate_weights = []
+                for cand in candidates:
+                    try:
+                        cand_idx = self.targetword2glosses[target_word].index(cand)
+                        candidate_weights.append(weights[cand_idx].item())
+                    except (ValueError, IndexError):
+                        candidate_weights.append(1.0)  # Default weight
+                sense_weights_batch.append(torch.FloatTensor(candidate_weights))
+            else:
+                sense_weights_batch.append(torch.ones(len(candidates)))
+
         return {
             "context_input_ids": c_toks["input_ids"],
             "context_attn_mask": c_toks["attention_mask"],
@@ -324,8 +357,13 @@ class PolyBERTtDataseV2(Dataset):
             "target_words": target_words,
             "candidate_glosses": final_candidates,
             "gloss_ids": gloss_ids,
-            "gold_indices": torch.tensor(gold_indices, dtype=torch.long) 
+            "gold_indices": torch.tensor(gold_indices, dtype=torch.long),
+            "sense_weights": sense_weights_batch  # Add weights like BEM
         }
+
+    def __len__(self):
+        return len(self.all_samples)
+
         
 class PolyBERTtDatasetV3(Dataset):
     def __init__(self, samples, tokenizer, val_mode=False):
