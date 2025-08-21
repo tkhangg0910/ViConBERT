@@ -69,27 +69,19 @@ from torch.utils.data import Dataset
 from tqdm import tqdm
 from collections import defaultdict
 from utils.process_data import text_normalize
-from utils.span_extractor import TargetWordMaskExtractor  # dùng chung với BEMDataset
+from utils.span_extractor import TargetWordMaskExtractor
 
 class WSD_BEMDataset(Dataset):
-    def __init__(self, samples, tokenizer, mode="precomputed", gloss_emb=None, val_mode=True):
+    def __init__(self, samples, tokenizer, val_mode=True):
         """
-        Dataset cho đánh giá WSD.
-
-        Args:
-            samples (list): danh sách sample dict {sentence, target_word, synset_id, gloss, gloss_id, word_id, supersense?}
-            tokenizer: HuggingFace tokenizer
-            mode (str): "precomputed" (sử dụng embedding gloss có sẵn) hoặc "gloss_text" (encode on-the-fly)
-            gloss_emb (dict): ánh xạ gloss_id -> vector embedding (nếu dùng precomputed)
-            val_mode (bool): luôn True trong evaluation
+        Dataset cho WSD evaluation (fit với evaluate_model_with_gloss_encoder).
+        Luôn trả về gloss text thay vì precomputed.
         """
         self.tokenizer = tokenizer
         if self.tokenizer.pad_token is None:
             self.tokenizer.add_special_tokens({'pad_token': '[PAD]'})
         
         self.mask_extractor = TargetWordMaskExtractor(tokenizer)
-        self.mode = mode
-        self.gloss_emb = gloss_emb
         self.val_mode = val_mode
 
         self.all_samples = []
@@ -105,7 +97,7 @@ class WSD_BEMDataset(Dataset):
                 "gloss_id": int(sample["gloss_id"]),
                 "word_id": int(sample["word_id"]),
                 "supersense": sample.get("supersense", "unknown"),
-                "pos": sample.get("pos", "UNK")  # có thể viết hàm extract_pos_from_supersense
+                "pos": sample.get("pos", "UNK")
             }
             self.all_samples.append(item)
             self.word2glosses[item["target_word"]].append(item)
@@ -141,9 +133,8 @@ class WSD_BEMDataset(Dataset):
         }
 
         if self.val_mode:
-            # lấy toàn bộ gloss ứng viên của target_word
+            # lấy toàn bộ gloss ứng viên
             candidates = self.word2glosses[s["target_word"]]
-            # lọc unique gloss_id
             seen = set()
             unique_candidates = []
             for c in candidates:
@@ -151,13 +142,8 @@ class WSD_BEMDataset(Dataset):
                     seen.add(c["gloss_id"])
                     unique_candidates.append(c)
             
-            candidate_ids = [c["gloss_id"] for c in unique_candidates]
-            item["candidate_gloss_ids"] = candidate_ids
-
-            if self.mode == "precomputed":
-                item["candidate_gloss_vectors"] = [self.gloss_emb[cid] for cid in candidate_ids]
-            else:
-                item["candidate_glosses"] = [c["gloss"] for c in unique_candidates]
+            item["candidate_gloss_ids"] = [c["gloss_id"] for c in unique_candidates]
+            item["candidate_glosses"] = [c["gloss"] for c in unique_candidates]
 
         return item
 
@@ -172,26 +158,9 @@ class WSD_BEMDataset(Dataset):
         supersenses = [b["supersense"] for b in batch]
         pos_tags = [b["pos"] for b in batch]
 
-        # Tokenize sentences
-        c_toks = self.tokenizer(
-            sentences,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=256,
-            return_attention_mask=True
-        )
-
-        # Align target masks
-        batch_target_masks = torch.zeros_like(c_toks["input_ids"])
-        for i, tm in enumerate(target_masks):
-            mask_len = min(len(tm), batch_target_masks.shape[1])
-            batch_target_masks[i, :mask_len] = tm[:mask_len]
-
         result = {
-            "context_input_ids": c_toks["input_ids"],
-            "context_attn_mask": c_toks["attention_mask"],
-            "target_masks": batch_target_masks,
+            "sentence": sentences,            # list[str]
+            "target_masks": target_masks,     # list[tensor]
             "synset_ids": synset_ids,
             "word_id": word_id,
             "target_words": target_words,
@@ -202,20 +171,13 @@ class WSD_BEMDataset(Dataset):
         }
 
         if self.val_mode:
-            if self.mode == "precomputed":
-                candidate_vecs_batch, candidate_ids_batch = [], []
-                for b in batch:
-                    candidate_vecs_batch.append(torch.stack(b["candidate_gloss_vectors"]))
-                    candidate_ids_batch.append(torch.tensor(b["candidate_gloss_ids"], dtype=torch.long))
-                result["candidate_gloss_vectors"] = candidate_vecs_batch
-                result["candidate_gloss_ids"] = candidate_ids_batch
-            else:
-                candidate_glosses_batch, candidate_ids_batch = [], []
-                for b in batch:
-                    candidate_glosses_batch.append(b["candidate_glosses"])
-                    candidate_ids_batch.append(torch.tensor(b["candidate_gloss_ids"], dtype=torch.long))
-                result["candidate_glosses"] = candidate_glosses_batch
-                result["candidate_gloss_ids"] = candidate_ids_batch
+            candidate_glosses_batch, candidate_ids_batch = [], []
+            for b in batch:
+                candidate_glosses_batch.append(b["candidate_glosses"])
+                candidate_ids_batch.append(torch.tensor(b["candidate_gloss_ids"], dtype=torch.long))
+            
+            result["candidate_glosses"] = candidate_glosses_batch  # list[list[str]]
+            result["candidate_gloss_ids"] = candidate_ids_batch    # list[tensor]
 
         return result
 
