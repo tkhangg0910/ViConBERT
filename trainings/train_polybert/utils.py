@@ -94,7 +94,7 @@ def train_model_cc(
         for batch_idx, batch in enumerate(pbar):
             global_step += 1
 
-            # Extract batch data - SAME AS BEM
+            # Extract batch data
             context_inputs = {
                 "input_ids": batch["context_input_ids"].to(device),
                 "attention_mask": batch["context_attn_mask"].to(device)
@@ -104,7 +104,7 @@ def train_model_cc(
             gold_indices = batch["gold_indices"].to(device)
             sense_weights = batch["sense_weights"]
 
-            # Flatten all candidate glosses for batch tokenization - SAME AS BEM
+            # Flatten all candidate glosses for batch tokenization
             all_glosses = []
             gloss_offsets = []
             start = 0
@@ -114,7 +114,7 @@ def train_model_cc(
                 gloss_offsets.append((start, start + len(candidates)))
                 start += len(candidates)
 
-            # Tokenize all glosses at once - SAME AS BEM
+            # Tokenize all glosses at once
             gloss_toks = model.tokenizer(
                 all_glosses,
                 return_tensors="pt",
@@ -129,30 +129,40 @@ def train_model_cc(
             }
 
             with autocast(device_type=device):
-                # Get context embeddings - DIFFERENT: PolyBERT uses target_spans
+                # Get context embeddings - PolyBERT uses target_spans
                 rF_wt = model.forward_context(
                     context_inputs["input_ids"],
                     context_inputs["attention_mask"], 
-                    target_spans  # [B, 2] spans instead of masks
+                    target_spans  # [B, 2] spans
                 )  # [B, polym, hidden_dim]
 
-                # Get gloss embeddings - PolyBERT specific
+                # Get gloss embeddings
                 rF_g = model.forward_gloss(
                     gloss_inputs["input_ids"], 
                     gloss_inputs["attention_mask"]
                 )  # [total_glosses, polym, hidden_dim]
 
-                # Compute similarities - ADAPTED FOR PolyBERT
+                # FIXED: Proper PolyBERT similarity computation
                 batch_similarities = []
                 max_candidates = max(len(candidates) for candidates in candidate_glosses)
                 
                 for i, (start_idx, end_idx) in enumerate(gloss_offsets):
-                    # PolyBERT: flatten poly dimensions for similarity computation
-                    ctx_emb = rF_wt[i].reshape(-1).unsqueeze(0)  # [1, polym*hidden_dim]
-                    gloss_embs = rF_g[start_idx:end_idx].reshape(end_idx-start_idx, -1)  # [num_candidates, polym*hidden_dim]
+                    # Get embeddings for this example
+                    ctx_emb = rF_wt[i]  # [polym, hidden_dim]
+                    gloss_embs = rF_g[start_idx:end_idx]  # [num_candidates, polym, hidden_dim]
                     
-                    # Compute similarity scores
-                    similarities = torch.mm(ctx_emb, gloss_embs.T)  # [1, num_candidates]
+                    # FIXED: Compute multi-prototype similarities correctly
+                    # Option 1: Max similarity across prototype pairs
+                    similarities = torch.einsum('ph,cph->pc', ctx_emb, gloss_embs)  # [polym, num_candidates]
+                    similarities = similarities.max(dim=0)[0]  # [num_candidates] - max across prototypes
+                    
+                    # Option 2: Average similarity (alternative)
+                    # similarities = similarities.mean(dim=0)  # [num_candidates] - avg across prototypes
+                    
+                    # Option 3: Attention-weighted (most sophisticated)
+                    # similarities = self._attention_aggregate(similarities)
+                    
+                    similarities = similarities.unsqueeze(0)  # [1, num_candidates]
                     
                     # Pad to max_candidates for batching
                     if similarities.size(1) < max_candidates:
@@ -164,7 +174,7 @@ def train_model_cc(
                 # Stack similarities: [B, max_candidates]
                 similarities_batch = torch.cat(batch_similarities, dim=0)
                 
-                # WEIGHTED LOSS like BEM but with Cross Entropy
+                # WEIGHTED CROSS ENTROPY LOSS
                 total_loss = 0.0
                 for i in range(len(gold_indices)):
                     # Get valid similarities for this example
@@ -180,7 +190,7 @@ def train_model_cc(
                 loss = total_loss / len(gold_indices)
                 loss = loss / grad_accum_steps
 
-            # Backward pass - SAME AS BEM
+            # Backward pass
             scaler.scale(loss).backward()
 
             if (batch_idx + 1) % grad_accum_steps == 0:
@@ -214,7 +224,7 @@ def train_model_cc(
         avg_train_loss = running_loss / len(train_data_loader)
         history["train_loss"].append(avg_train_loss)
 
-        # Validation - SAME LOGIC as training
+        # Validation
         model.eval()
         valid_loss = 0.0
         valid_correct = 0
@@ -268,13 +278,17 @@ def train_model_cc(
                     gloss_inputs["attention_mask"]
                 )
 
+                # FIXED: Same similarity computation as training
                 batch_similarities = []
                 max_candidates = max(len(candidates) for candidates in candidate_glosses)
                 
                 for i, (start_idx, end_idx) in enumerate(gloss_offsets):
-                    ctx_emb = rF_wt[i].reshape(-1).unsqueeze(0)
-                    gloss_embs = rF_g[start_idx:end_idx].reshape(end_idx-start_idx, -1)
-                    similarities = torch.mm(ctx_emb, gloss_embs.T)
+                    ctx_emb = rF_wt[i]  # [polym, hidden_dim]
+                    gloss_embs = rF_g[start_idx:end_idx]  # [num_candidates, polym, hidden_dim]
+                    
+                    # FIXED: Multi-prototype similarity
+                    similarities = torch.einsum('ph,cph->pc', ctx_emb, gloss_embs)  # [polym, num_candidates]
+                    similarities = similarities.max(dim=0)[0].unsqueeze(0)  # [1, num_candidates]
                     
                     if similarities.size(1) < max_candidates:
                         pad_size = max_candidates - similarities.size(1)
@@ -318,9 +332,9 @@ def train_model_cc(
         print(f"[Epoch {epoch+1}] Learning Rate: {current_lr:.2e}")
         print("=" * 80)
 
-        # ReduceLROnPlateau scheduler step - DIFFERENT FROM BEM
+        # ReduceLROnPlateau scheduler step
         if scheduler is not None:
-            scheduler.step(avg_valid_loss)  # Step based on validation loss
+            scheduler.step(avg_valid_loss)
 
         # Early stopping based on validation accuracy
         if valid_accuracy > best_valid_acc:
