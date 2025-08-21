@@ -322,86 +322,158 @@ def train_model(num_epochs, train_data_loader, valid_data_loader,
 
 import torch.nn.functional as F
 
+import torch
+import torch.nn.functional as F
+from tqdm import tqdm
+
 def evaluate_model(model, data_loader, device):
-    """Enhanced evaluation with detailed metrics"""
+    """Enhanced evaluation function compatible with WSD_ViConDataset"""
     model.eval()
     valid_loss = 0.0
     valid_correct = 0
     valid_total = 0
     
     with torch.inference_mode():
-        eval_pbar = tqdm(data_loader, desc="Evaluating", position=0, leave=False,ascii=True)
+        eval_pbar = tqdm(data_loader, desc="Evaluating", position=0, leave=False, ascii=True)
+        
         for batch in eval_pbar:
-                context_inputs = {
-                    "input_ids": batch["context_input_ids"].to(device),
-                    "attention_mask": batch["context_attn_mask"].to(device)
-                }
-                target_spans = batch["target_spans"].to(device)
-                candidate_glosses = batch["candidate_glosses"]
-                gold_indices = batch["gold_indices"].to(device)
-
-                # Same processing as training
-                all_glosses = []
-                gloss_offsets = []
-                start = 0
+            # Extract data from batch (matching your dataset structure)
+            context_input_ids = batch["context_input_ids"].to(device)
+            context_attn_mask = batch["context_attn_mask"].to(device)
+            target_spans = batch["target_spans"].to(device) if batch["target_spans"] is not None else None
+            synset_ids = batch["synset_ids"].to(device)
+            
+            candidate_gloss_vectors = batch["candidate_gloss_vectors"]  # List of tensors
+            candidate_gloss_ids = batch["candidate_gloss_ids"]  # List of tensors
+            gloss_ids = batch["gloss_id"]  # Gold gloss IDs
+            
+            # Get context representations
+            context_inputs = {
+                "input_ids": context_input_ids,
+                "attention_mask": context_attn_mask
+            }
+            
+            outputs = model(context_inputs, target_span=target_spans)
+            
+            batch_similarities = []
+            batch_gold_indices = []
+            
+            for i in range(len(candidate_gloss_vectors)):
+                # Context embedding for sample i
+                ctx_emb = outputs[i].unsqueeze(0)  # (1, hidden_dim)
                 
-                for candidates in candidate_glosses:
-                    all_glosses.extend(candidates)
-                    gloss_offsets.append((start, start + len(candidates)))
-                    start += len(candidates)
-
-                gloss_toks = model.tokenizer(
-                    all_glosses,
-                    return_tensors="pt",
-                    padding=True,
-                    truncation=True,
-                    max_length=256
-                ).to(device)
-
-                rF_wt = model.forward_context(
-                    context_inputs["input_ids"],
-                    context_inputs["attention_mask"], 
-                    target_spans
-                )
-
-                rF_g = model.forward_gloss(
-                    gloss_toks["input_ids"], 
-                    gloss_toks["attention_mask"]
-                )
-
-                batch_similarities = []
-                max_candidates = max(len(candidates) for candidates in candidate_glosses)
+                # Candidate gloss vectors for sample i
+                candidate_vectors = candidate_gloss_vectors[i].to(device)  # (num_candidates, hidden_dim)
+                candidate_ids = candidate_gloss_ids[i]  # (num_candidates,)
+                gold_gloss_id = gloss_ids[i].item()
                 
-                for i, (start_idx, end_idx) in enumerate(gloss_offsets):
-                    ctx_emb = rF_wt[i].flatten()
-                    gloss_embs = rF_g[start_idx:end_idx]
-                    gloss_embs_flat = gloss_embs.reshape(gloss_embs.size(0), -1)
-                    
-                    ctx_emb = F.normalize(ctx_emb.unsqueeze(0), p=2, dim=1)
-                    gloss_embs_flat = F.normalize(rF_g, p=2, dim=1)
-                    # Compute similarity scores
-                    similarities = torch.matmul(ctx_emb, gloss_embs_flat.T) 
-                    
-                    if similarities.size(1) < max_candidates:
-                        pad_size = max_candidates - similarities.size(1)
-                        similarities = F.pad(similarities, (0, pad_size), value=-1e9)
-                    
-                    batch_similarities.append(similarities)
-
-                similarities_batch = torch.cat(batch_similarities, dim=0)
+                # Find gold index in candidates
+                gold_idx = None
+                for j, cand_id in enumerate(candidate_ids):
+                    if cand_id.item() == gold_gloss_id:
+                        gold_idx = j
+                        break
                 
-                loss = F.cross_entropy(similarities_batch, gold_indices)
+                if gold_idx is None:
+                    # Skip this sample if gold is not in candidates
+                    continue
+                
+                # Normalize embeddings
+                ctx_emb_norm = F.normalize(ctx_emb, p=2, dim=1)
+                candidate_vectors_norm = F.normalize(candidate_vectors, p=2, dim=1)
+                
+                # Compute similarities
+                similarities = torch.matmul(ctx_emb_norm, candidate_vectors_norm.T)  # (1, num_candidates)
+                
+                batch_similarities.append(similarities.squeeze(0))  # (num_candidates,)
+                batch_gold_indices.append(gold_idx)
+            
+            if batch_similarities:
+                # Pad similarities to same length for batching
+                max_candidates = max(sim.size(0) for sim in batch_similarities)
+                padded_similarities = []
+                
+                for sim in batch_similarities:
+                    if sim.size(0) < max_candidates:
+                        pad_size = max_candidates - sim.size(0)
+                        sim = F.pad(sim.unsqueeze(0), (0, pad_size), value=-1e9).squeeze(0)
+                    padded_similarities.append(sim)
+                
+                similarities_tensor = torch.stack(padded_similarities)  # (batch_size, max_candidates)
+                gold_indices_tensor = torch.tensor(batch_gold_indices, dtype=torch.long, device=device)
+                
+                # Calculate loss
+                loss = F.cross_entropy(similarities_tensor, gold_indices_tensor)
                 valid_loss += loss.item()
                 
-                preds = similarities_batch.argmax(dim=1)
-                valid_correct += (preds == gold_indices).sum().item()
-                valid_total += len(gold_indices)
+                # Calculate accuracy
+                preds = similarities_tensor.argmax(dim=1)
+                valid_correct += (preds == gold_indices_tensor).sum().item()
+                valid_total += len(gold_indices_tensor)
+            
+            eval_pbar.set_postfix({'Loss': f'{valid_loss/(eval_pbar.n+1):.4f}'})
+
+    if valid_total == 0:
+        print("Warning: No valid samples found during evaluation")
+        return {
+            'loss': float('inf'),
+            'valid_accuracy': 0.0
+        }
+
+    valid_accuracy = valid_correct / valid_total
+    avg_valid_loss = valid_loss / len(data_loader)
+
+    return {
+        'loss': avg_valid_loss,
+        'valid_accuracy': valid_accuracy
+    }
+
+
+def evaluate_model_with_loss_fn(model, data_loader, loss_fn, device):
+    """Alternative evaluation function that uses the same loss function as training"""
+    model.eval()
+    valid_loss = 0.0
+    valid_correct = 0
+    valid_total = 0
+    
+    with torch.inference_mode():
+        eval_pbar = tqdm(data_loader, desc="Evaluating", position=0, leave=False, ascii=True)
+        
+        for batch in eval_pbar:
+            context_input_ids = batch["context_input_ids"].to(device)
+            context_attn_mask = batch["context_attn_mask"].to(device)
+            target_spans = batch["target_spans"].to(device) if batch["target_spans"] is not None else None
+            gloss_embd = batch["gloss_embd"].to(device)
+            synset_ids = batch["synset_ids"].to(device)
+            
+            context_inputs = {
+                "input_ids": context_input_ids,
+                "attention_mask": context_attn_mask
+            }
+            
+            outputs = model(context_inputs, target_span=target_spans)
+            
+            # Use the same loss function as training
+            loss = loss_fn(outputs, gloss_embd, synset_ids)
+            valid_loss += loss.item()
+            
+            # Calculate accuracy based on cosine similarity
+            outputs_norm = F.normalize(outputs, p=2, dim=1)
+            gloss_embd_norm = F.normalize(gloss_embd, p=2, dim=1)
+            similarities = torch.sum(outputs_norm * gloss_embd_norm, dim=1)
+            
+            # You can adjust this threshold based on your task
+            threshold = 0.5
+            correct_predictions = (similarities > threshold).sum().item()
+            valid_correct += correct_predictions
+            valid_total += len(similarities)
+            
+            eval_pbar.set_postfix({'Loss': f'{valid_loss/(eval_pbar.n+1):.4f}'})
 
     valid_accuracy = valid_correct / max(valid_total, 1)
     avg_valid_loss = valid_loss / len(data_loader)
 
-    
     return {
         'loss': avg_valid_loss,
-        "valid_accuracy":valid_accuracy
+        'valid_accuracy': valid_accuracy
     }
