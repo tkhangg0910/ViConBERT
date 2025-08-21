@@ -97,7 +97,7 @@ class WSD_BEMDataset(Dataset):
                 "gloss_id": int(sample["gloss_id"]),
                 "word_id": int(sample["word_id"]),
                 "supersense": sample.get("supersense", "unknown"),
-                "pos": sample.get("pos", "UNK")
+                "pos": extract_pos_from_supersense(sample.get("supersense", "unknown"))
             }
             self.all_samples.append(item)
             self.word2glosses[item["target_word"]].append(item)
@@ -128,7 +128,8 @@ class WSD_BEMDataset(Dataset):
             "gloss_id": s["gloss_id"],
             "word_id": s["word_id"],
             "synset_id": s["synset_id"],
-            "pos": s["supersense"],
+            "supersense": s["supersense"],
+            "pos": s["pos"]
         }
 
         if self.val_mode:
