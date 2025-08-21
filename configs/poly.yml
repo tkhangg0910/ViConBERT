@@ -17,7 +17,7 @@ model:
   num_heads: 8
 
 training:
-  ckpt_interval: 10
+  ckpt_interval: 20
   shuffle: False
   batch_size: 128
   epochs: 100

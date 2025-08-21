@@ -154,10 +154,10 @@ def train_model_cc(
                     # FIXED: Compute multi-prototype similarities correctly
                     # Option 1: Max similarity across prototype pairs
                     similarities = torch.einsum('ph,cph->pc', ctx_emb, gloss_embs)  # [polym, num_candidates]
-                    similarities = similarities.max(dim=0)[0]  # [num_candidates] - max across prototypes
+                    # similarities = similarities.max(dim=0)[0]  # [num_candidates] - max across prototypes
                     
                     # Option 2: Average similarity (alternative)
-                    # similarities = similarities.mean(dim=0)  # [num_candidates] - avg across prototypes
+                    similarities = similarities.mean(dim=0)  # [num_candidates] - avg across prototypes
                     
                     # Option 3: Attention-weighted (most sophisticated)
                     # similarities = self._attention_aggregate(similarities)
