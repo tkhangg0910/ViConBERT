@@ -597,7 +597,8 @@ if __name__ == "__main__":
                                    gloss_emd=gloss_emd, val_mode=True)
     else:  # gloss_model mode
         if args.model_type == 'bem':
-            valid_set = WSD_ViConDataset(valid_sample, tokenizer, mode="gloss_model", val_mode=True)
+            print("WSD_BEMDataset")
+            valid_set = WSD_BEMDataset(valid_sample, tokenizer, mode="gloss_model", val_mode=True)
     
     # Print POS distribution
     pos_counts = defaultdict(int)
