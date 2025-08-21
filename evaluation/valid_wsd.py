@@ -560,7 +560,7 @@ if __name__ == "__main__":
     else:  # gloss_model mode
         if args.model_type == 'bem':
             print("WSD_BEMDataset")
-            valid_set = WSD_BEMDataset(valid_sample, tokenizer, mode="gloss_model", val_mode=True)
+            valid_set = WSD_BEMDataset(valid_sample, tokenizer, val_mode=True)
     
     # Print POS distribution
     pos_counts = defaultdict(int)
