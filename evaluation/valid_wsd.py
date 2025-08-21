@@ -579,7 +579,7 @@ if __name__ == "__main__":
             print("WSD_BEMDataset")
             valid_set = WSD_BEMDataset(valid_sample, tokenizer, val_mode=True)
         elif args.model_type =="poly":
-            valid_set = WSD_ViConDataset(valid_sample, tokenizer, mode="gloss_model", 
+            valid_set = WSD_ViConDataset(valid_sample, tokenizer, mode="gloss_model"
                                    , val_mode=True)
     
     # Print POS distribution
