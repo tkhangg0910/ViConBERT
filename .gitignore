@@ -23,3 +23,5 @@ data/raw/stage_1_pseudo_sents/poly_by_group.json
 data/raw/stage_1_pseudo_sents/poly_by_group_v2.json
 BERT_BASE-20250820T150905Z-1-001
 transformers
+index_mean.faiss
+word_ids_mean.json
