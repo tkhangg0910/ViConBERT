@@ -158,9 +158,25 @@ class WSD_BEMDataset(Dataset):
         supersenses = [b["supersense"] for b in batch]
         pos_tags = [b["pos"] for b in batch]
 
+        # Tokenize để biết max_len
+        c_toks = self.tokenizer(
+            sentences,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=256,
+            return_attention_mask=True
+        )
+
+        # Align target masks thành tensor [B, L]
+        batch_target_masks = torch.zeros_like(c_toks["input_ids"])
+        for i, tm in enumerate(target_masks):
+            mask_len = min(len(tm), batch_target_masks.shape[1])
+            batch_target_masks[i, :mask_len] = tm[:mask_len]
+
         result = {
-            "sentence": sentences,            # list[str]
-            "target_masks": target_masks,     # list[tensor]
+            "sentence": sentences,            
+            "target_masks": batch_target_masks,   # tensor [B, L]
             "synset_ids": synset_ids,
             "word_id": word_id,
             "target_words": target_words,
@@ -176,10 +192,11 @@ class WSD_BEMDataset(Dataset):
                 candidate_glosses_batch.append(b["candidate_glosses"])
                 candidate_ids_batch.append(torch.tensor(b["candidate_gloss_ids"], dtype=torch.long))
             
-            result["candidate_glosses"] = candidate_glosses_batch  # list[list[str]]
-            result["candidate_gloss_ids"] = candidate_ids_batch    # list[tensor]
+            result["candidate_glosses"] = candidate_glosses_batch
+            result["candidate_gloss_ids"] = candidate_ids_batch
 
         return result
+
 
 class WSD_ViConDataset(Dataset):
     def __init__(self, samples, tokenizer, mode="precomputed", gloss_emd=None, val_mode=False):
