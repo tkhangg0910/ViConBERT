@@ -120,7 +120,7 @@ if __name__=="__main__":
     
     if args.backbone=="phobert":
         print("using PhobertTokenizerFast")
-        tokenizer = PhobertTokenizerFast.from_pretrained()
+        tokenizer = PhobertTokenizerFast.from_pretrained(args.model_path)
     elif args.backbone=="xlmr":
         print("using XLMRobertaTokenizerFast")
         tokenizer = XLMRobertaTokenizerFast.from_pretrained(args.model_path)
