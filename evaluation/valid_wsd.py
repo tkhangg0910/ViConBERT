@@ -449,7 +449,7 @@ def evaluate_model_with_gloss_encoder(model, data_loader, device):
                 return_attention_mask=True
             ).to(device)
 
-            target_spans = batch.get("target_spans", batch["target_masks"]).to(device)
+            target_spans = batch.get("target_spans", batch.get("target_masks")).to(device)
             
             rF_wt = model.forward_context( 
                 c_toks["input_ids"],
