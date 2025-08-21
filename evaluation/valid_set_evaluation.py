@@ -22,6 +22,7 @@ from utils.loss_fn import InfonceDistillLoss
 def setup_args():
     parser = argparse.ArgumentParser(description="Train a model")
     parser.add_argument("--model_path", type=str, help="Model path")
+    parser.add_argument("--model_type", type=str, help="Model path")
     parser.add_argument("--batch_size", type=int,default=768, help="Batch size")
     args = parser.parse_args()
     return args 
@@ -110,7 +111,7 @@ if __name__=="__main__":
     torch.manual_seed(42) 
     args = setup_args()
     
-    config = load_config("configs/base.yml")
+    config = load_config(f"configs/{args.model_type}.yml")
     
     with open(config["data"]["valid_path"], "r",encoding="utf-8") as f:
         valid_sample = json.load(f)
