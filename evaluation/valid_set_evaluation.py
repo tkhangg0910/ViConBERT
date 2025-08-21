@@ -2,7 +2,7 @@ import argparse
 import json
 import os
 import torch
-from transformers import PhobertTokenizerFast, XLMRobertaTokenizerFast
+from transformers import PreTrainedTokenizerFast, PhobertTokenizerFast, XLMRobertaTokenizerFast, DebertaV2TokenizerFast
 from torch.utils.data import DataLoader
 from data.processed.stage1_pseudo_sents.pseudo_sent_datasets import PseudoSents_Dataset, PseudoSentsFlatDataset
 from utils.load_config import load_config
@@ -23,6 +23,7 @@ def setup_args():
     parser = argparse.ArgumentParser(description="Train a model")
     parser.add_argument("--model_path", type=str, help="Model path")
     parser.add_argument("--model_type", type=str, help="Model path")
+    parser.add_argument("--backbone", type=str, help="Batch size")
     parser.add_argument("--batch_size", type=int,default=768, help="Batch size")
     args = parser.parse_args()
     return args 
@@ -115,9 +116,17 @@ if __name__=="__main__":
     
     with open(config["data"]["valid_path"], "r",encoding="utf-8") as f:
         valid_sample = json.load(f)
-        
-    tokenizer = PhobertTokenizerFast.from_pretrained(args.model_path)
-        
+    
+    if args.backbone=="phobert":
+        print("using PhobertTokenizerFast")
+        tokenizer = PhobertTokenizerFast.from_pretrained()
+    elif args.backbone=="xlmr":
+        print("using XLMRobertaTokenizerFast")
+        tokenizer = XLMRobertaTokenizerFast.from_pretrained(args.model_path)
+    elif args.backbone=="videberta":
+        print("using DebertaTokenizerFast")
+        tokenizer = DebertaV2TokenizerFast.from_pretrained(args.model_path)
+    
     if tokenizer.pad_token is None:
         tokenizer.add_special_tokens({'pad_token': '[PAD]'})
         
