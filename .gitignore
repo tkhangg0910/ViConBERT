@@ -25,3 +25,4 @@ BERT_BASE-20250820T150905Z-1-001
 transformers
 index_mean.faiss
 word_ids_mean.json
+metadata_mean.json
