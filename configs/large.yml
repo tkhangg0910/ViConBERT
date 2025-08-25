@@ -3,7 +3,7 @@ project:
   language: "vi"
   seed: 42
 
-base_model: "FacebookAI/xlm-roberta-large"
+base_model: "/home/islabworker2/tan_khang/SynoViSense/checkpoints/xlm-roberta-large/run_20250823_130035/best_model"
 base_model_cache_dir: "embeddings/FacebookAI/xlm-roberta-large"
 output_dir: "./checkpoints/xlm-roberta-large"
 
