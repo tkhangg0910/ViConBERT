@@ -3,9 +3,9 @@ project:
   language: "vi"
   seed: 42
 
-base_model: "/home/islabworker2/tan_khang/SynoViSense/checkpoints/xlm-roberta-large/run_20250823_130035/best_model"
-base_model_cache_dir: "embeddings/FacebookAI/xlm-roberta-large"
-output_dir: "./checkpoints/xlm-roberta-large"
+base_model: "vinai/phobert-large"
+base_model_cache_dir: "embeddings/vinai/phobert-large"
+output_dir: "./checkpoints/phobert-large-cse"
 
 data:
   train_path: "data/processed/stage1_pseudo_sents/train_data_v4.json"
@@ -26,7 +26,7 @@ model:
 training:
   ckpt_interval: 10
   shuffle: False
-  batch_size: 320
+  batch_size: 512
   epochs: 100
   early_stopping_patience: 5
   save_steps: 1000
