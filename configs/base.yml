@@ -3,7 +3,7 @@ project:
   language: "vi"
   seed: 42
 
-base_model: "Fsoft-AIC/videberta-base"
+base_model: "/home/islabworker2/tan_khang/SynoViSense/checkpoints/videberta-cse/run_20250828_071328/best_model/"
 base_model_cache_dir: "embeddings/Fsoft-AIC/videberta-base"
 output_dir: "./checkpoints/videberta-cse"
 
