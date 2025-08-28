@@ -37,6 +37,8 @@ if is_torch_available() and torch.multiprocessing.get_start_method() == "fork":
 def setup_args():
     parser = argparse.ArgumentParser(description="Train a model")
     parser.add_argument("--model_path", type=str, help="Model path")
+    parser.add_argument("--model_type", type=str, required=True)
+
     parser.add_argument("--pseudo_sent", action='store_true', help="Use pseudo sentences")
     args = parser.parse_args()
     return args 
@@ -117,8 +119,10 @@ if __name__=="__main__":
     args = setup_args()
     
     benchmark = get_visim400()
-    
-    tokenizer = PhobertTokenizerFast.from_pretrained(args.model_path)
+    if args.model_type=="phobert":
+        tokenizer = PhobertTokenizerFast.from_pretrained(args.model_path)
+    else:
+        tokenizer = XLMRobertaTokenizerFast.from_pretrained(args.model_path)
     
     if tokenizer.pad_token is None:
         tokenizer.add_special_tokens({'pad_token': '[PAD]'})
