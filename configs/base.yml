@@ -3,9 +3,9 @@ project:
   language: "vi"
   seed: 42
 
-base_model: "FacebookAI/xlm-roberta-base"
-base_model_cache_dir: "embeddings/FacebookAI/xlm-roberta-base"
-output_dir: "./checkpoints/xlm-roberta-base"
+base_model: "Fsoft-AIC/videberta-base"
+base_model_cache_dir: "embeddings/Fsoft-AIC/videberta-base"
+output_dir: "./checkpoints/videberta-cse"
 
 data:
   train_path: "data/processed/stage1_pseudo_sents/train_data_v4.json"
