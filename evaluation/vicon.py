@@ -5,7 +5,7 @@ import torch
 import random
 import pandas as pd
 import torch.nn.functional as F
-from transformers import PhobertTokenizerFast
+from transformers import PhobertTokenizerFast, XLMRobertaTokenizerFast
 from utils.span_extractor import SpanExtractor
 from models.base_model import ViSynoSenseEmbedding
 from tqdm import tqdm
@@ -32,6 +32,7 @@ frameworks = {
 def setup_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_path", type=str, required=True)
+    parser.add_argument("--model_type", type=str, required=True)
     parser.add_argument("--pseudo_sent", action="store_true")
     return parser.parse_args()
 
@@ -167,8 +168,10 @@ if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     all_data, noun_data, verb_data, adj_data = get_vicon()
-
-    tokenizer = PhobertTokenizerFast.from_pretrained(args.model_path)
+    if args.model_path=="phobert":
+        tokenizer = PhobertTokenizerFast.from_pretrained(args.model_path)
+    else:
+        tokenizer = XLMRobertaTokenizerFast.from_pretrained(args.model_path)
     if tokenizer.pad_token is None:
         tokenizer.add_special_tokens({'pad_token': '[PAD]'})
     model = ViSynoSenseEmbedding.from_pretrained(args.model_path, tokenizer=tokenizer).to(device)
