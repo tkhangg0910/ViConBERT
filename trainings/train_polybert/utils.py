@@ -146,11 +146,12 @@ def train_model_cc(
                 batch_similarities = []
                 max_candidates = max(len(candidates) for candidates in candidate_glosses)
                 
-                for i, (start_idx, end_idx) in enumerate(gloss_offsets):
+                for i, (start_idx, end_idx) in enumerate(gloss_offsets):  
                     # Get embeddings for this example
                     ctx_emb = rF_wt[i]  # [polym, hidden_dim]
                     gloss_embs = rF_g[start_idx:end_idx]  # [num_candidates, polym, hidden_dim]
-                    
+                    print("ctx_emb:", ctx_emb.shape)
+                    print("gloss_embs:", gloss_embs.shape)
                     # FIXED: Compute multi-prototype similarities correctly
                     # Option 1: Max similarity across prototype pairs
                     similarities = torch.mm(ctx_emb, gloss_embs.T)   # [polym, num_candidates]
