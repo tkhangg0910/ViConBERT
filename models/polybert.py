@@ -46,12 +46,12 @@ class PolyBERT(nn.Module):
         pooled_embeddings = masked_states.sum(dim=1) / span_lengths  # [B, H]
 
         # create queries by replicating pooled span embedding polym times
-        Q = pooled_embeddings.unsqueeze(1).repeat(1, self.polym, 1)  # [B, polym, H]
+        Q = pooled_embeddings.unsqueeze(0)  
         K = hidden_states  # [B, L, H]
         V = hidden_states  # [B, L, H]
 
         # perform multi-head attention (batch_first=True)
-        fused, _ = self.attn(Q, K, V)  # [B, polym, H]
+        fused, _ = self.attn(Q, K, V) 
 
         return fused
     def contrastive_classification_loss(self, logits, label):
@@ -70,7 +70,7 @@ class PolyBERT(nn.Module):
         EG = outputs.last_hidden_state  # [B, L, H]
         rg = EG[:, 0, :]  # CLS token [B, H]
 
-        rFg = rg.unsqueeze(1).repeat(1, self.polym, 1)  # [B, polym, H]
+        rFg = rg.unsqueeze(0)
         return rFg
 
     def batch_contrastive_loss_with_id(self, rF_wt, rF_g, word_id, temperature=0.05):
