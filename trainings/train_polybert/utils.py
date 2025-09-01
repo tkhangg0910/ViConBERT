@@ -285,11 +285,9 @@ def train_model_cc(
                 
                 for i, (start_idx, end_idx) in enumerate(gloss_offsets):
                     ctx_emb = rF_wt[i]  # [polym, hidden_dim]
-                    gloss_embs = rF_g[start_idx:end_idx]  # [num_candidates, polym, hidden_dim]
-                    
+                    gloss_embs = rF_g[start_idx:end_idx].squeeze(1)  # [num_candidates, polym, hidden_dim]
+                    similarities = torch.mm(ctx_emb, gloss_embs.T)
                     # FIXED: Multi-prototype similarity
-                    similarities = torch.einsum('ph,cph->pc', ctx_emb, gloss_embs)  # [polym, num_candidates]
-                    similarities = similarities.max(dim=0)[0].unsqueeze(0)  # [1, num_candidates]
                     
                     if similarities.size(1) < max_candidates:
                         pad_size = max_candidates - similarities.size(1)
