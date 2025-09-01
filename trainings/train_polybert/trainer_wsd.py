@@ -25,7 +25,7 @@ def setup_args():
     parser.add_argument('--grad_clip', action='store_true', help='Gradient clipping')
     parser.add_argument('--grad_accum_steps', type=int, default=1, help='Gradient accumulation steps')
     parser.add_argument('--train_gloss_size', type=int, default=5, help='Number of glosses for training')
-    parser.add_argument('--train_mode', type=str, default="cc", help='Training mode (cc for cross entropy)')
+    parser.add_argument('--train_mode', type=str, default="cc", help='Training mode (cc for contrastive classification)')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     
     args = parser.parse_args()

@@ -46,7 +46,7 @@ class PolyBERT(nn.Module):
         pooled_embeddings = masked_states.sum(dim=1) / span_lengths  # [B, H]
 
         # create queries by replicating pooled span embedding polym times
-        Q = pooled_embeddings.unsqueeze(0)  
+        Q = pooled_embeddings.unsqueeze(1)  
         K = hidden_states  # [B, L, H]
         V = hidden_states  # [B, L, H]
 
@@ -70,7 +70,7 @@ class PolyBERT(nn.Module):
         EG = outputs.last_hidden_state  # [B, L, H]
         rg = EG[:, 0, :]  # CLS token [B, H]
 
-        rFg = rg.unsqueeze(0)
+        rFg = rg.unsqueeze(1)
         return rFg
 
     def batch_contrastive_loss_with_id(self, rF_wt, rF_g, word_id, temperature=0.05):
