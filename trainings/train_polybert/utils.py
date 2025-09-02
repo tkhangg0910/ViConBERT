@@ -148,8 +148,8 @@ def train_model_cc(
                 
                 for i, (start_idx, end_idx) in enumerate(gloss_offsets):  
                     # Get embeddings for this example
-                    ctx_emb = rF_wt[i]  # [polym, hidden_dim]
-                    gloss_embs = rF_g[start_idx:end_idx].squeeze(1)  # [num_candidates, polym, hidden_dim]
+                    ctx_emb = rF_wt[i].unsqueeze(0)   # [polym, hidden_dim]
+                    gloss_embs = rF_g[start_idx:end_idx] # [num_candidates, polym, hidden_dim]
                     # print("ctx_emb:", ctx_emb.shape)
                     # print("gloss_embs:", gloss_embs.shape)
                     # FIXED: Compute multi-prototype similarities correctly
@@ -284,8 +284,8 @@ def train_model_cc(
                 max_candidates = max(len(candidates) for candidates in candidate_glosses)
                 
                 for i, (start_idx, end_idx) in enumerate(gloss_offsets):
-                    ctx_emb = rF_wt[i]  # [polym, hidden_dim]
-                    gloss_embs = rF_g[start_idx:end_idx].squeeze(1)  # [num_candidates, polym, hidden_dim]
+                    ctx_emb = rF_wt[i].unsqueeze(0)   # [polym, hidden_dim]
+                    gloss_embs = rF_g[start_idx:end_idx] # [num_candidates, polym, hidden_dim]
                     similarities = torch.mm(ctx_emb, gloss_embs.T)
                     # FIXED: Multi-prototype similarity
                     
