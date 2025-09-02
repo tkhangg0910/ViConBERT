@@ -99,7 +99,7 @@ def train_model_cc(
                 "input_ids": batch["context_input_ids"].to(device),
                 "attention_mask": batch["context_attn_mask"].to(device)
             }
-            target_spans = batch["target_spans"].to(device)  # [B, 2] for PolyBERT
+            target_masks = batch["target_masks"].to(device)
             candidate_glosses = batch["candidate_glosses"]
             gold_indices = batch["gold_indices"].to(device)
             sense_weights = batch["sense_weights"]
@@ -129,41 +129,30 @@ def train_model_cc(
             }
 
             with autocast(device_type=device):
-                # Get context embeddings - PolyBERT uses target_spans
+                # Get context embeddings
                 rF_wt = model.forward_context(
                     context_inputs["input_ids"],
                     context_inputs["attention_mask"], 
-                    target_spans  # [B, 2] spans
-                )  # [B, polym, hidden_dim]
+                    target_masks
+                )  # [B, hidden_dim]
 
                 # Get gloss embeddings
                 rF_g = model.forward_gloss(
                     gloss_inputs["input_ids"], 
                     gloss_inputs["attention_mask"]
-                )  # [total_glosses, polym, hidden_dim]
+                )  # [total_glosses, hidden_dim]
 
-                # FIXED: Proper PolyBERT similarity computation
+                # FIXED: Compute similarities như code gốc (dot product after normalization)
                 batch_similarities = []
+                batch_losses = []
                 max_candidates = max(len(candidates) for candidates in candidate_glosses)
                 
-                for i, (start_idx, end_idx) in enumerate(gloss_offsets):  
-                    # Get embeddings for this example
-                    ctx_emb = rF_wt[i].unsqueeze(0)   # [polym, hidden_dim]
-                    gloss_embs = rF_g[start_idx:end_idx] # [num_candidates, polym, hidden_dim]
-                    # print("ctx_emb:", ctx_emb.shape)
-                    # print("gloss_embs:", gloss_embs.shape)
-                    # FIXED: Compute multi-prototype similarities correctly
-                    # Option 1: Max similarity across prototype pairs
-                    similarities = torch.mm(ctx_emb, gloss_embs.T)   # [polym, num_candidates]
-                    # similarities = similarities.max(dim=0)[0]  # [num_candidates] - max across prototypes
+                for i, (start_idx, end_idx) in enumerate(gloss_offsets):
+                    ctx_emb = rF_wt[i].unsqueeze(0)  # [1, hidden_dim]
+                    gloss_embs = rF_g[start_idx:end_idx]  # [num_candidates, hidden_dim]
                     
-                    # # Option 2: Average similarity (alternative)
-                    # similarities = similarities.mean(dim=0)  # [num_candidates] - avg across prototypes
-                    
-                    # # Option 3: Attention-weighted (most sophisticated)
-                    # # similarities = self._attention_aggregate(similarities)
-                    
-                    # similarities = similarities.unsqueeze(0)  # [1, num_candidates]
+                    # FIXED: Dot product similarity như code gốc
+                    similarities = torch.mm(ctx_emb, gloss_embs.T)  # [1, num_candidates]
                     
                     # Pad to max_candidates for batching
                     if similarities.size(1) < max_candidates:
@@ -175,7 +164,7 @@ def train_model_cc(
                 # Stack similarities: [B, max_candidates]
                 similarities_batch = torch.cat(batch_similarities, dim=0)
                 
-                # WEIGHTED CROSS ENTROPY LOSS
+                # FIXED: Weighted loss như code gốc
                 total_loss = 0.0
                 for i in range(len(gold_indices)):
                     # Get valid similarities for this example
@@ -200,6 +189,11 @@ def train_model_cc(
                     grad_clipper.clip(model)
                 scaler.step(optimizer)
                 scaler.update()
+                
+                # FIXED: Update scheduler after each step như code gốc
+                if scheduler is not None:
+                    scheduler.step()
+                    
                 optimizer.zero_grad()
 
             running_loss += loss.item() * grad_accum_steps
@@ -211,7 +205,7 @@ def train_model_cc(
 
             if global_step % metric_log_interval == 0:
                 current_acc = train_correct / max(train_total, 1)
-                current_lr = optimizer.param_groups[0]['lr']
+                current_lr = scheduler.get_last_lr()[0] if scheduler else optimizer.param_groups[0]['lr']
                 pbar.set_postfix({
                     "Loss": f"{running_loss / (batch_idx + 1):.4f}",
                     "Acc": f"{current_acc:.4f}",
@@ -225,7 +219,7 @@ def train_model_cc(
         avg_train_loss = running_loss / len(train_data_loader)
         history["train_loss"].append(avg_train_loss)
 
-        # Validation
+        # Validation - SAME LOGIC as training
         model.eval()
         valid_loss = 0.0
         valid_correct = 0
@@ -239,7 +233,7 @@ def train_model_cc(
                     "input_ids": batch["context_input_ids"].to(device),
                     "attention_mask": batch["context_attn_mask"].to(device)
                 }
-                target_spans = batch["target_spans"].to(device)
+                target_masks = batch["target_masks"].to(device)
                 candidate_glosses = batch["candidate_glosses"]
                 gold_indices = batch["gold_indices"].to(device)
                 sense_weights = batch["sense_weights"]
@@ -271,7 +265,7 @@ def train_model_cc(
                 rF_wt = model.forward_context(
                     context_inputs["input_ids"],
                     context_inputs["attention_mask"], 
-                    target_spans
+                    target_masks
                 )
 
                 rF_g = model.forward_gloss(
@@ -279,15 +273,13 @@ def train_model_cc(
                     gloss_inputs["attention_mask"]
                 )
 
-                # FIXED: Same similarity computation as training
                 batch_similarities = []
                 max_candidates = max(len(candidates) for candidates in candidate_glosses)
                 
                 for i, (start_idx, end_idx) in enumerate(gloss_offsets):
-                    ctx_emb = rF_wt[i].unsqueeze(0)   # [polym, hidden_dim]
-                    gloss_embs = rF_g[start_idx:end_idx] # [num_candidates, polym, hidden_dim]
+                    ctx_emb = rF_wt[i].unsqueeze(0)
+                    gloss_embs = rF_g[start_idx:end_idx]
                     similarities = torch.mm(ctx_emb, gloss_embs.T)
-                    # FIXED: Multi-prototype similarity
                     
                     if similarities.size(1) < max_candidates:
                         pad_size = max_candidates - similarities.size(1)
@@ -327,13 +319,9 @@ def train_model_cc(
         print("=" * 80)
         print(f"[Epoch {epoch+1}] Train Loss: {avg_train_loss:.4f} | Train Acc: {train_accuracy:.4f} | Time: {epoch_time:.1f}s")
         print(f"[Epoch {epoch+1}] Valid Loss: {avg_valid_loss:.4f} | Valid Acc: {valid_accuracy:.4f}")
-        current_lr = optimizer.param_groups[0]['lr']
+        current_lr = scheduler.get_last_lr()[0] if scheduler else optimizer.param_groups[0]['lr']
         print(f"[Epoch {epoch+1}] Learning Rate: {current_lr:.2e}")
         print("=" * 80)
-
-        # ReduceLROnPlateau scheduler step
-        if scheduler is not None:
-            scheduler.step(avg_valid_loss)
 
         # Early stopping based on validation accuracy
         if valid_accuracy > best_valid_acc:

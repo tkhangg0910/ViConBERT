@@ -5,7 +5,7 @@ import argparse
 import torch
 from torch.utils.data import DataLoader
 from transformers.utils import is_torch_available
-from transformers import PreTrainedTokenizerFast, PhobertTokenizerFast, XLMRobertaTokenizerFast, DebertaV2TokenizerFast
+from transformers import PreTrainedTokenizerFast, PhobertTokenizerFast, XLMRobertaTokenizerFast, DebertaV2TokenizerFast,get_linear_schedule_with_warmup
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import pandas as pd
 
@@ -109,14 +109,11 @@ if __name__=="__main__":
     optim = create_optimizer(model, config)
     
     # FIXED: Use ReduceLROnPlateau scheduler as requested
-    scheduler = ReduceLROnPlateau(
+    scheduler = get_linear_schedule_with_warmup(
         optimizer=optim,
-        mode='min',         # Monitor validation loss
-        factor=0.5,         # Reduce LR by half
-        patience=2,         # Wait 2 epochs before reducing
-        min_lr=1e-6         # Minimum learning rate
+        num_warmup_steps=warmup_steps,
+        num_training_steps=total_steps
     )
-    
     # Debug batch processing
     if args.debug:
         print("\n=== Testing batch processing ===")
