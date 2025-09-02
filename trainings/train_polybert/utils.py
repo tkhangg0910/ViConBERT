@@ -243,7 +243,7 @@ def train_model_cc(
                 candidate_glosses = batch["candidate_glosses"]
                 gold_indices = batch["gold_indices"].to(device)
                 sense_weights = batch["sense_weights"]
-                pos_tags = batch["pos_tags"]  
+                pos_tags = batch["pos"]  
 
                 # Same processing as training
                 all_glosses = []
