@@ -89,7 +89,7 @@ class PolyBERT(nn.Module):
         )
    
 
-    def forward_context(self, input_ids, attention_mask, target_mask=None, target_span=None):
+    def forward_context(self, input_ids, attention_mask, target_span):
         """
         Forward pass for context encoding
         Args:
@@ -137,7 +137,6 @@ class PolyBERT(nn.Module):
 
     def _encode_context_attentive(self, text, target_span):
         """Attentive context encoding"""
-        print(target_span)
         outputs = self.context_encoder(**text)
         start_pos = target_span[:, 0]
         end_pos = target_span[:, 1]
