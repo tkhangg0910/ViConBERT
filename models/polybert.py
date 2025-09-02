@@ -14,7 +14,7 @@ from .base_model import MLPBlock
 class PolyBERT(nn.Module):
     def __init__(self, 
                 tokenizer,
-                model_name: str = "vinai/phobert-base",
+                bert_model_name: str = "vinai/phobert-base",
                 cache_dir: str = "embeddings/base_models",
                 hidden_dim: int = 512,
                 out_dim: int = 768,
@@ -29,7 +29,7 @@ class PolyBERT(nn.Module):
         super().__init__()
         
         self.config = {
-            "base_model": model_name,
+            "base_model": bert_model_name,
             "base_model_cache_dir": cache_dir,
             "hidden_dim": hidden_dim,
             "out_dim": out_dim,
@@ -51,14 +51,14 @@ class PolyBERT(nn.Module):
         self.use_projection = use_projection
 
         # Context encoder
-        self.context_encoder = AutoModel.from_pretrained(model_name, cache_dir=cache_dir)
+        self.context_encoder = AutoModel.from_pretrained(bert_model_name, cache_dir=cache_dir)
         self.context_encoder.resize_token_embeddings(len(tokenizer))
         
         # Gloss encoder
         if tie_encoders:
             self.gloss_encoder = self.context_encoder
         else:
-            self.gloss_encoder = AutoModel.from_pretrained(model_name, cache_dir=cache_dir)
+            self.gloss_encoder = AutoModel.from_pretrained(bert_model_name, cache_dir=cache_dir)
             self.gloss_encoder.resize_token_embeddings(len(tokenizer))
 
         # Projection layers (optional)
@@ -200,7 +200,7 @@ class PolyBERT(nn.Module):
 
         model = cls(
             tokenizer=tokenizer,
-            model_name=config["base_model"],
+            bert_model_name=config["base_model"],
             cache_dir=config["base_model_cache_dir"],
             hidden_dim=config["hidden_dim"],
             out_dim=config["out_dim"],
