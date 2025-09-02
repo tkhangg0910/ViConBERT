@@ -97,8 +97,7 @@ if __name__=="__main__":
     else:
         model = PolyBERT(
             bert_model_name=config["base_model"],
-            polym=config["model"]["polym"],
-            num_heads=config["model"]["num_heads"],
+            num_head=config["model"]["num_heads"],
             tokenizer=tokenizer,
         ).to(device)
     
