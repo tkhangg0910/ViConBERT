@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from transformers import AutoModel, AutoTokenizer
-
+from .base_model import MLPBlock
 
 class PolyBERT(nn.Module):
     def __init__(self, bert_model_name="vinai/phobert-base", polym=64, num_heads=8, tokenizer=None):
@@ -19,7 +19,21 @@ class PolyBERT(nn.Module):
 
         hidden_size = self.context_encoder.config.hidden_size
         self.attn = nn.MultiheadAttention(embed_dim=hidden_size, num_heads=num_heads, batch_first=True)
-
+        self.context_projection = MLPBlock(
+            self.context_encoder.config.hidden_size,
+            512,
+            768,
+            dropout=0.3,
+            num_layers=1
+        )
+        # self.gloss_projection = MLPBlock(
+        #     self.gloss_encoder.config.hidden_size,
+        #     512,
+        #     768,
+        #     dropout=0.3,
+        #     num_layers=1
+        # )
+        
     def forward_context(self, input_ids, attention_mask, target_span):
         """
         input_ids: Tensor [B, L]
@@ -52,8 +66,8 @@ class PolyBERT(nn.Module):
 
         # perform multi-head attention (batch_first=True)
         fused, _ = self.attn(Q, K, V) 
-
-        return fused
+        
+        return self.context_projection(fused)
     def contrastive_classification_loss(self, logits, label):
         """
         rF_wt: [B, polym, H]  - context embeddings
@@ -66,11 +80,13 @@ class PolyBERT(nn.Module):
         return loss, logits
 
     def forward_gloss(self, input_ids, attention_mask):
-        outputs = self.gloss_encoder(input_ids=input_ids, attention_mask=attention_mask)
+        with torch.enable_grad():
+            
+            outputs = self.gloss_encoder(input_ids=input_ids, attention_mask=attention_mask)
         EG = outputs.last_hidden_state  # [B, L, H]
         rg = EG[:, 0, :]  # CLS token [B, H]
-
-        rFg = rg.unsqueeze(1)
+        cls_vec = F.normalize(rg, p=2, dim=-1)
+        rFg = cls_vec.unsqueeze(1)
         return rFg
 
     def batch_contrastive_loss_with_id(self, rF_wt, rF_g, word_id, temperature=0.05):
