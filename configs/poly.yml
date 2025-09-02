@@ -14,7 +14,7 @@ data:
 
 model:  
   polym: 1
-  num_heads: 8
+  num_heads: 4
 
 training:
   ckpt_interval: 20
