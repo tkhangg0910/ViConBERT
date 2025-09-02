@@ -137,6 +137,7 @@ class PolyBERT(nn.Module):
 
     def _encode_context_attentive(self, text, target_span):
         """Attentive context encoding"""
+        print(target_span)
         outputs = self.context_encoder(**text)
         start_pos = target_span[:, 0]
         end_pos = target_span[:, 1]
