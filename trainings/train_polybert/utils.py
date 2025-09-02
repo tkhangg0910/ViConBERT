@@ -5,6 +5,9 @@ import numpy as np
 from torch.amp import GradScaler, autocast
 from datetime import datetime
 import torch.nn.functional as F
+from sklearn.metrics import f1_score, classification_report
+from collections import defaultdict
+
 
 def log_gpu_memory(tag=""):
     if torch.cuda.is_available():
@@ -227,7 +230,10 @@ def train_model_cc(
 
         with torch.no_grad():
             val_pbar = tqdm(valid_data_loader, desc=f"Validating {epoch+1}/{num_epochs}", ascii=True)
-            
+            all_preds = []
+            all_labels = []
+            all_pos = []
+
             for batch in val_pbar:
                 context_inputs = {
                     "input_ids": batch["context_input_ids"].to(device),
@@ -237,6 +243,7 @@ def train_model_cc(
                 candidate_glosses = batch["candidate_glosses"]
                 gold_indices = batch["gold_indices"].to(device)
                 sense_weights = batch["sense_weights"]
+                pos_tags = batch["pos_tags"]  
 
                 # Same processing as training
                 all_glosses = []
@@ -304,13 +311,38 @@ def train_model_cc(
                 valid_loss += loss.item()
                 
                 preds = similarities_batch.argmax(dim=1)
+                all_preds.extend(preds.cpu().tolist())
+                all_labels.extend(gold_indices.cpu().tolist())
+                all_pos.extend(pos_tags)
+
                 valid_correct += (preds == gold_indices).sum().item()
                 valid_total += len(gold_indices)
+                valid_loss += loss.item()
 
         valid_accuracy = valid_correct / max(valid_total, 1)
         avg_valid_loss = valid_loss / len(valid_data_loader)
+        pos2gold = defaultdict(list)
+        pos2pred = defaultdict(list)
+
+        for g, p, pos in zip(all_labels, all_preds, all_pos):
+            pos2gold[pos].append(g)
+            pos2pred[pos].append(p)
+
+        pos_f1_scores = {}
+        for pos, gold_list in pos2gold.items():
+            pred_list = pos2pred[pos]
+            if len(set(gold_list)) > 1:  # tránh trường hợp chỉ có 1 class
+                f1 = f1_score(gold_list, pred_list, average="macro")
+            else:
+                f1 = 1.0 if all(g == p for g, p in zip(gold_list, pred_list)) else 0.0
+            pos_f1_scores[pos] = f1
+
         history["valid_loss"].append(avg_valid_loss)
-        history["valid_metrics"].append({"accuracy": valid_accuracy})
+        history["valid_metrics"].append({
+            "accuracy": valid_accuracy,
+            "f1_by_pos": pos_f1_scores
+        })
+
 
         epoch_time = (datetime.now() - epoch_start).total_seconds()
         history["epoch_times"].append(epoch_time)
@@ -319,6 +351,8 @@ def train_model_cc(
         print("=" * 80)
         print(f"[Epoch {epoch+1}] Train Loss: {avg_train_loss:.4f} | Train Acc: {train_accuracy:.4f} | Time: {epoch_time:.1f}s")
         print(f"[Epoch {epoch+1}] Valid Loss: {avg_valid_loss:.4f} | Valid Acc: {valid_accuracy:.4f}")
+        for pos, f1 in pos_f1_scores.items():
+            print(f"   POS {pos}: F1 = {f1:.4f}")
         current_lr = scheduler.get_last_lr()[0] if scheduler else optimizer.param_groups[0]['lr']
         print(f"[Epoch {epoch+1}] Learning Rate: {current_lr:.2e}")
         print("=" * 80)
