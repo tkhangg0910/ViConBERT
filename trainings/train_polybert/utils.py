@@ -99,7 +99,7 @@ def train_model_cc(
                 "input_ids": batch["context_input_ids"].to(device),
                 "attention_mask": batch["context_attn_mask"].to(device)
             }
-            target_spans = batch["target_span"].to(device)
+            target_spans = batch["target_spans"].to(device)
             candidate_glosses = batch["candidate_glosses"]
             gold_indices = batch["gold_indices"].to(device)
             sense_weights = batch["sense_weights"]
