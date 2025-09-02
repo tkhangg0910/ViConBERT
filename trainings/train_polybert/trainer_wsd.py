@@ -105,7 +105,7 @@ if __name__=="__main__":
     steps_per_epoch = len(train_dataloader)
     print(f"Steps per epoch: {steps_per_epoch}")
     print(f"Total steps: {total_steps}")
-    
+    warmup_steps = int(0.1 * total_steps)
     optim = create_optimizer(model, config)
     
     # FIXED: Use ReduceLROnPlateau scheduler as requested
