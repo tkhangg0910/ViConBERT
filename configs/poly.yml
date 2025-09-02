@@ -3,7 +3,7 @@ project:
   language: "vi"
   seed: 42
 
-base_model: "vinai/phobert-base"
+base_model: "/home/islabworker2/tan_khang/SynoViSense/checkpoints/phobert-base-poly/run_20250902_042128/best_model"
 base_model_cache_dir: "embeddings/vinai/phobert-base"
 output_dir: "./checkpoints/phobert-base-poly"
 
