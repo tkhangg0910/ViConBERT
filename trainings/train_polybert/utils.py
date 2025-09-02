@@ -99,7 +99,7 @@ def train_model_cc(
                 "input_ids": batch["context_input_ids"].to(device),
                 "attention_mask": batch["context_attn_mask"].to(device)
             }
-            target_masks = batch["target_masks"].to(device)
+            target_spans = batch["target_span"].to(device)
             candidate_glosses = batch["candidate_glosses"]
             gold_indices = batch["gold_indices"].to(device)
             sense_weights = batch["sense_weights"]
@@ -133,7 +133,7 @@ def train_model_cc(
                 rF_wt = model.forward_context(
                     context_inputs["input_ids"],
                     context_inputs["attention_mask"], 
-                    target_masks
+                    target_spans
                 )  # [B, hidden_dim]
 
                 # Get gloss embeddings
@@ -233,7 +233,7 @@ def train_model_cc(
                     "input_ids": batch["context_input_ids"].to(device),
                     "attention_mask": batch["context_attn_mask"].to(device)
                 }
-                target_masks = batch["target_masks"].to(device)
+                target_spans = batch["target_spans"].to(device)
                 candidate_glosses = batch["candidate_glosses"]
                 gold_indices = batch["gold_indices"].to(device)
                 sense_weights = batch["sense_weights"]
@@ -265,7 +265,7 @@ def train_model_cc(
                 rF_wt = model.forward_context(
                     context_inputs["input_ids"],
                     context_inputs["attention_mask"], 
-                    target_masks
+                    target_spans
                 )
 
                 rF_g = model.forward_gloss(
