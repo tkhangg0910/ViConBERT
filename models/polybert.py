@@ -99,11 +99,10 @@ class PolyBERT(nn.Module):
             target_span: [B, 2] - start/end positions for span-based methods
         """
         with torch.no_grad() if self.freeze_context else torch.enable_grad():
-            if self.encoder_type == "attentive" and target_span is not None:
-                context_emb = self._encode_context_attentive(
-                    {"input_ids": input_ids, "attention_mask": attention_mask}, 
-                    target_span
-                )
+            context_emb = self._encode_context_attentive(
+                {"input_ids": input_ids, "attention_mask": attention_mask}, 
+                target_span
+            )
         # Apply projection if enabled
         if self.use_projection:
             context_emb = self.context_projection(context_emb.squeeze(0))
