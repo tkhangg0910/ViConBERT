@@ -10,8 +10,8 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 # from sentence_transformers import SentenceTransformer
 import pandas as pd
 
-from data.processed.stage1_pseudo_sents.pseudo_sent_datasets import PseudoSents_Dataset, PseudoSentsFlatDataset, SynsetBatchSampler,WSD_ViConDataset
-from models.base_model import ViSynoSenseEmbedding
+from data.processed.viconbert.pseudo_sent_datasets import PseudoSents_Dataset, PseudoSentsFlatDataset, SynsetBatchSampler,WSD_ViConDataset
+from models.viconbert import ViConBERT
 from utils.load_config import load_config
 from utils.optimizer import create__diff_optimizer
 from utils.loss_fn import InfonceDistillLoss
@@ -124,9 +124,9 @@ if __name__=="__main__":
         )
 
     if bool(args.load_ckpts):
-        model = ViSynoSenseEmbedding.from_pretrained(config["base_model"]).to(device)
+        model = ViConBERT.from_pretrained(config["base_model"]).to(device)
     else:
-        model = ViSynoSenseEmbedding(
+        model = ViConBERT(
             tokenizer,
             model_name=config["base_model"],
             cache_dir=config["base_model_cache_dir"],

@@ -8,7 +8,7 @@ import torch.nn as nn
 from transformers import AutoModel
 from typing import List, Tuple
 from typing import Callable
-from .base_model import MLPBlock
+from .viconbert import MLPBlock
     
 
 class PolyBERT(nn.Module):

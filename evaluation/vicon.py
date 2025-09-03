@@ -7,7 +7,7 @@ import pandas as pd
 import torch.nn.functional as F
 from transformers import PhobertTokenizerFast, XLMRobertaTokenizerFast
 from utils.span_extractor import SpanExtractor
-from models.base_model import ViSynoSenseEmbedding
+from models.viconbert import ViConBERT
 from tqdm import tqdm
 from sklearn.metrics import average_precision_score
 
@@ -174,7 +174,7 @@ if __name__ == "__main__":
         tokenizer = XLMRobertaTokenizerFast.from_pretrained(args.model_path)
     if tokenizer.pad_token is None:
         tokenizer.add_special_tokens({'pad_token': '[PAD]'})
-    model = ViSynoSenseEmbedding.from_pretrained(args.model_path, tokenizer=tokenizer).to(device)
+    model = ViConBERT.from_pretrained(args.model_path, tokenizer=tokenizer).to(device)
     model.eval()
 
     evaluate_model_vicon_by_pos(model, tokenizer, all_data, device, use_pseudo_sent=args.pseudo_sent)

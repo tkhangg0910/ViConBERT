@@ -4,9 +4,9 @@ import os
 import torch
 from transformers import PreTrainedTokenizerFast, PhobertTokenizerFast, XLMRobertaTokenizerFast, DebertaV2TokenizerFast
 from torch.utils.data import DataLoader
-from data.processed.stage1_pseudo_sents.pseudo_sent_datasets import PseudoSents_Dataset, PseudoSentsFlatDataset
+from data.processed.viconbert.pseudo_sent_datasets import PseudoSents_Dataset, PseudoSentsFlatDataset
 from utils.load_config import load_config
-from models.base_model import ViSynoSenseEmbedding
+from models.viconbert import ViConBERT
 import torch
 from tqdm import tqdm
 from transformers.utils import is_torch_available
@@ -144,7 +144,7 @@ if __name__=="__main__":
         pin_memory=True
     )
     
-    model = ViSynoSenseEmbedding.from_pretrained(args.model_path).to(device)
+    model = ViConBERT.from_pretrained(args.model_path).to(device)
     loss_fn = InfonceDistillLoss(aux_weight=1)
 
     metric_k_vals=(1, 5, 10)

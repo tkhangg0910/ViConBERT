@@ -9,7 +9,7 @@ import faiss
 import argparse
 from utils.span_extractor import SpanExtractor
 from utils.process_data import text_normalize
-from models.base_model import ViSynoSenseEmbedding
+from models.viconbert import ViConBERT
 from transformers import PhobertTokenizerFast
 
 def batch_text_normalize(texts, tokenizer='underthesea'):
@@ -78,7 +78,7 @@ if __name__ == "__main__":
     with open(json_file_path, 'r', encoding='utf-8') as jf:
         sentence_dict = json.load(jf)
     tokenizer = PhobertTokenizerFast.from_pretrained(model_path)
-    model = ViSynoSenseEmbedding.from_pretrained(model_path,tokenizer).to(device)
+    model = ViConBERT.from_pretrained(model_path,tokenizer).to(device)
     span_ex =SpanExtractor(tokenizer)
     # pipeline=Pipeline(tokenizer,span_ex, model )
     pipeline= BatchPipeline(tokenizer,span_ex, model )
