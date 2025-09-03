@@ -10,7 +10,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 # from sentence_transformers import SentenceTransformer
 import pandas as pd
 
-from data.processed.viconbert.pseudo_sent_datasets import PseudoSents_Dataset, PseudoSentsFlatDataset, SynsetBatchSampler,WSD_ViConDataset
+from data.processed.viconbert.vicon_datasets import ViConDataset, SynsetBatchSampler,WSD_ViConDataset
 from models.viconbert import ViConBERT
 from utils.load_config import load_config
 from utils.optimizer import create__diff_optimizer
@@ -94,12 +94,12 @@ if __name__=="__main__":
             pin_memory=True
         )
     elif args.dataset_mode == "flat":
-        train_set = PseudoSentsFlatDataset(config["data"]["emd_path"],
+        train_set = ViConDataset(config["data"]["emd_path"],
                                         # gloss_enc,
                                         train_sample, tokenizer 
                                         )
         
-        valid_set = PseudoSentsFlatDataset(config["data"]["emd_path"],
+        valid_set = ViConDataset(config["data"]["emd_path"],
                                         # gloss_enc,
                                         valid_sample, tokenizer)
         batch_size = config["training"]["batch_size"]

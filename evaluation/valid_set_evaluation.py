@@ -4,7 +4,7 @@ import os
 import torch
 from transformers import PreTrainedTokenizerFast, PhobertTokenizerFast, XLMRobertaTokenizerFast, DebertaV2TokenizerFast
 from torch.utils.data import DataLoader
-from data.processed.viconbert.pseudo_sent_datasets import PseudoSents_Dataset, PseudoSentsFlatDataset
+from data.processed.viconbert.vicon_datasets import ViConDataset
 from utils.load_config import load_config
 from models.viconbert import ViConBERT
 import torch
@@ -131,7 +131,7 @@ if __name__=="__main__":
     if tokenizer.pad_token is None:
         tokenizer.add_special_tokens({'pad_token': '[PAD]'})
         
-    valid_set = PseudoSentsFlatDataset(args.emd_path,
+    valid_set = ViConDataset(args.emd_path,
                                 # gloss_enc,
                                 valid_sample, tokenizer)
     
