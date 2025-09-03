@@ -2,7 +2,7 @@ import os
 import json
 import torch
 from transformers import PreTrainedTokenizerFast
-from models.base_model import SynoViSenseEmbeddingV2, SynoViSenseEmbeddingV1
+from models.viconbert import SynoViSenseEmbeddingV2, SynoViSenseEmbeddingV1
 from utils.load_config import load_config
 def convert_checkpoint(base_model,old_checkpoint_path, output_dir, tokenizer_name="vinai/phobert-base"):
     

@@ -5,7 +5,7 @@ import torch
 from transformers import PhobertTokenizerFast, XLMRobertaTokenizerFast
 from torch.utils.data import DataLoader
 from data.processed.polybert_exp.dataset import PolyBERTtDatasetV3
-from models.base_model import ViSynoSenseEmbedding
+from models.viconbert import ViConBERT
 from models.polybert import PolyBERT
 from models.bem import BiEncoderModel
 from utils.load_config import load_config
@@ -558,7 +558,7 @@ if __name__ == "__main__":
     
     # Load context model
     if args.model_type == 'vicon':
-        context_model = ViSynoSenseEmbedding.from_pretrained(args.model_path).to(device)
+        context_model = ViConBERT.from_pretrained(args.model_path).to(device)
     elif args.model_type == 'poly':
         context_model = PolyBERT.from_pretrained(args.model_path).to(device)
     elif args.model_type == 'bem':

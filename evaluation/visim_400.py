@@ -4,7 +4,7 @@ import os
 import torch
 from transformers import PhobertTokenizerFast, XLMRobertaTokenizerFast
 from utils.load_config import load_config
-from models.base_model import ViSynoSenseEmbedding
+from models.viconbert import ViConBERT
 import torch
 from tqdm import tqdm
 from transformers.utils import is_torch_available
@@ -128,7 +128,7 @@ if __name__=="__main__":
         tokenizer.add_special_tokens({'pad_token': '[PAD]'})
         
     
-    model = ViSynoSenseEmbedding.from_pretrained(args.model_path).to(device)
+    model = ViConBERT.from_pretrained(args.model_path).to(device)
 
 
     valid_metrics = evaluate_model(model, tokenizer,benchmark, device, use_pseudo_sent=args.pseudo_sent)
