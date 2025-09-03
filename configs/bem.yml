@@ -3,7 +3,7 @@ project:
   language: "vi"
   seed: 42
 
-base_model: "vinai/phobert-base"
+base_model: "/home/islabworker2/tan_khang/SynoViSense/checkpoints/phobert-base-bem/run_20250820_083158/best_model"
 base_model_cache_dir: "embeddings/vinai/phobert-base"
 output_dir: "./checkpoints/phobert-base-bem"
 
@@ -21,7 +21,7 @@ training:
   save_steps: 1000
   optimizer:
     name: "adamw"
-    lr: 2e-4 
+    lr: 1e-4 
     weight_decay: 0.01
     eps: 1e-6
     betas: [0.9, 0.999]

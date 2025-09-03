@@ -8,22 +8,24 @@ from transformers.utils import is_torch_available
 from transformers import PreTrainedTokenizerFast, PhobertTokenizerFast, XLMRobertaTokenizerFast, DebertaV2TokenizerFast,get_linear_schedule_with_warmup
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import pandas as pd
-from data.processed.bem_exp.dataset import BEMDataset  # Updated dataset with mask extractor
-from models.bem import BiEncoderModel
+
+# Updated imports - use the fixed dataset and training utils
+from data.processed.polybert_exp.dataset import PolyBERTtDataseV2  # Use the fixed dataset
+from models.polybert import PolyBERT
 from utils.load_config import load_config
 from utils.optimizer import create_optimizer
-from trainings.train_bem.utils import train_model
+from trainings.train_polybert.utils import train_model_cc  # Use the fixed training function
 
 if is_torch_available() and torch.multiprocessing.get_start_method() == "fork":
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 def setup_args():
     parser = argparse.ArgumentParser(description="Train a model")
-    parser.add_argument("--load_ckpts", action='store_true', help="Model type")
+    parser.add_argument("--load_ckpts", action='store_true', help="Load from checkpoint")
     parser.add_argument('--grad_clip', action='store_true', help='Gradient clipping')
-    parser.add_argument('--grad_accum_steps',  type=int, default=1, help='Gradient accumulation steps')
-    parser.add_argument('--train_gloss_size',  type=int, default=5, help='Number of glosses for training')
-    parser.add_argument('--train_mode',  type=str, default="bc", help='Training mode')
+    parser.add_argument('--grad_accum_steps', type=int, default=1, help='Gradient accumulation steps')
+    parser.add_argument('--train_gloss_size', type=int, default=5, help='Number of glosses for training')
+    parser.add_argument('--train_mode', type=str, default="cc", help='Training mode (cc for contrastive classification)')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     
     args = parser.parse_args()
@@ -38,9 +40,10 @@ if __name__=="__main__":
     print(f"Device: {device}")
     print(f"grad_accum_steps: {args.grad_accum_steps}")
     print(f"train_gloss_size: {args.train_gloss_size}")
+    print(f"train_mode: {args.train_mode}")
     print(f"Debug mode: {args.debug}")
     
-    config = load_config(f"configs/bem.yml")
+    config = load_config(f"configs/poly.yml")
     print(f"base_model: {config['base_model']}")
     
     with open(config["data"]["train_path"], "r", encoding="utf-8") as f:
@@ -48,7 +51,7 @@ if __name__=="__main__":
     with open(config["data"]["valid_path"], "r", encoding="utf-8") as f:
         valid_sample = json.load(f)
 
-    # Initialize tokenizer
+    # Initialize tokenizer - SAME AS BEM
     if config["base_model_cache_dir"].startswith("embeddings/vinai"):
         print("using PhobertTokenizerFast")
         tokenizer = PhobertTokenizerFast.from_pretrained(config["base_model"])
@@ -64,11 +67,11 @@ if __name__=="__main__":
     
     batch_size = config["training"]['batch_size']
     
-    # Initialize datasets with FIXED parameters
+    # Initialize datasets - SAME STRATEGY AS BEM
     print("Initializing training dataset...")
-    train_dataset = BEMDataset(train_sample, tokenizer, train_gloss_size=args.train_gloss_size)
+    train_dataset = PolyBERTtDataseV2(train_sample, tokenizer, train_gloss_size=args.train_gloss_size)
     print("Initializing validation dataset...")
-    valid_dataset = BEMDataset(valid_sample, tokenizer, val_mode=True)
+    valid_dataset = PolyBERTtDataseV2(valid_sample, tokenizer, val_mode=True)
     
     train_dataloader = DataLoader(
         train_dataset,
@@ -90,10 +93,11 @@ if __name__=="__main__":
     
     # Initialize model
     if bool(args.load_ckpts):
-        model = BiEncoderModel.from_pretrained(config["base_model"]).to(device)
+        model = PolyBERT.from_pretrained(config["base_model"]).to(device)
     else:
-        model = BiEncoderModel(
-            encoder_name=config["base_model"],
+        model = PolyBERT(
+            bert_model_name=config["base_model"],
+            num_head=config["model"]["num_heads"],
             tokenizer=tokenizer,
         ).to(device)
     
@@ -101,23 +105,15 @@ if __name__=="__main__":
     steps_per_epoch = len(train_dataloader)
     print(f"Steps per epoch: {steps_per_epoch}")
     print(f"Total steps: {total_steps}")
-    warmup_steps = int(0.2 * total_steps)
-    
+    warmup_steps = int(0.1 * total_steps)
     optim = create_optimizer(model, config)
     
-    # # FIXED: Use warmup + linear schedule như code gốc
+    # FIXED: Use ReduceLROnPlateau scheduler as requested
     scheduler = get_linear_schedule_with_warmup(
         optimizer=optim,
         num_warmup_steps=warmup_steps,
         num_training_steps=total_steps
     )
-    # scheduler = ReduceLROnPlateau(
-    #     optimizer = optim,
-    #     mode='min',         
-    #     factor=0.5,         
-    #     patience=2,         
-    #     min_lr=1e-6          
-    # )
     # Debug batch processing
     if args.debug:
         print("\n=== Testing batch processing ===")
@@ -125,26 +121,30 @@ if __name__=="__main__":
         print(f"Batch keys: {test_batch.keys()}")
         print(f"context_input_ids shape: {test_batch['context_input_ids'].shape}")
         print(f"context_attn_mask shape: {test_batch['context_attn_mask'].shape}")
-        print(f"target_masks shape: {test_batch['target_masks'].shape}")
+        print(f"target_spans shape: {test_batch['target_spans'].shape}")
         print(f"Number of candidate_glosses: {len(test_batch['candidate_glosses'])}")
         print(f"gold_indices: {test_batch['gold_indices']}")
         print(f"sense_weights length: {len(test_batch['sense_weights'])}")
 
-
     print("\n=== Starting Training ===")
-    history, trained_model = train_model(
-        num_epochs=config["training"]["epochs"],
-        train_data_loader=train_dataloader,
-        valid_data_loader=valid_dataloader,
-        optimizer=optim,
-        model=model,
-        device=device,
-        checkpoint_dir=config["output_dir"],
-        scheduler=scheduler,
-        early_stopping_patience=config["training"]["early_stopping_patience"],
-        ckpt_interval=config["training"]["ckpt_interval"],
-        grad_clip=args.grad_clip,
-        grad_accum_steps=args.grad_accum_steps
-    )
+    
+    # Use the cc (cross entropy) training function
+    if args.train_mode == "cc":
+        history, trained_model = train_model_cc(
+            num_epochs=config["training"]["epochs"],
+            train_data_loader=train_dataloader,
+            valid_data_loader=valid_dataloader,
+            optimizer=optim,
+            model=model,
+            device=device,
+            checkpoint_dir=config["output_dir"],
+            scheduler=scheduler,
+            early_stopping_patience=config["training"]["early_stopping_patience"],
+            ckpt_interval=config["training"]["ckpt_interval"],
+            grad_clip=args.grad_clip,
+            grad_accum_steps=args.grad_accum_steps
+        )
+    else:
+        raise ValueError(f"Unsupported training mode: {args.train_mode}")
     
     print("Training completed!")

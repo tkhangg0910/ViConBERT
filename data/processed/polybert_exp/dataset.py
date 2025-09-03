@@ -10,183 +10,42 @@ from torch.utils.data import Sampler
 from collections import defaultdict
 import math
 
-class PolyBERTtDataset(Dataset):
-    def __init__(self, samples, tokenizer, val_mode = False):
-        self.tokenizer = tokenizer
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.add_special_tokens({'pad_token': '[PAD]'})
-        self.span_extractor = SpanExtractor(tokenizer)
-        self.val_mode =val_mode
-        if self.val_mode:
-            self.targetword2glosses = defaultdict(list)
-        word_set = set()
-        if val_mode == False:
-            gloss_set = set()
-        self.all_samples = []
-        for sample in samples:
-            sent = text_normalize(sample["sentence"])
-            word_id = sample["word_id"]
-            target = sample["target_word"]
-            sid = sample["synset_id"]
-            gloss=sample["gloss"]
-            gloss_id=sample["gloss_id"]
-            self.all_samples.append({
-                "sentence": sent,
-                "target_word": target,
-                "synset_id": sid,
-                "gloss":gloss,
-                "word_id":int(word_id),
-                "gloss_id":gloss_id
-            })
-            
-            if self.val_mode:
-                if gloss not in self.targetword2glosses[target]:
-                    self.targetword2glosses[target].append(gloss)
-            if val_mode == False:
-              gloss_set.add(gloss)
-            word_set.add(int(word_id))
-            
-        sorted_wids = sorted(word_set)
-        self.global_word_to_label = {wid: i for i, wid in enumerate(sorted_wids)}
-        self.span_indices = []
-        for s in tqdm(self.all_samples, desc="Computing spans",ascii=True):
-            idxs = self.span_extractor.get_span_indices(
-                s["sentence"], s["target_word"]
-            )
-            # if idxs:
-            #     pred = self.span_extractor.get_span_text_from_indices(s["sentence"],idxs)
-            #     if s["target_word"].lower().strip()!= pred.lower().strip():
-            #         print(f"sentence: {s['sentence']}")
-            #         print(f"target: {s['target_word']}")
-            #         print(f"pred: {pred}")
-            self.span_indices.append(idxs or (0,0))
-        if val_mode == False:
-            self.gloss_list = list(gloss_set)
-            self.g_tokes = self.tokenizer(
-                self.gloss_list,
-                return_tensors="pt",
-                padding=True,
-                truncation=True,
-                max_length=256,
-                return_attention_mask=True,
-                return_offsets_mapping=True
-            )
-            self.gloss_input_ids= self.g_tokes["input_ids"]
-            self.gloss_attn_mask=self.g_tokes["attention_mask"]
-    def __len__(self):
-        return len(self.all_samples)
-
-    def __getitem__(self, idx):
-        s = self.all_samples[idx]
-        sid = s["synset_id"]
-        wid = s["word_id"]
-        gid = s["gloss_id"]
-        label = self.global_word_to_label[int(wid)]
-        item = {
-            "sentence": s["sentence"],
-            "target_span": self.span_indices[idx],
-            "word_id": label,
-            "target_word": s["target_word"],
-            "gloss" : s["gloss"],
-            "synset_ids":sid,
-            "gloss_id":gid
-        }
-        if self.val_mode:
-            # candidate glosses = all glosses observed for this target_word
-            item["candidate_glosses"] = list(self.targetword2glosses[s["target_word"]])
-        return item
-
-    def collate_fn(self, batch):
-        if self.val_mode:
-            # batch: list of items (each item has candidate_glosses list)
-            sentences = [b["sentence"] for b in batch]          # B
-            spans     = [b["target_span"] for b in batch]       # B x (2)
-            synset_ids = torch.tensor([b["synset_ids"] for b in batch], dtype=torch.long)
-            word_id = torch.tensor([(b["word_id"]) for b in batch], dtype=torch.long)
-            target_words = [b["target_word"] for b in batch]
-            gold_glosses = [b["gloss"] for b in batch]
-            gloss_id = torch.tensor([(b["gloss_id"]) for b in batch], dtype=torch.long)
-            # tokenise contexts (B)
-            c_toks = self.tokenizer(
-                sentences,
-                return_tensors="pt",
-                padding=True,
-                truncation=True,
-                max_length=256,
-                return_attention_mask=True
-            )
-
-            candidate_glosses = [b["candidate_glosses"] for b in batch]
-        
-            return {
-                "context_input_ids": c_toks["input_ids"],           # [B, Lc]
-                "context_attn_mask": c_toks["attention_mask"],      # [B, Lc]
-                "target_spans": torch.tensor(spans, dtype=torch.long),  # [B,2]
-                "synset_ids": synset_ids,
-                "word_id": word_id,
-                "target_words": target_words,
-                "gold_glosses": gold_glosses,                
-                "candidate_glosses": candidate_glosses,
-                "gloss_id":gloss_id 
-            }
-
-        sentences = [b["sentence"] for b in batch]
-        target_words = [b["target_word"] for b in batch]
-        spans     = [b["target_span"] for b in batch]
-        labels    = torch.tensor([b["synset_ids"] for b in batch], dtype=torch.long)
-        word_id = torch.tensor([b["word_id"] for b in batch], dtype=torch.long)
-        glosses = [b["gloss"] for b in batch]
-        gloss_id = torch.tensor([(b["gloss_id"]) for b in batch], dtype=torch.long)
-        c_toks = self.tokenizer(
-            sentences,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=256,
-            return_attention_mask=True,
-            return_offsets_mapping=True
-        )
-        # g_tokes = self.tokenizer(
-        #     glosses,
-        #     return_tensors="pt",
-        #     padding=True,
-        #     truncation=True,
-        #     max_length=256,
-        #     return_attention_mask=True,
-        #     return_offsets_mapping=True
-        # )
-        gold_glosses_idx = torch.tensor([
-            self.gloss_list.index(g) for g in glosses
-        ], dtype=torch.long)
-        return {
-            "context_input_ids": c_toks["input_ids"],
-            "context_attn_mask": c_toks["attention_mask"],
-            "target_spans": torch.tensor(spans, dtype=torch.long) if spans else None,
-            "synset_ids": labels,
-            "word_id":word_id,
-            "gold_glosses_idx": gold_glosses_idx,
-            "target_words":target_words,
-            # "gloss_input_ids": self.g_tokes["input_ids"],
-            # "gloss_attn_mask": self.g_tokes["attention_mask"],
-            "gloss_id":gloss_id
-        }
-
+def extract_pos_from_supersense(supersense):
+    """Extract POS tag from supersense"""
+    if supersense.startswith('verb'):
+        return 'verb'
+    elif supersense.startswith('noun'):
+        return 'noun' 
+    elif supersense.startswith('adj'):
+        return 'adj'
+    elif supersense.startswith('adv'):
+        return 'adv'
+    else:
+        # Handle other cases
+        if '.' in supersense:
+            return supersense.split('.')[0]
+        return supersense
 class PolyBERTtDataseV2(Dataset):
-    def __init__(self, samples, tokenizer, train_gloss_size=256, val_mode=False):
+    def __init__(self, samples, tokenizer, train_gloss_size=5, val_mode=False):
         self.tokenizer = tokenizer
         if self.tokenizer.pad_token is None:
             self.tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+        
         self.span_extractor = SpanExtractor(tokenizer)
         self.val_mode = val_mode
         self.train_gloss_size = train_gloss_size
 
         self.targetword2glosses = defaultdict(list)
-        self.gloss_to_id = {}  # Map gloss text to ID
+        self.gloss_to_id = {}
+        self.sense_weights = {}  # Add sense weights like BEM
         
         word_set = set()
         self.all_samples = []
         gloss_set = set()
 
+        # Count glosses per target word for weighting
+        gloss_counts = defaultdict(lambda: defaultdict(int))
+        
         for sample in samples:
             sent = text_normalize(sample["sentence"])
             word_id = sample["word_id"]
@@ -201,31 +60,44 @@ class PolyBERTtDataseV2(Dataset):
                 "synset_id": sid,
                 "gloss": gloss,
                 "word_id": int(word_id),
-                "gloss_id": gloss_id
+                "gloss_id": gloss_id,
+                "pos": extract_pos_from_supersense(sample.get("supersense", "unknown"))
             })
 
             if gloss not in self.targetword2glosses[target]:
                 self.targetword2glosses[target].append(gloss)
             
-            # FIXED: Build proper gloss mapping
             self.gloss_to_id[gloss] = gloss_id
+            gloss_counts[target][gloss] += 1
             
             word_set.add(int(word_id))
             gloss_set.add(gloss)
+
+        # Compute sense weights like BEM
+        for target_word in self.targetword2glosses:
+            glosses = self.targetword2glosses[target_word]
+            counts = [gloss_counts[target_word][gloss] for gloss in glosses]
+            total_count = sum(counts)
+            # Inverse frequency weighting
+            weights = [total_count / count for count in counts]
+            self.sense_weights[target_word] = torch.FloatTensor(weights)
 
         sorted_wids = sorted(word_set)
         self.global_word_to_label = {wid: i for i, wid in enumerate(sorted_wids)}
         self.global_gloss_pool = list(gloss_set)
 
-        self.span_indices = []
-        for s in tqdm(self.all_samples, desc="Computing spans", ascii=True):
-            idxs = self.span_extractor.get_span_indices(
-                s["sentence"], s["target_word"]
-            )
-            self.span_indices.append(idxs or (0, 0))
-
-    def __len__(self):
-        return len(self.all_samples)
+        # Pre-compute target spans
+        self.target_spans = []
+        print("Computing target spans...")
+        for s in tqdm(self.all_samples, desc="Computing target spans", ascii=True):
+            try:
+                span_indices = self.span_extractor.get_span_indices(
+                    s["sentence"], s["target_word"]
+                )
+                self.target_spans.append(span_indices or (0, 0))
+            except Exception as e:
+                print(f"Warning: Failed to extract span for '{s['target_word']}' in '{s['sentence']}': {e}")
+                self.target_spans.append((0, 0))
 
     def __getitem__(self, idx):
         s = self.all_samples[idx]
@@ -246,13 +118,14 @@ class PolyBERTtDataseV2(Dataset):
         
         item = {
             "sentence": s["sentence"],
-            "target_span": self.span_indices[idx],
+            "target_span": self.target_spans[idx],
             "word_id": label,
             "target_word": target_word,
             "gold_gloss": gold_gloss,
             "synset_ids": sid,
             "gloss_id": gid,
-            "candidate_glosses": all_candidates
+            "candidate_glosses": all_candidates,
+            "pos": s["pos"]
         }
 
         return item
@@ -265,7 +138,8 @@ class PolyBERTtDataseV2(Dataset):
         word_id = torch.tensor([b["word_id"] for b in batch], dtype=torch.long)
         target_words = [b["target_word"] for b in batch]
         gloss_ids = torch.tensor([b["gloss_id"] for b in batch], dtype=torch.long)
-
+        pos_tags = [b["pos"] for b in batch]
+        
         # Tokenize contexts
         c_toks = self.tokenizer(
             sentences,
@@ -276,18 +150,20 @@ class PolyBERTtDataseV2(Dataset):
             return_attention_mask=True
         )
 
-        # Handle candidate glosses
+        # Handle candidate glosses - SAME STRATEGY AS BEM
         final_candidates = []
-        gold_indices = []  # Store gold position in each candidate list
+        gold_indices = []
+        sense_weights_batch = []
         
         for i, b in enumerate(batch):
             gold_gloss = b["gold_gloss"]
+            target_word = b["target_word"]
             candidates = b["candidate_glosses"].copy()
             
             if not self.val_mode:
-                # Training: sample random glosses but ensure gold is included
+                # Training: SAME sampling strategy as BEM
                 if len(candidates) > self.train_gloss_size:
-                    # Keep gold + random sample of others
+                    # Always keep gold at position 0
                     others = [c for c in candidates if c != gold_gloss]
                     sampled_others = random.sample(others, self.train_gloss_size - 1)
                     candidates = [gold_gloss] + sampled_others
@@ -297,23 +173,37 @@ class PolyBERTtDataseV2(Dataset):
                     available = [g for g in self.global_gloss_pool if g not in candidates]
                     if len(available) >= needed:
                         extra = random.sample(available, needed)
-                        candidates.extend(extra)
-            
-            # Shuffle candidates but remember gold position
-            random.shuffle(candidates)
-            try:
-                gold_idx = candidates.index(gold_gloss)
-            except ValueError:
-                # Fallback: put gold at index 0
-                print("Fallback")
-                candidates = [gold_gloss] + [c for c in candidates if c != gold_gloss]
+                        # Gold still at the beginning
+                        non_gold = [c for c in candidates if c != gold_gloss]
+                        candidates = [gold_gloss] + non_gold + extra
+                
+                # NO shuffle - gold always at position 0
+                gold_idx = 0
+            else:
+                # Validation: no shuffle
+                if gold_gloss != candidates[0]:
+                    candidates.remove(gold_gloss)
+                    candidates.insert(0, gold_gloss)
                 gold_idx = 0
             
             final_candidates.append(candidates)
             gold_indices.append(gold_idx)
-        assert all(0 <= gi < len(final_candidates[i]) for i, gi in enumerate(gold_indices))
-        assert all(final_candidates[i][gold_indices[i]] == gold_glosses[i] 
-                for i in range(len(batch)))
+            
+            # Get sense weights for this target word (same as BEM)
+            if target_word in self.sense_weights:
+                weights = self.sense_weights[target_word]
+                # Align weights with current candidates
+                candidate_weights = []
+                for cand in candidates:
+                    try:
+                        cand_idx = self.targetword2glosses[target_word].index(cand)
+                        candidate_weights.append(weights[cand_idx].item())
+                    except (ValueError, IndexError):
+                        candidate_weights.append(1.0)  # Default weight
+                sense_weights_batch.append(torch.FloatTensor(candidate_weights))
+            else:
+                sense_weights_batch.append(torch.ones(len(candidates)))
+
         return {
             "context_input_ids": c_toks["input_ids"],
             "context_attn_mask": c_toks["attention_mask"],
@@ -324,8 +214,14 @@ class PolyBERTtDataseV2(Dataset):
             "target_words": target_words,
             "candidate_glosses": final_candidates,
             "gloss_ids": gloss_ids,
-            "gold_indices": torch.tensor(gold_indices, dtype=torch.long) 
+            "gold_indices": torch.tensor(gold_indices, dtype=torch.long),
+            "sense_weights": sense_weights_batch,
+            "pos": pos_tags
         }
+
+    def __len__(self):
+        return len(self.all_samples)
+
         
 class PolyBERTtDatasetV3(Dataset):
     def __init__(self, samples, tokenizer, val_mode=False):

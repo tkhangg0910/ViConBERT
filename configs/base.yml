@@ -3,14 +3,14 @@ project:
   language: "vi"
   seed: 42
 
-base_model: "vinai/phobert-base"
-base_model_cache_dir: "embeddings/vinai/phobert-base"
-output_dir: "./checkpoints/phobert-base"
+base_model: "/home/islabworker2/tan_khang/SynoViSense/checkpoints/videberta-cse/run_20250828_163743/best_model"
+base_model_cache_dir: "embeddings/Fsoft-AIC/videberta-base"
+output_dir: "./checkpoints/videberta-cse"
 
 data:
   train_path: "data/processed/stage1_pseudo_sents/train_data_v4.json"
   valid_path: "data/processed/stage1_pseudo_sents/valid_data_v4.json"
-  emd_path: "data/processed/gloss_embeddings.pt"
+  emd_path: "data/processed/sup_SimCSE_gloss_embeddings.pt"
   num_workers: 16
 
 model:  
@@ -26,7 +26,7 @@ model:
 training:
   ckpt_interval: 10
   shuffle: False
-  batch_size: 768
+  batch_size: 448
   epochs: 100
   early_stopping_patience: 5
   save_steps: 1000

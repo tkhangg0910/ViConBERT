@@ -41,6 +41,8 @@ if __name__=="__main__":
     print(f"Device: {device}")
     print(f"grad_accum_steps: {args.grad_accum_steps}")
     config = load_config(f"configs/{args.model_type}.yml")
+    if args.dataset_mode == "wsd":
+        config= load_config(f"configs/wsd_vicon.yml")
     print(f"base_model: {config['base_model']}")
     print(f'Num head: {config["model"]["num_head"]}')
     print(f'Num Layers: {config["model"]["num_layers"]}')
@@ -52,13 +54,13 @@ if __name__=="__main__":
             
     # gloss_enc = SentenceTransformer('dangvantuan/vietnamese-embedding'
                                     # ,cache_folder="embeddings/vietnamese_embedding")
-    if config["base_model"].startswith("vinai"):
+    if config["base_model_cache_dir"].startswith("embeddings/vinai"):
         print("using PhobertTokenizerFast")
         tokenizer = PhobertTokenizerFast.from_pretrained(config["base_model"])
-    elif config["base_model"].startswith("FacebookAI"):
+    elif config["base_model_cache_dir"].startswith("embeddings/FacebookAI"):
         print("using XLMRobertaTokenizerFast")
         tokenizer = XLMRobertaTokenizerFast.from_pretrained(config["base_model"])
-    elif config["base_model"].startswith("Fsoft-AIC"):
+    elif config["base_model_cache_dir"].startswith("embeddings/Fsoft-AIC"):
         print("using DebertaTokenizerFast")
         tokenizer = DebertaV2TokenizerFast.from_pretrained(config["base_model"])
     if tokenizer.pad_token is None:
@@ -88,7 +90,7 @@ if __name__=="__main__":
             batch_size=batch_size,
             shuffle=False,
             collate_fn=valid_set.collate_fn,
-            num_workers=config["data"]["num_workers"],
+            num_workers=0,
             pin_memory=True
         )
     elif args.dataset_mode == "flat":
