@@ -43,7 +43,7 @@ def pipeline(query, target):
   query_vec = model(tokenized_query, span)
   return query_vec
 
-# Honosemous word: "Khoan" example
+# Example: Homonyms: "Khoan" 
 query_1 = "Tôi đang khoan."
 target_1 = "Khoan"
 query_vec_1 = pipeline(query_1, target_1)
