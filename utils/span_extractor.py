@@ -138,7 +138,6 @@ class SpanExtractor:
 
         span_text = text[start_char:end_char]
 
-        # Trích xuất văn bản trực tiếp từ vị trí ký tự
         span_text = text[start_char:end_char]
 
         return span_text

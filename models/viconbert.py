@@ -5,10 +5,38 @@ from transformers import AutoTokenizer
 import torch.nn.functional as F
 import torch
 import torch.nn as nn
-from transformers import AutoModel
 from typing import List, Tuple
 from typing import Callable
+from transformers import PreTrainedModel, AutoModel, AutoConfig
 
+from transformers import PretrainedConfig
+
+class ViConBERTConfig(PretrainedConfig):
+    model_type = "viconbert"
+
+    def __init__(
+        self,
+        base_model="vinai/phobert-base",
+        base_model_cache_dir="embeddings/base_models",
+        hidden_dim=512,
+        out_dim=768,
+        dropout=0.1,
+        num_layers=1,
+        num_head=3,
+        encoder_type="attentive",
+        context_window_size=3,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        self.base_model = base_model
+        self.base_model_cache_dir = base_model_cache_dir
+        self.hidden_dim = hidden_dim
+        self.out_dim = out_dim
+        self.dropout = dropout
+        self.num_layers = num_layers
+        self.num_head = num_head
+        self.encoder_type = encoder_type
+        self.context_window_size = context_window_size
 
 class MLPBlock(nn.Module):
     """Enhanced neural block to combine context and word representations"""
@@ -80,116 +108,172 @@ class MLPBlock(nn.Module):
         
         return x
     
-class ViConBERT(nn.Module):
-    def __init__(self, tokenizer,
-        model_name: str = "vinai/phobert-base",
-        cache_dir: str ="embeddings/base_models",
-        hidden_dim: int = 512,
-        out_dim:int = 768,
-        dropout: float = 0.1,
-        num_layers:int=1,
-        num_head:int=3,
-        encoder_type:str="attentive",
-        context_window_size:int=3,
-        ):
-        super().__init__()
-        self.config = {
-            "base_model": model_name,
-            "base_model_cache_dir": cache_dir,
-            "hidden_dim": hidden_dim,
-            "out_dim": out_dim,
-            "dropout": dropout,
-            "num_layers": num_layers,
-            "num_head": num_head,
-            "encoder_type": encoder_type,
-            "context_window_size": context_window_size,
-        }
-        self.tokenizer =tokenizer
-        self.context_encoder = AutoModel.from_pretrained(model_name,cache_dir=cache_dir)
-        self.context_encoder.resize_token_embeddings(len(tokenizer))
+
+class ViConBERT(PreTrainedModel):
+    config_class = ViConBERTConfig
+
+    def __init__(self, config):
+        super().__init__(config)
+        self.config = config
+
+        self.context_encoder = AutoModel.from_pretrained(
+            config.base_model, cache_dir=config.base_model_cache_dir
+        )
         self.context_projection = MLPBlock(
             self.context_encoder.config.hidden_size,
-            hidden_dim,
-            out_dim,
-            dropout=dropout,
-            num_layers=num_layers
-            
+            config.hidden_dim,
+            config.out_dim,
+            dropout=config.dropout,
+            num_layers=config.num_layers,
         )
-        self.encoder_type =encoder_type
-        self.context_attention=nn.MultiheadAttention(
+
+        self.context_attention = nn.MultiheadAttention(
             self.context_encoder.config.hidden_size,
-            num_heads=num_head,
-            dropout=dropout
+            num_heads=config.num_head,
+            dropout=config.dropout
         )
-        self.context_window_size = context_window_size
-        self.context_layer_weights = nn.Parameter(torch.zeros(self.context_encoder.config.num_hidden_layers))  
-    
-    
+        self.context_window_size = config.context_window_size
+        self.context_layer_weights = nn.Parameter(
+            torch.zeros(self.context_encoder.config.num_hidden_layers)
+        )
+
+        self.post_init()  # <- hàm chuẩn của HF để init weight
+
     def _encode_context_attentive(self, text, target_span):
         outputs = self.context_encoder(**text)
+        hidden_states = outputs[0]
         start_pos = target_span[:, 0]
         end_pos = target_span[:, 1]
-        
-        hidden_states = outputs[0]  
-        
-        positions = torch.arange(hidden_states.size(1), device=hidden_states.device)  
-        
-        mask = (positions >= start_pos.unsqueeze(1)) & (positions <= end_pos.unsqueeze(1))  
-        masked_states = hidden_states * mask.unsqueeze(-1) 
-        span_lengths = mask.sum(dim=1, keepdim=True).clamp(min=1)  
+
+        positions = torch.arange(hidden_states.size(1), device=hidden_states.device)
+        mask = (positions >= start_pos.unsqueeze(1)) & (positions <= end_pos.unsqueeze(1))
+        masked_states = hidden_states * mask.unsqueeze(-1)
+        span_lengths = mask.sum(dim=1, keepdim=True).clamp(min=1)
         pooled_embeddings = masked_states.sum(dim=1) / span_lengths
-        
-        Q_value = pooled_embeddings.unsqueeze(0)  
-        KV_value = hidden_states.permute(1, 0, 2)  
-        context_emb, _ = self.context_attention(
-                Q_value, KV_value, KV_value
-        )
+
+        Q_value = pooled_embeddings.unsqueeze(0)
+        KV_value = hidden_states.permute(1, 0, 2)
+        context_emb, _ = self.context_attention(Q_value, KV_value, KV_value)
         return context_emb
-        
+
     def forward(self, context, target_span):
-        """Forward pass"""
-        context_emb=  self._encode_context_attentive(context,target_span)
+        context_emb = self._encode_context_attentive(context, target_span)
         return self.context_projection(context_emb.squeeze(0))
+
+AutoConfig.register("viconbert", ViConBERTConfig)
+AutoModel.register(ViConBERTConfig, ViConBERT)
+
+
+# class ViConBERT(nn.Module):
+#     def __init__(self, tokenizer,
+#         model_name: str = "vinai/phobert-base",
+#         cache_dir: str ="embeddings/base_models",
+#         hidden_dim: int = 512,
+#         out_dim:int = 768,
+#         dropout: float = 0.1,
+#         num_layers:int=1,
+#         num_head:int=3,
+#         encoder_type:str="attentive",
+#         context_window_size:int=3,
+#         ):
+#         super().__init__()
+#         self.config = {
+#             "base_model": model_name,
+#             "base_model_cache_dir": cache_dir,
+#             "hidden_dim": hidden_dim,
+#             "out_dim": out_dim,
+#             "dropout": dropout,
+#             "num_layers": num_layers,
+#             "num_head": num_head,
+#             "encoder_type": encoder_type,
+#             "context_window_size": context_window_size,
+#         }
+#         self.tokenizer =tokenizer
+#         self.context_encoder = AutoModel.from_pretrained(model_name,cache_dir=cache_dir)
+#         self.context_encoder.resize_token_embeddings(len(tokenizer))
+#         self.context_projection = MLPBlock(
+#             self.context_encoder.config.hidden_size,
+#             hidden_dim,
+#             out_dim,
+#             dropout=dropout,
+#             num_layers=num_layers
+            
+#         )
+#         self.encoder_type =encoder_type
+#         self.context_attention=nn.MultiheadAttention(
+#             self.context_encoder.config.hidden_size,
+#             num_heads=num_head,
+#             dropout=dropout
+#         )
+#         self.context_window_size = context_window_size
+#         self.context_layer_weights = nn.Parameter(torch.zeros(self.context_encoder.config.num_hidden_layers))  
     
-    def save_pretrained(self, save_directory):
-        os.makedirs(save_directory, exist_ok=True)
-        torch.save(self.state_dict(), os.path.join(save_directory, "pytorch_model.bin"))
-
-        with open(os.path.join(save_directory, "config.json"), "w") as f:
-            json.dump(self.config, f, indent=2)
-
-        if hasattr(self, 'tokenizer'):
-            self.tokenizer.save_pretrained(save_directory)
-
-
-    @classmethod
-    def from_pretrained(cls, save_directory, tokenizer=None):
-        with open(os.path.join(save_directory, "config.json"), "r") as f:
-            config = json.load(f)
-
-        if tokenizer is None:
-            try:
-                tokenizer = AutoTokenizer.from_pretrained(save_directory)
-            except:
-                raise ValueError("Không tìm thấy tokenizer trong thư mục")
-
-        model = cls(
-            tokenizer=tokenizer,
-            model_name=config["base_model"],
-            cache_dir=config["base_model_cache_dir"],
-            hidden_dim=config["hidden_dim"],
-            out_dim=config["out_dim"],
-            dropout=config["dropout"],
-            num_layers=config["num_layers"],
-            num_head=config["num_head"],
-            encoder_type=config["encoder_type"],
-            context_window_size=config["context_window_size"],
-        )
-
-        state_dict = torch.load(
-            os.path.join(save_directory, "pytorch_model.bin"),
-            map_location=torch.device('cpu')
-        )
+    
+#     def _encode_context_attentive(self, text, target_span):
+#         outputs = self.context_encoder(**text)
+#         start_pos = target_span[:, 0]
+#         end_pos = target_span[:, 1]
         
-        model.load_state_dict(state_dict)
-        return model
+#         hidden_states = outputs[0]  
+        
+#         positions = torch.arange(hidden_states.size(1), device=hidden_states.device)  
+        
+#         mask = (positions >= start_pos.unsqueeze(1)) & (positions <= end_pos.unsqueeze(1))  
+#         masked_states = hidden_states * mask.unsqueeze(-1) 
+#         span_lengths = mask.sum(dim=1, keepdim=True).clamp(min=1)  
+#         pooled_embeddings = masked_states.sum(dim=1) / span_lengths
+        
+#         Q_value = pooled_embeddings.unsqueeze(0)  
+#         KV_value = hidden_states.permute(1, 0, 2)  
+#         context_emb, _ = self.context_attention(
+#                 Q_value, KV_value, KV_value
+#         )
+#         return context_emb
+        
+#     def forward(self, context, target_span):
+#         """Forward pass"""
+#         context_emb=  self._encode_context_attentive(context,target_span)
+#         return self.context_projection(context_emb.squeeze(0))
+    
+#     def save_pretrained(self, save_directory):
+#         os.makedirs(save_directory, exist_ok=True)
+#         torch.save(self.state_dict(), os.path.join(save_directory, "pytorch_model.bin"))
+
+#         with open(os.path.join(save_directory, "config.json"), "w") as f:
+#             json.dump(self.config, f, indent=2)
+
+#         if hasattr(self, 'tokenizer'):
+#             self.tokenizer.save_pretrained(save_directory)
+
+
+#     @classmethod
+#     def from_pretrained(cls, save_directory, tokenizer=None):
+#         with open(os.path.join(save_directory, "config.json"), "r") as f:
+#             config = json.load(f)
+
+#         if tokenizer is None:
+#             try:
+#                 tokenizer = AutoTokenizer.from_pretrained(save_directory)
+#             except:
+#                 raise ValueError("Không tìm thấy tokenizer trong thư mục")
+
+#         model = cls(
+#             tokenizer=tokenizer,
+#             model_name=config["base_model"],
+#             cache_dir=config["base_model_cache_dir"],
+#             hidden_dim=config["hidden_dim"],
+#             out_dim=config["out_dim"],
+#             dropout=config["dropout"],
+#             num_layers=config["num_layers"],
+#             num_head=config["num_head"],
+#             encoder_type=config["encoder_type"],
+#             context_window_size=config["context_window_size"],
+#         )
+
+#         state_dict = torch.load(
+#             os.path.join(save_directory, "pytorch_model.bin"),
+#             map_location=torch.device('cpu')
+#         )
+        
+#         model.load_state_dict(state_dict)
+#         return model
