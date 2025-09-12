@@ -89,10 +89,12 @@ sim_2 = cosine_similarity(query_vec_2, query_vec_3)
 print(f"Similarity between 1: {target_1}  and  3: {target_3}: {sim_1:.4f}")
 print(f"Similarity between 2: {target_2} and 3:{target_3}: {sim_2:.4f}")
 ```
+### Embedding Space Visualization
+
 <p align="center">
-  <img src="figs/image_hono.png" width="300"/>
-  <img src="figs/image_poly.png" width="300"/>
-  <img src="figs/image_zeroshot.png" width="300"/>
+  <img src="visualization/image_hono.png" width="300"/>
+  <img src="visualization/image_poly.png" width="300"/>
+  <img src="visualization/image_zeroshot.png" width="300"/>
 </p>
 
 <p align="center">
