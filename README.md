@@ -1,5 +1,11 @@
 # ViConBERT: Context-Gloss Aligned Vietnamese Word Embedding for Polysemous and Sense-Aware Representations
-[Model](https://huggingface.co/tkhangg0910/viconbert-base)  $~$  [Paper](https://huggingface.co/tkhangg0910/viconbert-base) $~$  [Dataset](https://huggingface.co/datasets/tkhangg0910/ViConWSD)
+
+<p align="center">
+  <a href="https://huggingface.co/tkhangg0910/viconbert-base"><b>Model</b></a> &nbsp;&nbsp;
+  <a href="https://huggingface.co/tkhangg0910/viconbert-base"><b>Paper</b></a> &nbsp;&nbsp;
+  <a href="https://huggingface.co/datasets/tkhangg0910/ViConWSD"><b>Dataset</b></a>
+</p>
+
 
 This repository is official implementation of the paper: ViConBERT: Context-Gloss Aligned Vietnamese Word Embedding for Polysemous and Sense-Aware Representations
 
