@@ -106,6 +106,7 @@ print(f"Similarity between 2: {target_2} and 3:{target_3}: {sim_2:.4f}")
 <p align="center">
   <em>Contextual separation of "Khoan", "chạy", and zero-shot ability for unseen words</em>
 </p>
+
 ## Citation
 If you find ViConBERT useful for your research and applications, please cite using this BibTeX:
 
