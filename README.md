@@ -15,7 +15,7 @@ This repository is official implementation of the paper: ViConBERT: Context-Glos
 * **Abstract:**
 Recent progress in contextualized word embeddings has significantly advanced tasks involving word semantics, such as Word Sense Disambiguation (WSD) and contextual semantic similarity. However, these developments have largely focused on high-resource languages like English, while low-resource languages such as Vietnamese remain underexplored. This paper introduces a novel training framework for Vietnamese contextualized word embeddings, which integrates contrastive learning (SimCLR) and distillation with the gloss embedding space to better model word meaning. Additionally, we introduce a new dataset specifically designed to evaluate semantic understanding tasks in Vietnamese, which we constructed as part of this work. Experimental results demonstrate that ViConBERT outperforms strong baselines on the WSD task (F1 = 0.87) and achieves competitive results on ViCon (AP = 0.88) and ViSim-400 (Spearman’s $\rho$ = 0.60), effectively modeling both binary and graded semantic relations in Vietnamese.
 
-### Installation <a name="install2"></a>
+## Installation <a name="install2"></a>
 - Install `transformers` with pip: `pip install transformers`, or [install `transformers` from source](https://huggingface.co/docs/transformers/installation#installing-from-source).  <br /> 
 Note that we merged a slow tokenizer for PhoBERT into the main `transformers` branch. The process of merging a fast tokenizer for PhoBERT is in the discussion, as mentioned in [this pull request](https://github.com/huggingface/transformers/pull/17254#issuecomment-1133932067). If users would like to utilize the fast tokenizer, the users might install `transformers` as follows:
 
@@ -31,13 +31,13 @@ pip3 install -r requirements.txt
 ```
 
 
-### ViConBERT models <a name="models2"></a>
+## ViConBERT models <a name="models2"></a>
 
 
-Model | #params | Arch. | Max length | Training data
----|---|---|---|---
-[`tkhangg0910/viconbert-base`](https://huggingface.co/tkhangg0910/viconbert-base) | 135M | base | 256 | [ViConWSD](https://huggingface.co/datasets/tkhangg0910/ViConWSD)
-[`tkhangg0910/viconbert-large`](https://huggingface.co/tkhangg0910/viconbert-large) | 370M | large | 256 | [ViConWSD](https://huggingface.co/datasets/tkhangg0910/ViConWSD)
+Model | #params | Arch. | Max length | Backbone | Training data
+---|---|---|---|---|---
+[`tkhangg0910/viconbert-base`](https://huggingface.co/tkhangg0910/viconbert-base) | 135M | base | 256 | [PhoBERT-base](https://huggingface.co/vinai/phobert-base) | [ViConWSD](https://huggingface.co/datasets/tkhangg0910/ViConWSD)
+[`tkhangg0910/viconbert-large`](https://huggingface.co/tkhangg0910/viconbert-large) | 370M | large | 256 | [PhoBERT-large](https://huggingface.co/vinai/phobert-large) | [ViConWSD](https://huggingface.co/datasets/tkhangg0910/ViConWSD)
 
 
 ### Example usage <a name="usage2"></a>
@@ -106,3 +106,8 @@ print(f"Similarity between 2: {target_2} and 3:{target_3}: {sim_2:.4f}")
 <p align="center">
   <em>Contextual separation of "Khoan", "chạy", and zero-shot ability for unseen words</em>
 </p>
+## Citation
+If you find ViConBERT useful for your research and applications, please cite using this BibTeX:
+
+## Acknowledgement
+[PhoBERT](https://github.com/VinAIResearch/PhoBERT): ViConBERT used PhoBERT as backbone model.
